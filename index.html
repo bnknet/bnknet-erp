@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>비앤케이넷 주문 변환기</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700&display=swap');
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Noto Sans KR',sans-serif;background:#0f1117;color:#e2e8f0;min-height:100vh}
+  .header{background:linear-gradient(135deg,#1e3a5f,#0d2137);padding:24px 40px;border-bottom:1px solid #1e3a5f;display:flex;align-items:center;justify-content:space-between}
+  .logo{font-size:22px;font-weight:700;color:#38bdf8}
+  .logo span{font-size:13px;color:#64748b;font-weight:400;margin-left:8px}
+  .nav-btn{padding:8px 16px;background:transparent;border:1px solid #1e3a5f;border-radius:8px;color:#94a3b8;cursor:pointer;font-size:13px;font-family:'Noto Sans KR',sans-serif;transition:.2s}
+  .nav-btn:hover,.nav-btn.active{background:#1e3a5f;color:#38bdf8;border-color:#38bdf8}
+  .nav{display:flex;gap:8px}
+  .container{max-width:900px;margin:40px auto;padding:0 24px}
+  .card{background:#1a2235;border:1px solid #1e3a5f;border-radius:16px;padding:32px;margin-bottom:24px}
+  .card-title{font-size:18px;font-weight:700;margin-bottom:8px;color:#f1f5f9}
+  .card-sub{font-size:13px;color:#64748b;margin-bottom:24px}
+  .upload-zone{border:2px dashed #1e3a5f;border-radius:12px;padding:48px;text-align:center;cursor:pointer;transition:.2s;background:#0f1117}
+  .upload-zone:hover,.upload-zone.dragover{border-color:#38bdf8;background:#0d1f35}
+  .upload-icon{font-size:48px;margin-bottom:16px}
+  .upload-text{font-size:16px;color:#94a3b8;margin-bottom:8px}
+  .upload-sub{font-size:13px;color:#475569}
+  input[type=file]{display:none}
+  .btn{padding:12px 28px;border-radius:10px;font-size:14px;font-family:'Noto Sans KR',sans-serif;font-weight:600;cursor:pointer;border:none;transition:.2s}
+  .btn-primary{background:linear-gradient(135deg,#38bdf8,#0284c7);color:#fff}
+  .btn-primary:hover{opacity:.9;transform:translateY(-1px)}
+  .btn-primary:disabled{opacity:.4;cursor:not-allowed;transform:none}
+  .btn-outline{background:transparent;border:1px solid #38bdf8;color:#38bdf8}
+  .btn-outline:hover{background:#38bdf8;color:#0f1117}
+  .btn-success{background:linear-gradient(135deg,#10b981,#059669);color:#fff}
+  .btn-success:hover{opacity:.9}
+  .status{padding:12px 16px;border-radius:8px;font-size:13px;margin-top:16px;display:none}
+  .status.info{background:#0d2137;border:1px solid #1e3a5f;color:#38bdf8;display:block}
+  .status.success{background:#052e16;border:1px solid #166534;color:#34d399;display:block}
+  .status.error{background:#2d0000;border:1px solid #7f1d1d;color:#f87171;display:block}
+  .progress{height:6px;background:#0f1117;border-radius:3px;margin-top:12px;overflow:hidden;display:none}
+  .progress-bar{height:100%;background:linear-gradient(90deg,#38bdf8,#0284c7);border-radius:3px;transition:width .3s;width:0}
+  .result-box{background:#0f1117;border:1px solid #1e3a5f;border-radius:10px;padding:20px;margin-top:20px;display:none}
+  .result-title{font-size:14px;font-weight:600;margin-bottom:12px;color:#94a3b8}
+  .result-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+  .result-stat{text-align:center;padding:12px;background:#1a2235;border-radius:8px}
+  .result-stat-num{font-size:24px;font-weight:700;color:#38bdf8}
+  .result-stat-label{font-size:11px;color:#64748b;margin-top:4px}
+  .action-row{display:flex;gap:12px;margin-top:16px;flex-wrap:wrap}
+  /* History */
+  .history-table{width:100%;border-collapse:collapse}
+  .history-table th{background:#0f1117;padding:10px 14px;text-align:left;font-size:11px;color:#64748b;font-weight:500;text-transform:uppercase;border-bottom:1px solid #1e3a5f}
+  .history-table td{padding:10px 14px;font-size:13px;border-bottom:1px solid #0f1117}
+  .history-table tr:hover td{background:#0d1f35}
+  .badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:500}
+  .badge-green{background:#052e16;color:#34d399}
+  .badge-blue{background:#0d2137;color:#38bdf8}
+  .empty-state{text-align:center;padding:48px;color:#475569}
+  .empty-icon{font-size:40px;margin-bottom:12px}
+  /* Password modal */
+  .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center;z-index:100}
+  .modal{background:#1a2235;border:1px solid #1e3a5f;border-radius:16px;padding:32px;width:360px;text-align:center}
+  .modal h2{font-size:20px;font-weight:700;margin-bottom:8px}
+  .modal p{font-size:13px;color:#64748b;margin-bottom:24px}
+  .modal input{width:100%;padding:12px 16px;background:#0f1117;border:1px solid #1e3a5f;border-radius:8px;color:#e2e8f0;font-size:14px;font-family:'Noto Sans KR',sans-serif;outline:none;margin-bottom:12px;text-align:center;letter-spacing:4px}
+  .modal input:focus{border-color:#38bdf8}
+  .modal-error{color:#f87171;font-size:12px;margin-bottom:12px;display:none}
+  ::-webkit-scrollbar{width:6px}
+  ::-webkit-scrollbar-track{background:#0f1117}
+  ::-webkit-scrollbar-thumb{background:#1e3a5f;border-radius:3px}
+</style>
+</head>
+<body>
+
+<!-- 비밀번호 모달 -->
+<div class="modal-bg" id="authModal">
+  <div class="modal">
+    <div style="font-size:40px;margin-bottom:12px">🔐</div>
+    <h2>비앤케이넷 주문 시스템</h2>
+    <p>접근 비밀번호를 입력해 주세요</p>
+    <input type="password" id="pwInput" placeholder="••••••" onkeydown="if(event.key==='Enter')checkPw()">
+    <div class="modal-error" id="pwError">비밀번호가 올바르지 않습니다</div>
+    <button class="btn btn-primary" style="width:100%" onclick="checkPw()">확인</button>
+  </div>
+</div>
+
+<div class="header">
+  <div>
+    <span class="logo">비앤케이넷 <span>주문 자동 변환 시스템</span></span>
+  </div>
+  <div class="nav">
+    <button class="nav-btn active" onclick="showPage('upload')">📤 파일 변환</button>
+    <button class="nav-btn" onclick="showPage('history')">📋 업로드 이력</button>
+  </div>
+</div>
+
+<!-- 업로드 페이지 -->
+<div class="container" id="uploadPage">
+  <div class="card">
+    <div class="card-title">📦 사방넷 주문 파일 변환</div>
+    <div class="card-sub">사방넷에서 다운받은 엑셀 파일을 올리면 자동으로 가공 완료 파일을 만들어드립니다</div>
+
+    <div class="upload-zone" id="uploadZone" onclick="document.getElementById('fileInput').click()"
+         ondragover="event.preventDefault();this.classList.add('dragover')"
+         ondragleave="this.classList.remove('dragover')"
+         ondrop="handleDrop(event)">
+      <div class="upload-icon">📂</div>
+      <div class="upload-text" id="uploadText">클릭하거나 파일을 여기에 끌어다 놓으세요</div>
+      <div class="upload-sub">.xlsx 파일만 지원됩니다</div>
+    </div>
+    <input type="file" id="fileInput" accept=".xlsx" onchange="handleFile(this.files[0])">
+
+    <div class="status" id="statusMsg"></div>
+    <div class="progress" id="progressBar"><div class="progress-bar" id="progressFill"></div></div>
+
+    <div class="result-box" id="resultBox">
+      <div class="result-title">변환 결과</div>
+      <div class="result-grid">
+        <div class="result-stat"><div class="result-stat-num" id="r-total">-</div><div class="result-stat-label">총 주문 건수</div></div>
+        <div class="result-stat"><div class="result-stat-num" id="r-bundle" style="color:#fbbf24">-</div><div class="result-stat-label">합구매/세트</div></div>
+        <div class="result-stat"><div class="result-stat-num" id="r-products" style="color:#34d399">-</div><div class="result-stat-label">상품 종류</div></div>
+      </div>
+      <div class="action-row">
+        <button class="btn btn-success" id="downloadBtn" onclick="downloadResult()">📥 가공완료 엑셀 다운로드</button>
+        <button class="btn btn-outline" id="saveDbBtn" onclick="saveToDb()">💾 DB에 저장 (이력 누적)</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="background:#0d1f35;border-color:#1e3a5f">
+    <div class="card-title" style="font-size:14px;color:#64748b">📌 사용 방법</div>
+    <div style="font-size:13px;color:#475569;line-height:2;margin-top:8px">
+      1. 사방넷 → 주문관리 → 엑셀 다운로드<br>
+      2. 위 영역에 파일 업로드<br>
+      3. 자동 변환 완료 후 엑셀 다운로드<br>
+      4. "DB에 저장" 클릭하면 이력에 누적 저장됩니다
+    </div>
+  </div>
+</div>
+
+<!-- 이력 페이지 -->
+<div class="container" id="historyPage" style="display:none">
+  <div class="card">
+    <div class="card-title">📋 업로드 이력</div>
+    <div class="card-sub">DB에 저장된 누적 주문 데이터입니다</div>
+    <div id="historyContent">
+      <div class="empty-state"><div class="empty-icon">📭</div><div>아직 저장된 이력이 없습니다</div></div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ─── 설정 ───────────────────────────────────────────────
+const SUPABASE_URL = 'https://imldaqmqmnaqrqmqfbwc.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImltbGRhcW1xbW5hcXJxbXFmYndjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEwNjE5OTksImV4cCI6MjA5NjYzNzk5OX0.tKy4cNmmkvRokOPMFqXiphB7uZxysrCyvXUtZ9mBOiU';
+const APP_PASSWORD = 'bnknet2024!';
+
+// ─── 인증 ────────────────────────────────────────────────
+function checkPw() {
+  const pw = document.getElementById('pwInput').value;
+  if (pw === APP_PASSWORD) {
+    document.getElementById('authModal').style.display = 'none';
+    loadHistory();
+  } else {
+    document.getElementById('pwError').style.display = 'block';
+    document.getElementById('pwInput').value = '';
+  }
+}
+
+// ─── 페이지 전환 ──────────────────────────────────────────
+function showPage(page) {
+  document.getElementById('uploadPage').style.display = page === 'upload' ? 'block' : 'none';
+  document.getElementById('historyPage').style.display = page === 'history' ? 'block' : 'none';
+  document.querySelectorAll('.nav-btn').forEach((b,i) => b.classList.toggle('active', (i===0&&page==='upload')||(i===1&&page==='history')));
+  if (page === 'history') loadHistory();
+}
+
+// ─── 상품명 통일 테이블 (나중에 추가) ────────────────────
+const PRODUCT_MAP = {
+  // 예시: '원본상품명': '통일상품명'
+  // 직원분 정리 후 여기에 추가됩니다
+};
+
+// ─── 예외 상품 (수량을 그대로 수량으로 처리) ─────────────
+const EXCEPTION_NAMES = [];
+
+// ─── 수량·상품명 추출 ─────────────────────────────────────
+function extractQtyAndName(name) {
+  if (!name) return [1, ''];
+  name = String(name).trim();
+  if (EXCEPTION_NAMES.includes(name)) return [1, name];
+  const m = name.match(/,?\s*(\d+)\s*(박스|개|포)\s*(\([^)]*\))?\s*$/);
+  if (m) return [parseInt(m[1]), name.slice(0, m.index).replace(/,\s*$/, '').trim()];
+  return [1, name];
+}
+
+function extractQtyFromOption(option) {
+  if (!option) return null;
+  const m = String(option).trim().match(/^(\d+)\s*(박스|개|포)/);
+  return m ? parseInt(m[1]) : null;
+}
+
+function applyProductMap(name) {
+  return PRODUCT_MAP[name] || name;
+}
+
+// ─── 파일 처리 ────────────────────────────────────────────
+let resultData = [];
+let originalFile = null;
+
+function handleDrop(e) {
+  e.preventDefault();
+  document.getElementById('uploadZone').classList.remove('dragover');
+  const file = e.dataTransfer.files[0];
+  if (file) handleFile(file);
+}
+
+function handleFile(file) {
+  if (!file || !file.name.endsWith('.xlsx')) {
+    showStatus('error', '❌ .xlsx 파일만 업로드 가능합니다');
+    return;
+  }
+  originalFile = file;
+  document.getElementById('uploadText').textContent = `✅ ${file.name}`;
+  showStatus('info', '⏳ 파일 분석 중...');
+  setProgress(20);
+
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const wb = XLSX.read(e.target.result, {type:'array', cellStyles:true});
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const raw = XLSX.utils.sheet_to_json(ws, {defval:''});
+
+      // 파란색 행 감지 (합구매)
+      const blueRows = new Set();
+      const range = XLSX.utils.decode_range(ws['!ref']);
+      for (let R = range.s.r+1; R <= range.e.r; R++) {
+        for (let C = range.s.c; C <= range.e.c; C++) {
+          const addr = XLSX.utils.encode_cell({r:R, c:C});
+          const cell = ws[addr];
+          if (cell && cell.s && cell.s.fgColor) {
+            const rgb = cell.s.fgColor.rgb || '';
+            if (rgb && rgb !== '00000000' && rgb !== 'FFFFFFFF') {
+              blueRows.add(R-1);
+              break;
+            }
+          }
+        }
+      }
+
+      setProgress(60);
+
+      // 변환
+      resultData = raw.map((row, idx) => {
+        const collectName = row['★수집상품명'] || row['수집상품명'] || '';
+        const collectOpt  = row['★수집옵션']  || row['수집옵션']  || '';
+        const collectQty  = parseInt(row['★수집수량'] || row['수집수량'] || 1) || 1;
+
+        const [nameQty, cleanName] = extractQtyAndName(collectName);
+        const optQty = extractQtyFromOption(collectOpt);
+        const unitQty = optQty !== null ? optQty : nameQty;
+        const finalQty = unitQty * collectQty;
+        const mappedName = applyProductMap(cleanName);
+
+        return {
+          ...row,
+          '상품명': mappedName,
+          '수량(주문수량*EA)': finalQty,
+          '_is_bundle': blueRows.has(idx)
+        };
+      });
+
+      // 정렬
+      resultData.sort((a,b) => {
+        const na = a['상품명']||'', nb = b['상품명']||'';
+        if (na !== nb) return na.localeCompare(nb, 'ko');
+        return (a['수량(주문수량*EA)']||0) - (b['수량(주문수량*EA)']||0);
+      });
+
+      setProgress(100);
+      const bundleCount = resultData.filter(r=>r._is_bundle).length;
+      const productCount = new Set(resultData.map(r=>r['상품명']).filter(Boolean)).size;
+
+      document.getElementById('r-total').textContent = resultData.length + '건';
+      document.getElementById('r-bundle').textContent = bundleCount + '건';
+      document.getElementById('r-products').textContent = productCount + '종';
+      document.getElementById('resultBox').style.display = 'block';
+      showStatus('success', `✅ 변환 완료! 총 ${resultData.length}건 처리됐습니다`);
+    } catch(err) {
+      showStatus('error', '❌ 파일 처리 중 오류가 발생했습니다: ' + err.message);
+      setProgress(0);
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+// ─── 엑셀 다운로드 ────────────────────────────────────────
+function downloadResult() {
+  if (!resultData.length) return;
+  const COLS = ['주문번호','수취인명','전화번호','핸드폰번호','우편번호','주소','배송메세지',
+                '몰명','상품명','옵션','수량(주문수량*EA)','금액','정산구분','송장','배송비',
+                '★수집상품명','★수집옵션','★수집수량'];
+  const out = resultData.map(r => {
+    const obj = {};
+    COLS.forEach(c => obj[c] = r[c]||'');
+    return obj;
+  });
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.json_to_sheet(out, {header:COLS});
+  // 컬럼 너비
+  ws['!cols'] = [18,10,14,14,8,40,25,12,45,15,10,12,8,16,8,45,12,8].map(w=>({wch:w}));
+  XLSX.utils.book_append_sheet(wb, ws, '가공완료');
+  const today = new Date().toISOString().slice(0,10).replace(/-/g,'');
+  XLSX.writeFile(wb, `${today}_비앤케이_가공완료.xlsx`);
+}
+
+// ─── DB 저장 ──────────────────────────────────────────────
+async function saveToDb() {
+  if (!resultData.length) return;
+  const btn = document.getElementById('saveDbBtn');
+  btn.disabled = true;
+  btn.textContent = '💾 저장 중...';
+  showStatus('info', '⏳ DB에 저장 중입니다...');
+
+  const today = new Date().toISOString().slice(0,10);
+  const rows = resultData.map(r => ({
+    upload_date:      today,
+    order_number:     String(r['주문번호']||''),
+    recipient_name:   r['수취인명']||'',
+    phone:            r['전화번호']||'',
+    mobile:           r['핸드폰번호']||'',
+    postal_code:      String(r['우편번호']||''),
+    address:          r['주소']||'',
+    delivery_message: r['배송메세지']||'',
+    mall_name:        r['몰명']||'',
+    product_name:     r['상품명']||'',
+    option:           r['옵션']||'',
+    quantity:         parseInt(r['수량(주문수량*EA)'])||1,
+    amount:           parseInt(r['금액'])||0,
+    payment_type:     r['정산구분']||'',
+    tracking_number:  String(r['송장']||''),
+    delivery_fee:     parseInt(r['배송비'])||0,
+    collect_product:  r['★수집상품명']||'',
+    collect_option:   r['★수집옵션']||'',
+    collect_quantity: parseInt(r['★수집수량'])||1,
+    is_bundle:        r['_is_bundle']||false
+  }));
+
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/orders`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': SUPABASE_KEY,
+        'Authorization': `Bearer ${SUPABASE_KEY}`,
+        'Prefer': 'return=minimal'
+      },
+      body: JSON.stringify(rows)
+    });
+    if (res.ok) {
+      showStatus('success', `✅ ${rows.length}건이 DB에 저장됐습니다!`);
+      btn.textContent = '✅ 저장 완료';
+    } else {
+      const err = await res.text();
+      showStatus('error', '❌ 저장 실패: ' + err);
+      btn.disabled = false;
+      btn.textContent = '💾 DB에 저장 (이력 누적)';
+    }
+  } catch(e) {
+    showStatus('error', '❌ 네트워크 오류: ' + e.message);
+    btn.disabled = false;
+    btn.textContent = '💾 DB에 저장 (이력 누적)';
+  }
+}
+
+// ─── 이력 로드 ────────────────────────────────────────────
+async function loadHistory() {
+  const el = document.getElementById('historyContent');
+  el.innerHTML = '<div class="empty-state"><div>⏳ 불러오는 중...</div></div>';
+  try {
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/orders?select=upload_date,mall_name,product_name,quantity,amount,is_bundle&order=upload_date.desc,product_name.asc&limit=200`,
+      { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` } }
+    );
+    const data = await res.json();
+    if (!data.length) {
+      el.innerHTML = '<div class="empty-state"><div class="empty-icon">📭</div><div>아직 저장된 이력이 없습니다</div></div>';
+      return;
+    }
+    // 날짜별 그룹
+    const byDate = {};
+    data.forEach(r => {
+      if (!byDate[r.upload_date]) byDate[r.upload_date] = [];
+      byDate[r.upload_date].push(r);
+    });
+    let html = '';
+    Object.entries(byDate).sort((a,b)=>b[0].localeCompare(a[0])).forEach(([date, rows]) => {
+      const total = rows.reduce((s,r)=>s+r.amount,0);
+      html += `<div style="margin-bottom:24px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <span style="font-size:14px;font-weight:600;color:#38bdf8">📅 ${date}</span>
+          <span style="font-size:12px;color:#64748b">${rows.length}건 · 합계 ₩${total.toLocaleString()}</span>
+        </div>
+        <div style="background:#0f1117;border-radius:8px;overflow:hidden;border:1px solid #1e3a5f">
+        <table class="history-table" style="width:100%">
+          <thead><tr><th>플랫폼</th><th>상품명</th><th>수량</th><th>금액</th><th>구분</th></tr></thead>
+          <tbody>
+            ${rows.map(r=>`<tr>
+              <td><span class="badge badge-blue">${r.mall_name}</span></td>
+              <td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.product_name}</td>
+              <td style="text-align:center">${r.quantity}</td>
+              <td style="color:#10b981;font-weight:600">₩${(r.amount||0).toLocaleString()}</td>
+              <td>${r.is_bundle?'<span class="badge" style="background:#1a1200;color:#fbbf24">합구매</span>':'<span class="badge badge-green">일반</span>'}</td>
+            </tr>`).join('')}
+          </tbody>
+        </table></div></div>`;
+    });
+    el.innerHTML = html;
+  } catch(e) {
+    el.innerHTML = '<div class="empty-state"><div>❌ 데이터 로드 실패</div></div>';
+  }
+}
+
+// ─── 유틸 ─────────────────────────────────────────────────
+function showStatus(type, msg) {
+  const el = document.getElementById('statusMsg');
+  el.className = 'status ' + type;
+  el.textContent = msg;
+}
+function setProgress(pct) {
+  const bar = document.getElementById('progressBar');
+  bar.style.display = pct > 0 && pct < 100 ? 'block' : pct === 100 ? 'none' : 'none';
+  document.getElementById('progressFill').style.width = pct + '%';
+}
+</script>
+</body>
+</html>
