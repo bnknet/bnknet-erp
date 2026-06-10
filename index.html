@@ -1,7 +1,8 @@
 <!DOCTYPE html>
-<!-- saved from url=(0051)file:///C:/Users/UserK/Downloads/index_final_5.html -->
+<!-- saved from url=(0051)file:///C:/Users/UserK/Downloads/index_final_7.html -->
 <html lang="ko"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
 
+<script src="./index_files/xlsx.full.min.js.다운로드"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>비앤케이넷 주문 변환기</title>
 
@@ -78,7 +79,7 @@
     <h2>비앤케이넷 주문 시스템</h2>
     <p>접근 비밀번호를 입력해 주세요</p>
     <input type="password" id="pwInput" placeholder="••••••" onkeydown="if(event.key===&#39;Enter&#39;)checkPw()">
-    <div class="modal-error" id="pwError">비밀번호가 올바르지 않습니다</div>
+    <div class="modal-error" id="pwError" style="display: block;">비밀번호가 올바르지 않습니다</div>
     <button class="btn btn-primary" style="width:100%" onclick="checkPw()">확인</button>
   </div>
 </div>
@@ -1167,6 +1168,10 @@ function handleDrop(e) {
 }
 
 function handleFile(file) {
+  if (typeof XLSX === 'undefined') {
+    showStatus('error', '❌ 라이브러리 로딩 중입니다. 잠시 후 다시 시도해 주세요.');
+    return;
+  }
   if (!file || !file.name.endsWith('.xlsx')) {
     showStatus('error', '❌ .xlsx 파일만 업로드 가능합니다');
     return;
@@ -1439,7 +1444,6 @@ function setProgress(pct) {
   document.getElementById('progressFill').style.width = pct + '%';
 }
 </script>
-<script src="./index_files/xlsx.full.min.js.다운로드" type="text/javascript"></script>
 
 
 </body></html>
