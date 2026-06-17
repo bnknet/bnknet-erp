@@ -1,7 +1,7 @@
 <!DOCTYPE html>
-<!-- saved from url=(0052)file:///C:/Users/UserK/Downloads/index_final_10.html -->
-<html lang="ko"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
-
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>비앤케이넷 주문 변환기</title>
 <style>
@@ -65,7 +65,7 @@ input[type=file]{display:none}
     <div style="font-size:40px;margin-bottom:12px">🔐</div>
     <h2>비앤케이넷 주문 시스템</h2>
     <p>접근 비밀번호를 입력해 주세요</p>
-    <input type="password" id="pwInput" placeholder="비밀번호" onkeydown="if(event.key===&#39;Enter&#39;)checkPw()">
+    <input type="password" id="pwInput" placeholder="비밀번호" onkeydown="if(event.key==='Enter')checkPw()">
     <div class="modal-error" id="pwError">비밀번호가 올바르지 않습니다</div>
     <button class="btn btn-primary" style="width:100%" onclick="checkPw()">확인</button>
   </div>
@@ -74,8 +74,8 @@ input[type=file]{display:none}
 <div class="header">
   <div><span class="logo">비앤케이넷 <span>주문 자동 변환 시스템</span></span></div>
   <div class="nav">
-    <button class="nav-btn active" onclick="showPage(&#39;upload&#39;)">📤 파일 변환</button>
-    <button class="nav-btn" onclick="showPage(&#39;history&#39;)">📋 업로드 이력</button>
+    <button class="nav-btn active" onclick="showPage('upload')">📤 파일 변환</button>
+    <button class="nav-btn" onclick="showPage('history')">📋 업로드 이력</button>
   </div>
 </div>
 
@@ -83,7 +83,11 @@ input[type=file]{display:none}
   <div class="card">
     <div class="card-title">📦 사방넷 주문 파일 변환</div>
     <div class="card-sub">사방넷에서 다운받은 엑셀 파일을 올리면 자동으로 가공 완료 파일을 만들어드립니다</div>
-    <div class="upload-zone" id="uploadZone" onclick="document.getElementById(&#39;fileInput&#39;).click()" ondragover="event.preventDefault();this.classList.add(&#39;dragover&#39;)" ondragleave="this.classList.remove(&#39;dragover&#39;)" ondrop="handleDrop(event)">
+    <div class="upload-zone" id="uploadZone"
+      onclick="document.getElementById('fileInput').click()"
+      ondragover="event.preventDefault();this.classList.add('dragover')"
+      ondragleave="this.classList.remove('dragover')"
+      ondrop="handleDrop(event)">
       <div class="upload-icon">📂</div>
       <div class="upload-text" id="uploadText">클릭하거나 파일을 여기에 끌어다 놓으세요</div>
       <div class="upload-sub">.xlsx 파일만 지원됩니다</div>
@@ -122,7 +126,17 @@ input[type=file]{display:none}
   </div>
 </div>
 
-<script src="./비앤케이넷 주문 변환기최종수정_files/xlsx.full.min.js.다운로드"></script>
+<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+<script>
+// XLSX 로드 실패 시 백업 CDN 시도
+window.addEventListener('DOMContentLoaded',function(){
+  if(typeof XLSX==='undefined'){
+    var s=document.createElement('script');
+    s.src='https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
+    document.head.appendChild(s);
+  }
+});
+</script>
 <script>
 const SUPABASE_URL = "https://imldaqmqmnaqrqmqfbwc.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImltbGRhcW1xbW5hcXJxbXFmYndjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEwNjE5OTksImV4cCI6MjA5NjYzNzk5OX0.tKy4cNmmkvRokOPMFqXiphB7uZxysrCyvXUtZ9mBOiU";
@@ -164,8 +178,20 @@ function handleDrop(e){
   if(e.dataTransfer.files[0])handleFile(e.dataTransfer.files[0]);
 }
 function handleFile(file){
-  if(typeof XLSX==="undefined"){showStatus("error","❌ 잠시 후 다시 시도해 주세요 (로딩 중)");return;}
   if(!file||!file.name.endsWith(".xlsx")){showStatus("error","❌ .xlsx 파일만 업로드 가능합니다");return;}
+  if(typeof XLSX==="undefined"){
+    showStatus("info","⏳ 엑셀 모듈 로딩 중... 잠시만 기다려 주세요");
+    let waited=0;
+    const t=setInterval(()=>{
+      waited+=300;
+      if(typeof XLSX!=="undefined"){clearInterval(t);doProcess(file);}
+      else if(waited>15000){clearInterval(t);showStatus("error","❌ 인터넷 연결을 확인 후 새로고침(F5) 해주세요");}
+    },300);
+    return;
+  }
+  doProcess(file);
+}
+function doProcess(file){
   document.getElementById("uploadText").textContent="✅ "+file.name;
   showStatus("info","⏳ 파일 분석 중...");
   const reader=new FileReader();
@@ -308,5 +334,5 @@ function showStatus(type,msg){
   el.textContent=msg;
 }
 </script>
-
-</body></html>
+</body>
+</html>
