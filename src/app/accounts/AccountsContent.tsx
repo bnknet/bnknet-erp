@@ -87,6 +87,7 @@ export default function AccountsContent() {
       service_name: acc.service_name, login_id: acc.login_id,
       password: acc.password, url: acc.url || '',
       memo: acc.memo || '', category: acc.category,
+      company: acc.company || '',
     });
     setEditId(acc.id);
     setShowForm(true);
