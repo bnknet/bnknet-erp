@@ -175,13 +175,42 @@ export default function CalendarContent() {
     await loadEvents();
   }
 
-  // ── 달력 그리드 ──
+  // ── 달력 그리드 (앞뒤 달 포함, 주 단위) ──
   const firstDay = new Date(year, month, 1).getDay();
   const daysInMonth = new Date(year, month + 1, 0).getDate();
-  const cells: (string | null)[] = [];
-  for (let i = 0; i < firstDay; i++) cells.push(null);
-  for (let d = 1; d <= daysInMonth; d++) cells.push(ymd(new Date(year, month, d)));
-  while (cells.length % 7 !== 0) cells.push(null);
+  const totalCells = Math.ceil((firstDay + daysInMonth) / 7) * 7;
+  const weeks: Date[][] = [];
+  for (let w = 0; w < totalCells / 7; w++) {
+    const wk: Date[] = [];
+    for (let d = 0; d < 7; d++) {
+      wk.push(new Date(year, month, 1 - firstDay + w * 7 + d));
+    }
+    weeks.push(wk);
+  }
+
+  // 한 주에 걸치는 일정들을 띠(bar)로 배치 + 겹침 방지 레인 할당
+  function layoutWeek(weekDates: Date[]) {
+    const ws = ymd(weekDates[0]);
+    const we = ymd(weekDates[6]);
+    const segs = allEvents
+      .filter(e => { const en = e.end_date || e.start_date; return !(en < ws || e.start_date > we); })
+      .map(e => {
+        const en = e.end_date || e.start_date;
+        const segS = e.start_date < ws ? ws : e.start_date;
+        const segE = en > we ? we : en;
+        const startCol = weekDates.findIndex(d => ymd(d) === segS);
+        const endCol = weekDates.findIndex(d => ymd(d) === segE);
+        return { e, startCol, span: Math.max(1, endCol - startCol + 1), date: ymd(weekDates[startCol]) };
+      })
+      .sort((a, b) => a.startCol - b.startCol || b.span - a.span);
+    const laneEnds: number[] = [];
+    return segs.map(seg => {
+      let lane = laneEnds.findIndex(end => end < seg.startCol);
+      if (lane === -1) lane = laneEnds.length;
+      laneEnds[lane] = seg.startCol + seg.span - 1;
+      return { ...seg, lane };
+    });
+  }
 
   function prevMonth() { if (month === 0) { setYear(year - 1); setMonth(11); } else setMonth(month - 1); setSelectedDay(null); }
   function nextMonthFn() { if (month === 11) { setYear(year + 1); setMonth(0); } else setMonth(month + 1); setSelectedDay(null); }
@@ -208,11 +237,11 @@ export default function CalendarContent() {
       </div>
 
       {/* 색상 범례 */}
-      <div className="flex gap-3 flex-wrap text-xs text-gray-500">
+      <div className="flex gap-x-4 gap-y-2 flex-wrap text-sm font-medium text-gray-600">
         {[...EVENT_TYPES, '휴가'].map(t => (
           <div key={t} className="flex items-center gap-1.5">
-            <span className={`w-2.5 h-2.5 rounded-full ${TYPE_STYLE[t]?.dot}`} />
-            {t}{t === '휴가' && <span className="text-gray-300">(결재 연동)</span>}
+            <span className={`w-3 h-3 rounded-full ${TYPE_STYLE[t]?.dot}`} />
+            {t}{t === '휴가' && <span className="text-gray-400 font-normal">(결재 연동)</span>}
           </div>
         ))}
       </div>
@@ -223,38 +252,51 @@ export default function CalendarContent() {
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
           <div className="grid grid-cols-7 border-b border-gray-100">
             {WEEKDAYS.map((w, i) => (
-              <div key={w} className={`py-2 text-center text-xs font-medium ${i === 0 ? 'text-red-400' : i === 6 ? 'text-blue-400' : 'text-gray-400'}`}>{w}</div>
+              <div key={w} className={`py-2.5 text-center text-sm font-bold ${i === 0 ? 'text-red-500' : i === 6 ? 'text-blue-500' : 'text-gray-600'}`}>{w}</div>
             ))}
           </div>
-          <div className="grid grid-cols-7">
-            {cells.map((date, i) => {
-              if (!date) return <div key={i} className="min-h-[110px] border-b border-r border-gray-50 bg-gray-50/30" />;
-              const dayEvents = eventsOn(date);
-              const dayNum = Number(date.slice(-2));
-              const dow = new Date(date).getDay();
-              const isToday = date === todayStr;
-              return (
-                <div key={i}
-                  onClick={() => setSelectedDay(date)}
-                  className={`min-h-[110px] border-b border-r border-gray-50 p-1.5 cursor-pointer hover:bg-blue-50/30 ${selectedDay === date ? 'bg-blue-50' : ''}`}>
-                  <div className={`text-xs font-medium mb-1 ${isToday ? 'bg-blue-600 text-white rounded-full w-5 h-5 flex items-center justify-center' : dow === 0 ? 'text-red-400' : dow === 6 ? 'text-blue-400' : 'text-gray-500'}`}>{dayNum}</div>
-                  <div className="space-y-0.5">
-                    {dayEvents.slice(0, 3).map((e, idx) => (
-                      <div key={idx}
-                        onClick={(ev) => { ev.stopPropagation(); canEdit(e) ? openEdit(e) : setSelectedDay(date); }}
-                        className={`text-[10px] px-1 py-0.5 rounded truncate ${TYPE_STYLE[e.event_type]?.chip || 'bg-gray-100 text-gray-600'}`}
-                        title={e.title}>
-                        {!e.all_day && e.start_time ? `${e.start_time} ` : ''}{e.title}
+          {weeks.map((week, wi) => {
+            const placed = layoutWeek(week);
+            const lanes = placed.reduce((m, p) => Math.max(m, p.lane + 1), 0);
+            const cellMinH = Math.max(96, 40 + lanes * 26);
+            return (
+              <div key={wi} className="relative border-b border-gray-50 last:border-0">
+                {/* 날짜 칸 */}
+                <div className="grid grid-cols-7">
+                  {week.map((day, di) => {
+                    const ds = ymd(day);
+                    const inMonth = day.getMonth() === month;
+                    const dow = day.getDay();
+                    const isToday = ds === todayStr;
+                    return (
+                      <div key={di} onClick={() => setSelectedDay(ds)}
+                        style={{ minHeight: cellMinH }}
+                        className={`border-r border-gray-50 last:border-r-0 p-1.5 cursor-pointer hover:bg-blue-50/30 ${selectedDay === ds ? 'bg-blue-50' : ''} ${!inMonth ? 'bg-gray-50/40' : ''}`}>
+                        <div className={`text-sm font-bold ${isToday ? 'bg-blue-600 text-white rounded-full w-6 h-6 flex items-center justify-center' : !inMonth ? 'text-gray-300' : dow === 0 ? 'text-red-500' : dow === 6 ? 'text-blue-500' : 'text-gray-700'}`}>{day.getDate()}</div>
                       </div>
-                    ))}
-                    {dayEvents.length > 3 && (
-                      <div className="text-[10px] text-gray-400 px-1">+{dayEvents.length - 3}건 더</div>
-                    )}
+                    );
+                  })}
+                </div>
+                {/* 일정 띠 (여러 날 = 하나의 긴 띠) */}
+                <div className="absolute left-0 right-0 px-1 pointer-events-none" style={{ top: 34 }}>
+                  <div className="grid grid-cols-7 gap-x-1" style={{ gridAutoRows: '24px' }}>
+                    {placed.map((p, pi) => {
+                      const st = TYPE_STYLE[p.e.event_type];
+                      return (
+                        <div key={pi}
+                          onClick={(ev) => { ev.stopPropagation(); canEdit(p.e) ? openEdit(p.e) : setSelectedDay(p.date); }}
+                          style={{ gridColumn: `${p.startCol + 1} / span ${p.span}`, gridRow: p.lane + 1 }}
+                          className={`pointer-events-auto h-[22px] px-2 rounded-md text-xs font-bold text-white truncate flex items-center cursor-pointer shadow-sm ${st?.bar || 'bg-gray-400'}`}
+                          title={p.e.title}>
+                          {!p.e.all_day && p.e.start_time ? `${p.e.start_time} ` : ''}{p.e.title}
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
-              );
-            })}
-          </div>
+              </div>
+            );
+          })}
         </div>
       )}
 
