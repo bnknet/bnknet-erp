@@ -34,8 +34,8 @@ const menuItems = [
     group: '결재·업무',
     items: [
       { href: '/approval', label: '결재', icon: '✍️', badge: true },
+      { href: '/reports', label: '보고서', icon: '📋' },
       { href: '/worklog', label: '업무일지', icon: '📝' },
-      { href: '/reports', label: '업무 보고', icon: '📋' },
       { href: '/calendar', label: '행사 및 일정', icon: '📅' },
     ],
   },
