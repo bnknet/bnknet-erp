@@ -50,13 +50,58 @@ function nextDateWithDay(from: Date, targetDay: number, strictlyAfter: boolean):
   return candidate;
 }
 
+// 한국 공휴일 (주말 외 빨간날, 대체공휴일 포함)
+// ※ 설날·추석·부처님오신날은 음력 기준이라 매년 달라짐 → 연 1회 갱신 필요
+export const KR_HOLIDAYS = new Set<string>([
+  // 2026
+  '2026-01-01',                                            // 신정
+  '2026-02-16', '2026-02-17', '2026-02-18',               // 설날
+  '2026-03-01', '2026-03-02',                             // 삼일절 + 대체
+  '2026-05-05',                                            // 어린이날
+  '2026-05-24', '2026-05-25',                             // 부처님오신날 + 대체
+  '2026-06-06',                                            // 현충일
+  '2026-08-15', '2026-08-17',                             // 광복절 + 대체
+  '2026-09-24', '2026-09-25', '2026-09-26', '2026-09-28', // 추석 + 대체
+  '2026-10-03', '2026-10-05',                             // 개천절 + 대체
+  '2026-10-09',                                            // 한글날
+  '2026-12-25',                                            // 성탄절
+  // 2027
+  '2027-01-01',
+  '2027-02-06', '2027-02-07', '2027-02-08', '2027-02-09', // 설날 + 대체
+  '2027-03-01',
+  '2027-05-05',
+  '2027-05-13',                                            // 부처님오신날
+  '2027-06-06', '2027-06-07',                             // 현충일 + 대체
+  '2027-08-15', '2027-08-16',                             // 광복절 + 대체
+  '2027-09-14', '2027-09-15', '2027-09-16',               // 추석
+  '2027-10-03', '2027-10-04',                             // 개천절 + 대체
+  '2027-10-09', '2027-10-11',                             // 한글날 + 대체
+  '2027-12-25', '2027-12-27',                             // 성탄절 + 대체
+]);
+
+function isWeekend(d: Date): boolean {
+  const g = d.getDay();
+  return g === 0 || g === 6;
+}
+
+// 주말/공휴일이면 다음 영업일로 순연
+export function adjustToBusinessDay(iso: string): string {
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return iso;
+  while (isWeekend(d) || KR_HOLIDAYS.has(toISO(d))) {
+    d.setDate(d.getDate() + 1);
+  }
+  return toISO(d);
+}
+
 // 구매일 + 카드 결제 주기 → 결제예정일(YYYY-MM-DD)
+// 결제일이 주말/공휴일이면 다음 영업일로 자동 순연
 export function computePaymentDate(purchaseDate: string, billingDay: number, closeDay: number): string {
   const p = new Date(purchaseDate);
   if (isNaN(p.getTime())) return '';
   const close = nextDateWithDay(p, closeDay, false);   // 구매일 이후 첫 마감일
   const pay = nextDateWithDay(close, billingDay, true); // 마감일 이후 첫 결제일
-  return toISO(pay);
+  return adjustToBusinessDay(toISO(pay));
 }
 
 export function toISO(d: Date): string {
