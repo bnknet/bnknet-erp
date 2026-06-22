@@ -417,48 +417,77 @@ export default function InventoryContent() {
             ) : filtered.length === 0 ? (
               <div className="text-center py-12 text-gray-400">등록된 재고가 없습니다</div>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead className="bg-gray-50 border-b border-gray-100">
-                    <tr>
-                      <th className="px-4 py-3">
-                        <input type="checkbox"
-                          checked={filtered.length > 0 && checkedIds.size === filtered.length}
-                          onChange={toggleAll}
-                          className="w-4 h-4 rounded border-gray-300 text-blue-600 cursor-pointer" />
-                      </th>
-                      {['상품명', '카테고리', '브랜드', '사업자', '재고수량', '개당원가', '원가총합', '최종수정'].map((h) => (
-                        <th key={h} className="px-4 py-3 text-left text-xs font-medium text-gray-500">{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-50">
-                    {filtered.map((p) => (
-                      <tr key={p.id}
-                        className={`hover:bg-blue-50/40 transition-colors ${checkedIds.has(p.id) ? 'bg-blue-50' : ''}`}>
-                        <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+              <>
+                {/* 데스크탑: 표 */}
+                <div className="overflow-x-auto hidden sm:block">
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-50 border-b border-gray-100">
+                      <tr>
+                        <th className="px-4 py-3">
                           <input type="checkbox"
-                            checked={checkedIds.has(p.id)}
-                            onChange={() => toggleCheck(p.id)}
+                            checked={filtered.length > 0 && checkedIds.size === filtered.length}
+                            onChange={toggleAll}
                             className="w-4 h-4 rounded border-gray-300 text-blue-600 cursor-pointer" />
-                        </td>
-                        <td className="px-4 py-3 font-medium text-gray-800 cursor-pointer" onClick={() => openDetail(p)}>{p.product_name}</td>
-                        <td className="px-4 py-3 text-gray-500 cursor-pointer" onClick={() => openDetail(p)}>{p.category || '-'}</td>
-                        <td className="px-4 py-3 text-gray-500 cursor-pointer" onClick={() => openDetail(p)}>{p.brand || '-'}</td>
-                        <td className="px-4 py-3 text-gray-500 cursor-pointer" onClick={() => openDetail(p)}>{p.company}</td>
-                        <td className="px-4 py-3 cursor-pointer" onClick={() => openDetail(p)}>
-                          <span className={`font-bold ${p.quantity === 0 ? 'text-red-500' : p.quantity <= 10 ? 'text-orange-500' : 'text-gray-800'}`}>
+                        </th>
+                        {['상품명', '카테고리', '브랜드', '사업자', '재고수량', '개당원가', '원가총합', '최종수정'].map((h) => (
+                          <th key={h} className="px-4 py-3 text-left text-xs font-medium text-gray-500">{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-50">
+                      {filtered.map((p) => (
+                        <tr key={p.id}
+                          className={`hover:bg-blue-50/40 transition-colors ${checkedIds.has(p.id) ? 'bg-blue-50' : ''}`}>
+                          <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                            <input type="checkbox"
+                              checked={checkedIds.has(p.id)}
+                              onChange={() => toggleCheck(p.id)}
+                              className="w-4 h-4 rounded border-gray-300 text-blue-600 cursor-pointer" />
+                          </td>
+                          <td className="px-4 py-3 font-medium text-gray-800 cursor-pointer" onClick={() => openDetail(p)}>{p.product_name}</td>
+                          <td className="px-4 py-3 text-gray-500 cursor-pointer" onClick={() => openDetail(p)}>{p.category || '-'}</td>
+                          <td className="px-4 py-3 text-gray-500 cursor-pointer" onClick={() => openDetail(p)}>{p.brand || '-'}</td>
+                          <td className="px-4 py-3 text-gray-500 cursor-pointer" onClick={() => openDetail(p)}>{p.company}</td>
+                          <td className="px-4 py-3 cursor-pointer" onClick={() => openDetail(p)}>
+                            <span className={`font-bold ${p.quantity === 0 ? 'text-red-500' : p.quantity <= 10 ? 'text-orange-500' : 'text-gray-800'}`}>
+                              {p.quantity.toLocaleString()} {p.unit}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-gray-600 cursor-pointer" onClick={() => openDetail(p)}>{(p.cost_price || 0).toLocaleString()}원</td>
+                          <td className="px-4 py-3 font-medium text-gray-800 cursor-pointer" onClick={() => openDetail(p)}>{(p.quantity * (p.cost_price || 0)).toLocaleString()}원</td>
+                          <td className="px-4 py-3 text-gray-400 text-xs cursor-pointer" onClick={() => openDetail(p)}>{new Date(p.updated_at).toLocaleDateString('ko-KR')}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* 모바일: 카드형 */}
+                <div className="sm:hidden divide-y divide-gray-100">
+                  {filtered.map((p) => (
+                    <div key={p.id} className={`px-4 py-3.5 flex items-start gap-3 ${checkedIds.has(p.id) ? 'bg-blue-50' : ''}`}>
+                      <input type="checkbox"
+                        checked={checkedIds.has(p.id)}
+                        onChange={() => toggleCheck(p.id)}
+                        className="w-4 h-4 mt-1 rounded border-gray-300 text-blue-600 cursor-pointer flex-shrink-0" />
+                      <div className="flex-1 min-w-0" onClick={() => openDetail(p)}>
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-bold text-gray-800 text-[15px] truncate">{p.product_name}</span>
+                          <span className={`font-bold flex-shrink-0 ${p.quantity === 0 ? 'text-red-500' : p.quantity <= 10 ? 'text-orange-500' : 'text-gray-800'}`}>
                             {p.quantity.toLocaleString()} {p.unit}
                           </span>
-                        </td>
-                        <td className="px-4 py-3 text-gray-600 cursor-pointer" onClick={() => openDetail(p)}>{(p.cost_price || 0).toLocaleString()}원</td>
-                        <td className="px-4 py-3 font-medium text-gray-800 cursor-pointer" onClick={() => openDetail(p)}>{(p.quantity * (p.cost_price || 0)).toLocaleString()}원</td>
-                        <td className="px-4 py-3 text-gray-400 text-xs cursor-pointer" onClick={() => openDetail(p)}>{new Date(p.updated_at).toLocaleDateString('ko-KR')}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                        </div>
+                        <div className="text-xs text-gray-400 mt-1">
+                          {p.company}{p.brand ? ` · ${p.brand}` : ''}{p.category ? ` · ${p.category}` : ''}
+                        </div>
+                        <div className="text-xs text-gray-500 mt-1">
+                          개당 {(p.cost_price || 0).toLocaleString()}원 · 총 <span className="font-medium text-gray-700">{(p.quantity * (p.cost_price || 0)).toLocaleString()}원</span>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </>
             )}
           </div>
         </>

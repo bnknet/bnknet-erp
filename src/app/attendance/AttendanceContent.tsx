@@ -425,47 +425,84 @@ export default function AttendanceContent() {
             ) : records.length === 0 ? (
               <div className="text-center py-12 text-gray-400">출퇴근 기록이 없습니다</div>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead className="bg-gray-50 border-b border-gray-100">
-                    <tr>
-                      {['날짜', '이름', '사업자', '출근', '퇴근', '근무시간', '상태', ...(isCeo ? [''] : [])].map((h) => (
-                        <th key={h} className="px-4 py-3 text-left text-xs font-medium text-gray-500">{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-50">
-                    {records.map((r) => {
-                      const workMin = r.check_in && r.check_out
-                        ? Math.round((new Date(r.check_out).getTime() - new Date(r.check_in).getTime()) / 60000)
-                        : null;
-                      const workHour = workMin !== null ? `${Math.floor(workMin / 60)}h ${workMin % 60}m` : '-';
-                      const st = STATUS_LABELS[r.status] || { label: r.status, color: 'bg-gray-100 text-gray-600' };
-                      return (
-                        <tr key={r.id} className="hover:bg-gray-50">
-                          <td className="px-4 py-3 text-gray-700">{r.work_date}</td>
-                          <td className="px-4 py-3 font-medium text-gray-800">{r.employee_name}</td>
-                          <td className="px-4 py-3 text-gray-500">{r.company}</td>
-                          <td className="px-4 py-3 text-blue-600 font-medium">{formatTime(r.check_in)}</td>
-                          <td className="px-4 py-3 text-orange-500 font-medium">{formatTime(r.check_out)}</td>
-                          <td className="px-4 py-3 text-gray-600">{workHour}</td>
-                          <td className="px-4 py-3">
-                            <span className={`text-xs px-2 py-0.5 rounded-md font-medium ${st.color}`}>{st.label}</span>
-                          </td>
-                          {isCeo && (
+              <>
+                {/* 데스크탑: 표 */}
+                <div className="overflow-x-auto hidden sm:block">
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-50 border-b border-gray-100">
+                      <tr>
+                        {['날짜', '이름', '사업자', '출근', '퇴근', '근무시간', '상태', ...(isCeo ? [''] : [])].map((h) => (
+                          <th key={h} className="px-4 py-3 text-left text-xs font-medium text-gray-500">{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-50">
+                      {records.map((r) => {
+                        const workMin = r.check_in && r.check_out
+                          ? Math.round((new Date(r.check_out).getTime() - new Date(r.check_in).getTime()) / 60000)
+                          : null;
+                        const workHour = workMin !== null ? `${Math.floor(workMin / 60)}h ${workMin % 60}m` : '-';
+                        const st = STATUS_LABELS[r.status] || { label: r.status, color: 'bg-gray-100 text-gray-600' };
+                        return (
+                          <tr key={r.id} className="hover:bg-gray-50">
+                            <td className="px-4 py-3 text-gray-700">{r.work_date}</td>
+                            <td className="px-4 py-3 font-medium text-gray-800">{r.employee_name}</td>
+                            <td className="px-4 py-3 text-gray-500">{r.company}</td>
+                            <td className="px-4 py-3 text-blue-600 font-medium">{formatTime(r.check_in)}</td>
+                            <td className="px-4 py-3 text-orange-500 font-medium">{formatTime(r.check_out)}</td>
+                            <td className="px-4 py-3 text-gray-600">{workHour}</td>
                             <td className="px-4 py-3">
-                              <div className="flex gap-2">
-                                <button onClick={() => openEdit(r)} className="text-xs text-blue-400 hover:text-blue-600 hover:underline">수정</button>
-                                <button onClick={() => handleDelete(r.id)} className="text-xs text-red-400 hover:text-red-600 hover:underline">삭제</button>
-                              </div>
+                              <span className={`text-xs px-2 py-0.5 rounded-md font-medium ${st.color}`}>{st.label}</span>
                             </td>
-                          )}
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
+                            {isCeo && (
+                              <td className="px-4 py-3">
+                                <div className="flex gap-2">
+                                  <button onClick={() => openEdit(r)} className="text-xs text-blue-400 hover:text-blue-600 hover:underline">수정</button>
+                                  <button onClick={() => handleDelete(r.id)} className="text-xs text-red-400 hover:text-red-600 hover:underline">삭제</button>
+                                </div>
+                              </td>
+                            )}
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* 모바일: 카드형 */}
+                <div className="sm:hidden divide-y divide-gray-100">
+                  {records.map((r) => {
+                    const workMin = r.check_in && r.check_out
+                      ? Math.round((new Date(r.check_out).getTime() - new Date(r.check_in).getTime()) / 60000)
+                      : null;
+                    const workHour = workMin !== null ? `${Math.floor(workMin / 60)}h ${workMin % 60}m` : '-';
+                    const st = STATUS_LABELS[r.status] || { label: r.status, color: 'bg-gray-100 text-gray-600' };
+                    return (
+                      <div key={r.id} className="px-4 py-3.5">
+                        <div className="flex items-center justify-between gap-2 mb-1.5">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="font-bold text-gray-800 text-[15px]">{r.employee_name}</span>
+                            <span className="text-xs text-gray-400 truncate">{r.company}</span>
+                          </div>
+                          <span className={`text-xs px-2 py-0.5 rounded-md font-medium flex-shrink-0 ${st.color}`}>{st.label}</span>
+                        </div>
+                        <div className="text-xs text-gray-400 mb-1">{r.work_date}</div>
+                        <div className="flex items-center gap-4 text-sm">
+                          <span className="text-blue-600 font-medium">출근 {formatTime(r.check_in)}</span>
+                          <span className="text-orange-500 font-medium">퇴근 {formatTime(r.check_out)}</span>
+                          <span className="text-gray-500">{workHour}</span>
+                        </div>
+                        {isCeo && (
+                          <div className="flex gap-3 mt-2">
+                            <button onClick={() => openEdit(r)} className="text-xs text-blue-500 font-medium">수정</button>
+                            <button onClick={() => handleDelete(r.id)} className="text-xs text-red-500 font-medium">삭제</button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
             )}
           </div>
         </>
