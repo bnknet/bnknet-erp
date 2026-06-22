@@ -15,7 +15,7 @@ const menuItems = [
     ],
   },
   {
-    group: '매출·정산',
+    group: '매출 관리',
     items: [
       { href: '/sales', label: '매출 현황', icon: '💰' },
       { href: '/orders', label: '주문 변환', icon: '📦' },
