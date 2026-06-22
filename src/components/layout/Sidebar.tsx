@@ -35,6 +35,7 @@ const menuItems = [
     items: [
       { href: '/approval', label: '결재', icon: '✍️', badge: true },
       { href: '/worklog', label: '업무일지', icon: '📝' },
+      { href: '/reports', label: '업무 보고', icon: '📋' },
       { href: '/calendar', label: '행사 및 일정', icon: '📅' },
     ],
   },
