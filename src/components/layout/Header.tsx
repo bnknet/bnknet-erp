@@ -13,21 +13,24 @@ const pageTitles: Record<string, string> = {
   '/inventory': '재고 관리',
   '/products': '상품 마스터',
   '/approval': '결재',
+  '/reports': '보고서',
   '/worklog': '업무일지',
-  '/calendar': '회사 캘린더',
+  '/calendar': '행사 및 일정',
   '/hr': '인사 관리',
   '/attendance': '출·퇴근',
   '/cards': '카드·매입',
   '/partners': '거래처 관리',
   '/accounts': '계정 관리',
   '/notices': '공지사항',
+  '/profile': '내 정보',
 };
 
 const roleLabels: Record<string, string> = {
-  admin: '대표·실장',
-  manager: '실장',
-  sales: '매출 담당',
-  inventory: '재고·주문 담당',
+  ceo: '대표',
+  admin: '실장',
+  manager: '매니저',
+  sales: '영업',
+  inventory: '재고·주문',
   md: 'MD',
 };
 
@@ -54,7 +57,7 @@ export default function Header({ onMenuClick }: HeaderProps) {
   });
 
   return (
-    <header className="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-6 flex-shrink-0">
+    <header className="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-4 sm:px-6 flex-shrink-0">
       <div className="flex items-center gap-4">
         {/* 모바일 메뉴 버튼 */}
         <button
