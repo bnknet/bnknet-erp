@@ -174,13 +174,15 @@ export default function Sidebar({ mobileOpen, onClose }: SidebarProps) {
         {/* 하단 사용자 정보 */}
         <div className="px-4 py-4 border-t border-slate-700">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center text-sm font-semibold flex-shrink-0">
-              {user?.name?.[0] || '?'}
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="text-sm font-medium text-white truncate">{user?.name || '사용자'}</div>
-              <div className="text-xs text-slate-400 truncate">{user?.role || ''}</div>
-            </div>
+            <Link href="/profile" onClick={onClose} className="flex items-center gap-3 flex-1 min-w-0 hover:opacity-80 transition-opacity">
+              <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center text-sm font-semibold flex-shrink-0">
+                {user?.name?.[0] || '?'}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-medium text-white truncate">{user?.name || '사용자'}</div>
+                <div className="text-xs text-slate-400 truncate">내 정보 · 비밀번호 변경</div>
+              </div>
+            </Link>
             <button
               onClick={handleLogout}
               className="text-slate-400 hover:text-white transition-colors p-1"
