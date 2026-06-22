@@ -46,7 +46,7 @@ type View = 'list' | 'detail' | 'form' | 'move';
 
 const EMPTY_FORM = {
   product_name: '', category: '건강기능식품', brand: '',
-  company: 'BNKNET', quantity: 0, unit: '개', location: '', memo: '',
+  company: 'BNKNET', quantity: 0, unit: '개', cost_price: 0, location: '', memo: '',
 };
 
 export default function InventoryContent() {
@@ -103,7 +103,7 @@ export default function InventoryContent() {
     if (!form.product_name.trim()) return;
     setSaving(true);
     try {
-      const payload = { ...form, quantity: Number(form.quantity) || 0, updated_at: new Date().toISOString() };
+      const payload = { ...form, quantity: Number(form.quantity) || 0, cost_price: Number(form.cost_price) || 0, updated_at: new Date().toISOString() };
       let res;
       if (editId) {
         res = await supabaseFetch(`/inventory?id=eq.${editId}`, {
@@ -209,6 +209,7 @@ export default function InventoryContent() {
         product_name: item.product_name, category: item.category || '건강기능식품',
         brand: item.brand || '', company: item.company,
         quantity: item.quantity, unit: item.unit || '개',
+        cost_price: item.cost_price || 0,
         location: item.location || '', memo: item.memo || '',
       });
       setEditId(item.id);
@@ -750,6 +751,14 @@ export default function InventoryContent() {
             <label className="block text-sm font-medium text-gray-700 mb-1.5">초기 재고수량</label>
             <input type="number" value={form.quantity} onChange={(e) => setForm({ ...form, quantity: Number(e.target.value) })}
               placeholder="0" className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">개당원가 (원)</label>
+            <input type="number" value={form.cost_price} onChange={(e) => setForm({ ...form, cost_price: Number(e.target.value) })}
+              placeholder="0" min={0} className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            {Number(form.quantity) > 0 && Number(form.cost_price) > 0 && (
+              <p className="text-xs text-gray-400 mt-1">원가총합 {(Number(form.quantity) * Number(form.cost_price)).toLocaleString()}원</p>
+            )}
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1.5">보관위치</label>
