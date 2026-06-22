@@ -39,3 +39,13 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# installers / binaries (accidentally placed in project folder)
+*.exe
+*.msi
+*.msix
+*.dmg
+
+# legacy standalone app (old order converter)
+비앤케이넷 주문 변환기.html
+비앤케이넷 주문 변환기_files/
