@@ -28,7 +28,7 @@ const roleLabels: Record<string, string> = {
   ceo: '대표',
   admin: '실장',
   manager: '매니저',
-  sales: '영업',
+  sales: '영업·재무',
   inventory: '재고·주문',
   md: 'MD',
 };

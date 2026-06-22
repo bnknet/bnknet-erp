@@ -49,6 +49,7 @@ type Tab = 'calendar' | 'cards';
 export default function CardsContent() {
   const me = getUser();
   const canManage = me?.role === 'ceo' || me?.role === 'admin';
+  const canView = canManage || me?.role === 'sales'; // 조회 = 대표·실장·영업(강웅구)
 
   const [tab, setTab] = useState<Tab>('calendar');
   const [cards, setCards] = useState<Card[]>([]);
@@ -286,6 +287,15 @@ export default function CardsContent() {
       </div>
     </div>
   );
+
+  if (!canView) {
+    return (
+      <div className="text-center py-20 text-gray-400">
+        <div className="text-3xl mb-2">🔒</div>
+        <div className="text-sm">카드·매입은 대표·실장·영업 담당자만 열람할 수 있습니다.</div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4">

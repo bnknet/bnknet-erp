@@ -50,6 +50,7 @@ const EMPTY_EVENT = {
 export default function CalendarContent() {
   const me = getUser();
   const isCeo = me?.role === 'ceo';
+  const isManager = isCeo || me?.role === 'admin'; // 대표·실장 전체 수정·삭제
 
   const [events, setEvents] = useState<CalEvent[]>([]);
   const [vacations, setVacations] = useState<DisplayEvent[]>([]);
@@ -218,7 +219,7 @@ export default function CalendarContent() {
   const todayStr = today();
 
   function canEdit(e: DisplayEvent) {
-    return !e.readonly_link && (isCeo || e.created_by === me?.name);
+    return !e.readonly_link && (isManager || e.created_by === me?.name);
   }
 
   return (

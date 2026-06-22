@@ -66,6 +66,7 @@ const EMPTY_MANUAL = {
 export default function AttendanceContent() {
   const me = getUser();
   const isCeo = me?.role === 'ceo';
+  const canManageAtt = isCeo || me?.role === 'admin'; // 수동입력·수정·삭제 = 대표·실장
 
   const today = toLocalDateString();
   const firstOfMonth = today.slice(0, 7) + '-01';
@@ -409,7 +410,7 @@ export default function AttendanceContent() {
                 className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-xl text-sm font-medium">
                 엑셀 다운로드
               </button>
-              {isCeo && (
+              {canManageAtt && (
                 <button onClick={() => { setManualForm({ ...EMPTY_MANUAL }); setEditId(null); setShowManual(true); }}
                   className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-medium">
                   + 수동 입력
@@ -431,7 +432,7 @@ export default function AttendanceContent() {
                   <table className="w-full text-sm">
                     <thead className="bg-gray-50 border-b border-gray-100">
                       <tr>
-                        {['날짜', '이름', '사업자', '출근', '퇴근', '근무시간', '상태', ...(isCeo ? [''] : [])].map((h) => (
+                        {['날짜', '이름', '사업자', '출근', '퇴근', '근무시간', '상태', ...(canManageAtt ? [''] : [])].map((h) => (
                           <th key={h} className="px-4 py-3 text-left text-xs font-medium text-gray-500">{h}</th>
                         ))}
                       </tr>
@@ -454,7 +455,7 @@ export default function AttendanceContent() {
                             <td className="px-4 py-3">
                               <span className={`text-xs px-2 py-0.5 rounded-md font-medium ${st.color}`}>{st.label}</span>
                             </td>
-                            {isCeo && (
+                            {canManageAtt && (
                               <td className="px-4 py-3">
                                 <div className="flex gap-2">
                                   <button onClick={() => openEdit(r)} className="text-xs text-blue-400 hover:text-blue-600 hover:underline">수정</button>
@@ -492,7 +493,7 @@ export default function AttendanceContent() {
                           <span className="text-orange-500 font-medium">퇴근 {formatTime(r.check_out)}</span>
                           <span className="text-gray-500">{workHour}</span>
                         </div>
-                        {isCeo && (
+                        {canManageAtt && (
                           <div className="flex gap-3 mt-2">
                             <button onClick={() => openEdit(r)} className="text-xs text-blue-500 font-medium">수정</button>
                             <button onClick={() => handleDelete(r.id)} className="text-xs text-red-500 font-medium">삭제</button>

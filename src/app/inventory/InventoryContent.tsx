@@ -52,8 +52,11 @@ const EMPTY_FORM = {
 export default function InventoryContent() {
   const me = getUser();
   const isCeo = me?.role === 'ceo';
-  const canManageStock = isCeo || me?.role === 'inventory'; // 재고 등록/수정/삭제
-  // 입출고 내역 수정/삭제는 ceo만
+  const isAdmin = me?.role === 'admin';
+  // 재고 등록/수정/삭제 = 대표·실장·영업(강웅구)·재고담당(박정진/최영훈)
+  const canManageStock = ['ceo', 'admin', 'sales', 'inventory'].includes(me?.role || '');
+  // 입출고 내역(로그) 삭제 = 대표·실장
+  const canDeleteLog = isCeo || isAdmin;
 
   const [view, setView] = useState<View>('list');
   const [items, setItems] = useState<InventoryItem[]>([]);
@@ -501,7 +504,7 @@ export default function InventoryContent() {
               <table className="w-full text-sm">
                 <thead className="bg-gray-50 border-b border-gray-100">
                   <tr>
-                    {['일시', '상품명', '구분', '수량', '변경 전', '변경 후', '사유', '처리자', ...(isCeo ? ['삭제'] : [])].map((h) => (
+                    {['일시', '상품명', '구분', '수량', '변경 전', '변경 후', '사유', '처리자', ...(canDeleteLog ? ['삭제'] : [])].map((h) => (
                       <th key={h} className="px-4 py-3 text-left text-xs font-medium text-gray-500">{h}</th>
                     ))}
                   </tr>
@@ -521,7 +524,7 @@ export default function InventoryContent() {
                         <td className="px-4 py-3 text-gray-500">{log.after_qty}</td>
                         <td className="px-4 py-3 text-gray-500">{log.reason || '-'}</td>
                         <td className="px-4 py-3 text-gray-500">{log.created_by || '-'}</td>
-                        {isCeo && (
+                        {canDeleteLog && (
                           <td className="px-4 py-3">
                             <button onClick={() => handleDeleteLog(log)}
                               className="text-xs text-red-400 hover:text-red-600 hover:underline">삭제</button>
@@ -561,7 +564,7 @@ export default function InventoryContent() {
             {canManageStock && (
               <button onClick={() => openForm(selected)} className="px-3 py-1.5 text-sm text-blue-600 border border-blue-200 rounded-lg hover:bg-blue-50">수정</button>
             )}
-            {isCeo && (
+            {canDeleteLog && (
               <button onClick={() => handleDelete(selected.id)} className="px-3 py-1.5 text-sm text-red-500 border border-red-200 rounded-lg hover:bg-red-50">삭제</button>
             )}
           </div>
@@ -603,7 +606,7 @@ export default function InventoryContent() {
               <table className="w-full text-sm">
                 <thead className="bg-gray-50 rounded-xl">
                   <tr>
-                    {['일시', '구분', '수량', '변경 전→후', '사유', '처리자', ...(isCeo ? [''] : [])].map((h, i) => (
+                    {['일시', '구분', '수량', '변경 전→후', '사유', '처리자', ...(canDeleteLog ? [''] : [])].map((h, i) => (
                       <th key={i} className="px-3 py-2 text-left text-xs font-medium text-gray-500">{h}</th>
                     ))}
                   </tr>
@@ -621,7 +624,7 @@ export default function InventoryContent() {
                         <td className="px-3 py-2 text-gray-500">{log.before_qty} → {log.after_qty}</td>
                         <td className="px-3 py-2 text-gray-500">{log.reason || '-'}</td>
                         <td className="px-3 py-2 text-gray-500">{log.created_by || '-'}</td>
-                        {isCeo && (
+                        {canDeleteLog && (
                           <td className="px-3 py-2">
                             <button onClick={() => handleDeleteLog(log)}
                               className="text-xs text-red-400 hover:text-red-600 hover:underline">삭제</button>

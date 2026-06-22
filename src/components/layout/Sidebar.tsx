@@ -7,7 +7,10 @@ import { useEffect, useState } from 'react';
 import { clearUser, getUser } from '@/lib/auth';
 import { supabaseFetch } from '@/lib/supabase';
 
-const menuItems = [
+type MenuItem = { href: string; label: string; icon: string; badge?: boolean; roles?: string[] };
+type MenuGroup = { group: string; items: MenuItem[] };
+
+const menuItems: MenuGroup[] = [
   {
     group: '홈',
     items: [
@@ -48,7 +51,7 @@ const menuItems = [
   {
     group: '관리',
     items: [
-      { href: '/cards', label: '카드·매입', icon: '💳' },
+      { href: '/cards', label: '카드·매입', icon: '💳', roles: ['ceo', 'admin', 'sales'] },
       { href: '/partners', label: '거래처 관리', icon: '🤝' },
       { href: '/accounts', label: '계정 관리', icon: '🔑' },
       { href: '/notices', label: '공지사항', icon: '📢' },
@@ -136,12 +139,17 @@ export default function Sidebar({ mobileOpen, onClose }: SidebarProps) {
 
         {/* 메뉴 */}
         <nav className="flex-1 overflow-y-auto py-4 px-3">
-          {menuItems.map((group) => (
+          {menuItems.map((group) => {
+            const visibleItems = group.items.filter(
+              (item) => !item.roles || item.roles.includes(user?.role || '')
+            );
+            if (visibleItems.length === 0) return null;
+            return (
             <div key={group.group} className="mb-4">
               <div className="px-3 py-1 text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">
                 {group.group}
               </div>
-              {group.items.map((item) => {
+              {visibleItems.map((item) => {
                 const isActive = pathname === item.href || pathname.startsWith(item.href + '/');
                 const showBadge = item.badge && pendingCount > 0;
                 return (
@@ -168,7 +176,8 @@ export default function Sidebar({ mobileOpen, onClose }: SidebarProps) {
                 );
               })}
             </div>
-          ))}
+            );
+          })}
         </nav>
 
         {/* 하단 사용자 정보 */}

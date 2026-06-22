@@ -5,7 +5,7 @@ import { supabaseFetch } from '@/lib/supabase';
 import { getUser } from '@/lib/auth';
 
 const ROLE_LABEL: Record<string, string> = {
-  ceo: '대표', admin: '실장', manager: '매니저', sales: '영업', inventory: '재고', md: 'MD',
+  ceo: '대표', admin: '실장', manager: '매니저', sales: '영업·재무', inventory: '재고', md: 'MD',
 };
 
 export default function ProfileContent() {

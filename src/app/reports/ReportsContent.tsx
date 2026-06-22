@@ -48,6 +48,7 @@ const EMPTY: Omit<Report, 'id' | 'created_at'> = {
 export default function ReportsContent() {
   const me = getUser();
   const isCeo = me?.role === 'ceo';
+  const isManager = isCeo || me?.role === 'admin'; // 대표·실장 전체 수정·삭제
 
   const [reports, setReports] = useState<Report[]>([]);
   const [events, setEvents] = useState<CalEventLite[]>([]);
@@ -139,7 +140,7 @@ export default function ReportsContent() {
     XLSX.writeFile(wb, `업무보고_${today()}.xlsx`);
   }
 
-  const canEdit = (r: Report) => isCeo || r.author === me?.name;
+  const canEdit = (r: Report) => isManager || r.author === me?.name;
   const linkedEvent = (id?: string) => events.find(e => e.id === id);
 
   // ── 상세 ──

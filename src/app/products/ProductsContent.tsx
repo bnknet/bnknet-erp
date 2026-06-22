@@ -35,7 +35,8 @@ type View = 'list' | 'detail' | 'form';
 
 export default function ProductsContent() {
   const me = getUser();
-  const isAdmin = me?.role === 'ceo' || me?.role === 'admin';
+  // 상품 등록/수정 = 대표·실장·영업(강웅구)·재고담당(박정진/최영훈)
+  const isAdmin = ['ceo', 'admin', 'sales', 'inventory'].includes(me?.role || '');
 
   const [view, setView] = useState<View>('list');
   const [products, setProducts] = useState<Product[]>([]);
