@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabaseFetch } from '@/lib/supabase';
 import { getUser } from '@/lib/auth';
-import { Card, computePaymentDate, toISO } from '@/lib/cardBilling';
+import { Card, computePaymentDate, toISO, logCardChange } from '@/lib/cardBilling';
 
 interface ApprovalItem {
   id?: string;
@@ -505,6 +505,9 @@ export default function ApprovalContent() {
         refund_due_date: refundDate,
       }),
     });
+    const cardName = cards.find(c => c.id === approval.card_id)?.card_name || '';
+    await logCardChange('매입취소', `${approval.company} ${approval.total_amount.toLocaleString()}원${cardName ? ` · ${cardName}` : ''}`,
+      `환불예정일 ${refundDate}`, me?.name || '');
     setShowCancelModal(false);
     await loadDetail(approval.id);
     await loadApprovals();
@@ -516,6 +519,9 @@ export default function ApprovalContent() {
       method: 'PATCH', headers: { Prefer: 'return=minimal' },
       body: JSON.stringify({ purchase_status: 'normal', canceled_at: null, refund_due_date: null }),
     });
+    const cardName = cards.find(c => c.id === approval.card_id)?.card_name || '';
+    await logCardChange('취소철회', `${approval.company} ${approval.total_amount.toLocaleString()}원${cardName ? ` · ${cardName}` : ''}`,
+      '정상 매입으로 복원', me?.name || '');
     await loadDetail(approval.id);
     await loadApprovals();
   }

@@ -25,6 +25,18 @@ export const CARD_TYPE_COLORS: Record<string, string> = {
   '대표': 'bg-amber-100 text-amber-700',
 };
 
+// 카드·매입 변경 로그 기록 (감사용)
+export async function logCardChange(action: string, target: string, detail: string, actor: string) {
+  try {
+    const { supabaseFetch } = await import('./supabase');
+    await supabaseFetch('/card_logs', {
+      method: 'POST',
+      headers: { Prefer: 'return=minimal' },
+      body: JSON.stringify({ action, target, detail, actor }),
+    });
+  } catch { /* 로그 실패는 무시 */ }
+}
+
 function lastDayOfMonth(year: number, month: number): number {
   return new Date(year, month + 1, 0).getDate();
 }

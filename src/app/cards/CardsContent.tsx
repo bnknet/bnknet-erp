@@ -5,8 +5,17 @@ import * as XLSX from 'xlsx';
 import { supabaseFetch } from '@/lib/supabase';
 import { getUser } from '@/lib/auth';
 import {
-  Card, CARD_TYPES, CARD_TYPE_COLORS, formatBillingCycle, toISO,
+  Card, CARD_TYPES, CARD_TYPE_COLORS, formatBillingCycle, toISO, logCardChange,
 } from '@/lib/cardBilling';
+
+interface CardLog {
+  id: string;
+  action: string;
+  target?: string;
+  detail?: string;
+  actor?: string;
+  created_at: string;
+}
 
 // 승인된 지출결의서 중 카드 매입건
 interface CardPurchase {
@@ -44,7 +53,7 @@ const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
 function ymd(d: Date) { return toISO(d); }
 function won(n: number) { return n.toLocaleString(); }
 
-type Tab = 'calendar' | 'cards';
+type Tab = 'calendar' | 'cards' | 'log';
 
 export default function CardsContent() {
   const me = getUser();
@@ -54,6 +63,7 @@ export default function CardsContent() {
   const [tab, setTab] = useState<Tab>('calendar');
   const [cards, setCards] = useState<Card[]>([]);
   const [purchases, setPurchases] = useState<CardPurchase[]>([]);
+  const [logs, setLogs] = useState<CardLog[]>([]);
   const [loading, setLoading] = useState(true);
 
   // 카드 폼
@@ -84,13 +94,19 @@ export default function CardsContent() {
     setPurchases(Array.isArray(data) ? data : []);
   }, []);
 
+  const loadLogs = useCallback(async () => {
+    const res = await supabaseFetch('/card_logs?order=created_at.desc&limit=200');
+    const data = await res.json();
+    setLogs(Array.isArray(data) ? data : []);
+  }, []);
+
   useEffect(() => {
     (async () => {
       setLoading(true);
-      await Promise.all([loadCards(), loadPurchases()]);
+      await Promise.all([loadCards(), loadPurchases(), loadLogs()]);
       setLoading(false);
     })();
-  }, [loadCards, loadPurchases]);
+  }, [loadCards, loadPurchases, loadLogs]);
 
   // ── 카드 저장 ──
   async function saveCard() {
@@ -103,21 +119,24 @@ export default function CardsContent() {
         billing_day: Number(form.billing_day) || 1,
         close_day: Number(form.close_day) || 31,
       };
+      const detail = `한도 ${(Number(form.limit_amount) || 0).toLocaleString()}원 · 결제일 ${form.billing_day}일 · 마감 ${form.close_day >= 31 ? '말일' : form.close_day + '일'}`;
       if (editId) {
         await supabaseFetch(`/cards?id=eq.${editId}`, {
           method: 'PATCH', headers: { Prefer: 'return=minimal' },
           body: JSON.stringify(payload),
         });
+        await logCardChange('카드수정', `[${form.card_type}] ${form.card_name}`, detail, me?.name || '');
       } else {
         await supabaseFetch('/cards', {
           method: 'POST', headers: { Prefer: 'return=minimal' },
           body: JSON.stringify({ ...payload, sort_order: cards.length }),
         });
+        await logCardChange('카드등록', `[${form.card_type}] ${form.card_name}`, detail, me?.name || '');
       }
       setShowForm(false);
       setEditId(null);
       setForm({ ...EMPTY_CARD });
-      await loadCards();
+      await Promise.all([loadCards(), loadLogs()]);
     } finally { setSaving(false); }
   }
 
@@ -135,8 +154,10 @@ export default function CardsContent() {
 
   async function deleteCard(id: string) {
     if (!confirm('카드를 삭제하시겠습니까?')) return;
+    const c = cards.find(x => x.id === id);
     await supabaseFetch(`/cards?id=eq.${id}`, { method: 'DELETE' });
-    await loadCards();
+    if (c) await logCardChange('카드삭제', `[${c.card_type}] ${c.card_name}`, '', me?.name || '');
+    await Promise.all([loadCards(), loadLogs()]);
   }
 
   // ── 캘린더 이벤트 생성 ──
@@ -309,6 +330,12 @@ export default function CardsContent() {
           className={`px-4 py-2 rounded-t-lg text-sm font-medium border-b-2 ${tab === 'cards' ? 'border-blue-600 text-blue-600 bg-white' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
           카드 목록
         </button>
+        {canManage && (
+          <button onClick={() => setTab('log')}
+            className={`px-4 py-2 rounded-t-lg text-sm font-medium border-b-2 ${tab === 'log' ? 'border-blue-600 text-blue-600 bg-white' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
+            변경 로그
+          </button>
+        )}
       </div>
 
       {loading ? (
@@ -364,6 +391,32 @@ export default function CardsContent() {
                           <div className={`h-full rounded-full ${usePct >= 90 ? 'bg-red-400' : usePct >= 70 ? 'bg-orange-400' : 'bg-blue-400'}`} style={{ width: `${usePct}%` }} />
                         </div>
                       )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      ) : tab === 'log' ? (
+        // ─────────── 변경 로그 ───────────
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+          {logs.length === 0 ? (
+            <div className="text-center py-12 text-gray-400">변경 기록이 없습니다</div>
+          ) : (
+            <div className="divide-y divide-gray-50">
+              {logs.map(l => {
+                const color = l.action.includes('삭제') || l.action.includes('취소') ? 'bg-red-50 text-red-600'
+                  : l.action.includes('등록') ? 'bg-green-50 text-green-600' : 'bg-blue-50 text-blue-600';
+                return (
+                  <div key={l.id} className="px-4 py-3 flex items-start gap-3">
+                    <span className={`text-xs px-2 py-0.5 rounded-md font-medium flex-shrink-0 ${color}`}>{l.action}</span>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-medium text-gray-800">{l.target}</div>
+                      {l.detail && <div className="text-xs text-gray-500 mt-0.5">{l.detail}</div>}
+                      <div className="text-xs text-gray-400 mt-0.5">
+                        {l.actor} · {new Date(l.created_at).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                      </div>
                     </div>
                   </div>
                 );
