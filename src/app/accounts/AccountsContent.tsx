@@ -11,6 +11,7 @@ interface Account {
   url?: string;
   memo?: string;
   category: string;
+  company: string;
   created_at: string;
 }
 
