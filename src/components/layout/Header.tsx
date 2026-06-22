@@ -8,7 +8,6 @@ const pageTitles: Record<string, string> = {
   '/dashboard': '대시보드',
   '/sales': '매출 현황',
   '/orders': '주문 변환',
-  '/settlement': '정산 관리',
   '/sales-target': '매출 목표',
   '/inventory': '재고 관리',
   '/products': '상품 마스터',

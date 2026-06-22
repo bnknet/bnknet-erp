@@ -19,7 +19,6 @@ const menuItems = [
     items: [
       { href: '/sales', label: '매출 현황', icon: '💰' },
       { href: '/orders', label: '주문 변환', icon: '📦' },
-      { href: '/settlement', label: '정산 관리', icon: '🧾' },
       { href: '/sales-target', label: '매출 목표', icon: '🎯' },
     ],
   },
