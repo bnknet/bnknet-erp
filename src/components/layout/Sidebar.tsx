@@ -14,6 +14,7 @@ const menuItems: MenuGroup[] = [
   {
     group: '홈',
     items: [
+      { href: '/notices', label: '공지사항', icon: '📢' },
       { href: '/dashboard', label: '대시보드', icon: '📊' },
     ],
   },
@@ -54,7 +55,6 @@ const menuItems: MenuGroup[] = [
       { href: '/cards', label: '카드·매입', icon: '💳', roles: ['ceo', 'admin', 'sales'] },
       { href: '/partners', label: '거래처 관리', icon: '🤝' },
       { href: '/accounts', label: '계정 관리', icon: '🔑' },
-      { href: '/notices', label: '공지사항', icon: '📢' },
     ],
   },
 ];
