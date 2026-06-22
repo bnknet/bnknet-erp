@@ -27,7 +27,7 @@ const UNITS = ['개', '박스', '세트', '포', '병', '팩'];
 
 const EMPTY_FORM = {
   name: '', category: '건강기능식품', brand: '', company: 'BNKNET',
-  sku: '', barcode: '', cost_price: 0,
+  sku: '', barcode: '', cost_price: 0, sell_price: 0,
   unit: '개', memo: '', is_active: true,
 };
 

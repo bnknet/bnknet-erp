@@ -784,7 +784,7 @@ export interface RawOrderRow {
 export interface ConvertedOrderRow extends RawOrderRow {
   '상품명': string;
   '수량(주문수량*EA)': number;
-  '_is_bundle': boolean;
+  '_is_bundle': 0 | 1;
 }
 
 export function convertOrders(raw: RawOrderRow[]): ConvertedOrderRow[] {
@@ -814,7 +814,7 @@ export function convertOrders(raw: RawOrderRow[]): ConvertedOrderRow[] {
       ...row,
       '상품명': mappedName,
       '수량(주문수량*EA)': finalQty,
-      '_is_bundle': bundleRows.has(idx),
+      '_is_bundle': bundleRows.has(idx) ? 1 : 0,
     };
   });
 

@@ -22,6 +22,7 @@ interface InventoryItem {
 
 interface InventoryLog {
   id: string;
+  inventory_id: string;
   product_name: string;
   type: string;
   quantity: number;
