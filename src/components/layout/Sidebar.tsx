@@ -158,7 +158,7 @@ export default function Sidebar({ mobileOpen, onClose }: SidebarProps) {
                       }
                     `}
                   >
-                    <span className="text-base">{item.icon}</span>
+                    <span className="text-base w-5 flex-shrink-0 inline-flex items-center justify-center leading-none">{item.icon}</span>
                     <span className="flex-1">{item.label}</span>
                     {showBadge && (
                       <span className="bg-red-500 text-white text-xs font-bold rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1">
