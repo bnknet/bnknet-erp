@@ -574,9 +574,9 @@ export default function ApprovalContent() {
       <div className="space-y-4">
         <button onClick={() => setView('list')} className="text-sm text-blue-600 hover:text-blue-700">← 목록으로</button>
 
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-8 max-w-3xl mx-auto">
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-4 sm:p-8 max-w-3xl mx-auto">
           {/* 헤더 */}
-          <div className="flex items-start justify-between mb-6">
+          <div className="flex items-start justify-between gap-3 mb-6 flex-wrap">
             <div>
               <h2 className="text-2xl font-bold text-gray-800 tracking-widest">
                 〈 {isVacation ? '휴 가 신 청 서' : '지 출 결 의 서'} 〉
@@ -644,7 +644,8 @@ export default function ApprovalContent() {
                   <div className="px-4 py-2 text-sm font-bold border-l border-gray-400 w-36 text-right">{selected.total_amount.toLocaleString()} 원</div>
                 </div>
               </div>
-              <div className="border border-gray-400 mb-4">
+              <div className="overflow-x-auto mb-4">
+               <div className="border border-gray-400 min-w-[480px]">
                 {[
                   { label: '발의', date: selected.issue_date, l2: '정리 인', v2: selected.organizer, l3: '처리사항', v3: selected.processor },
                   { label: '결재', date: selected.settle_date, l2: '인', v2: '', l3: '계정과목', v3: selected.account },
@@ -659,8 +660,10 @@ export default function ApprovalContent() {
                     <div className="px-3 py-2 flex-1">{row.v3}</div>
                   </div>
                 ))}
+               </div>
               </div>
-              <div className="border border-gray-400 mb-4">
+              <div className="overflow-x-auto mb-4">
+               <div className="border border-gray-400 min-w-[480px]">
                 <div className="flex bg-gray-50 border-b border-gray-400 text-sm font-medium text-center">
                   <div className="w-20 px-2 py-2 border-r border-gray-400">월/일</div>
                   <div className="flex-1 px-2 py-2 border-r border-gray-400">적 요</div>
@@ -681,6 +684,7 @@ export default function ApprovalContent() {
                   <div className="w-32 px-2 py-2 border-r border-gray-400 text-right">₩{selected.total_amount.toLocaleString()}</div>
                   <div className="w-36 px-2 py-2" />
                 </div>
+               </div>
               </div>
               {/* 카드 매입 정보 */}
               {selected.card_id && (
@@ -1211,42 +1215,75 @@ export default function ApprovalContent() {
         ) : approvals.length === 0 ? (
           <div className="text-center py-12 text-gray-400">결재 문서가 없습니다</div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-gray-50 border-b border-gray-100">
-                <tr>
-                  {['문서종류', '사업자', '발의일', '내용', '작성자', '상태', ''].map(h => (
-                    <th key={h} className="px-4 py-3 text-left text-xs font-medium text-gray-500">{h}</th>
+          <>
+            {/* 데스크탑: 표 */}
+            <div className="overflow-x-auto hidden sm:block">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50 border-b border-gray-100">
+                  <tr>
+                    {['문서종류', '사업자', '발의일', '내용', '작성자', '상태', ''].map(h => (
+                      <th key={h} className="px-4 py-3 text-left text-xs font-medium text-gray-500">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {approvals.map(a => (
+                    <tr key={a.id} onClick={() => loadDetail(a.id)} className="hover:bg-blue-50/40 cursor-pointer">
+                      <td className="px-4 py-3 font-medium text-gray-800">{a.doc_type}</td>
+                      <td className="px-4 py-3 text-gray-500">{a.company}</td>
+                      <td className="px-4 py-3 text-gray-500">{a.issue_date}</td>
+                      <td className="px-4 py-3 text-gray-500 text-xs">
+                        {a.doc_type === '휴가신청서'
+                          ? `${VACATION_TYPES.find(v => v.value === a.vacation_type)?.label || a.vacation_type} ${a.vacation_days}일`
+                          : `${a.total_amount.toLocaleString()}원`}
+                      </td>
+                      <td className="px-4 py-3 text-gray-500">{a.submitter_name}</td>
+                      <td className="px-4 py-3">
+                        <span className={`text-xs px-2 py-0.5 rounded-md font-medium ${STATUS_MAP[a.status]?.color}`}>
+                          {STATUS_MAP[a.status]?.label}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
+                        {isMyTurn(a) && (
+                          <span className="text-xs text-yellow-600 font-medium bg-yellow-50 px-2 py-0.5 rounded-md">결재 대기</span>
+                        )}
+                      </td>
+                    </tr>
                   ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-50">
-                {approvals.map(a => (
-                  <tr key={a.id} onClick={() => loadDetail(a.id)} className="hover:bg-blue-50/40 cursor-pointer">
-                    <td className="px-4 py-3 font-medium text-gray-800">{a.doc_type}</td>
-                    <td className="px-4 py-3 text-gray-500">{a.company}</td>
-                    <td className="px-4 py-3 text-gray-500">{a.issue_date}</td>
-                    <td className="px-4 py-3 text-gray-500 text-xs">
+                </tbody>
+              </table>
+            </div>
+
+            {/* 모바일: 카드형 */}
+            <div className="sm:hidden divide-y divide-gray-100">
+              {approvals.map(a => (
+                <div key={a.id} onClick={() => loadDetail(a.id)} className="px-4 py-3.5 active:bg-blue-50/40">
+                  <div className="flex items-center justify-between gap-2 mb-1.5">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="font-bold text-gray-800 text-[15px]">{a.doc_type}</span>
+                      <span className="text-xs text-gray-400 truncate">{a.company}</span>
+                    </div>
+                    <span className={`text-xs px-2 py-0.5 rounded-md font-medium flex-shrink-0 ${STATUS_MAP[a.status]?.color}`}>
+                      {STATUS_MAP[a.status]?.label}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="text-sm text-gray-600 font-medium">
                       {a.doc_type === '휴가신청서'
                         ? `${VACATION_TYPES.find(v => v.value === a.vacation_type)?.label || a.vacation_type} ${a.vacation_days}일`
                         : `${a.total_amount.toLocaleString()}원`}
-                    </td>
-                    <td className="px-4 py-3 text-gray-500">{a.submitter_name}</td>
-                    <td className="px-4 py-3">
-                      <span className={`text-xs px-2 py-0.5 rounded-md font-medium ${STATUS_MAP[a.status]?.color}`}>
-                        {STATUS_MAP[a.status]?.label}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
-                      {isMyTurn(a) && (
-                        <span className="text-xs text-yellow-600 font-medium bg-yellow-50 px-2 py-0.5 rounded-md">결재 대기</span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                    </div>
+                    <div className="text-xs text-gray-400">{a.submitter_name} · {a.issue_date}</div>
+                  </div>
+                  {isMyTurn(a) && (
+                    <div className="mt-2">
+                      <span className="text-xs text-yellow-700 font-bold bg-yellow-50 px-2 py-1 rounded-md">⏳ 내 결재 대기</span>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </>
         )}
       </div>
     </div>
