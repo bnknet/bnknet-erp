@@ -215,12 +215,16 @@ export default function ApprovalContent() {
     try {
       let query = '/approvals?order=created_at.desc';
       if (filterStatus !== 'all') query += `&status=eq.${filterStatus}`;
+      // 대표·실장은 전체, 일반 직원은 본인이 작성한 문서만
+      if (!isCeo && !isAdmin && me?.name) {
+        query += `&submitter_name=eq.${encodeURIComponent(me.name)}`;
+      }
       const res = await supabaseFetch(query);
       const data = await res.json();
       setApprovals(Array.isArray(data) ? data : []);
     } catch { setApprovals([]); }
     finally { setLoading(false); }
-  }, [filterStatus]);
+  }, [filterStatus, isCeo, isAdmin, me?.name]);
 
   useEffect(() => { loadApprovals(); }, [loadApprovals]);
 
