@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabaseFetch } from '@/lib/supabase';
 import { getUser } from '@/lib/auth';
+import { Card, computePaymentDate, toISO } from '@/lib/cardBilling';
 
 interface ApprovalItem {
   id?: string;
@@ -37,6 +38,13 @@ interface Approval {
   final_approver_at?: string;
   rejection_reason?: string;
   created_at: string;
+  // 카드 매입 전용 필드 (지출결의서)
+  card_id?: string;
+  purchase_vendor?: string;
+  payment_due_date?: string;
+  purchase_status?: string;
+  canceled_at?: string;
+  refund_due_date?: string;
   // 휴가신청서 전용 필드
   vacation_type?: string;
   vacation_start?: string;
@@ -170,9 +178,16 @@ export default function ApprovalContent() {
   const [organizer, setOrganizer] = useState(me?.name || '');
   const [processor, setProcessor] = useState('');
   const [account, setAccount] = useState('');
+  const [cardId, setCardId] = useState('');
+  const [purchaseVendor, setPurchaseVendor] = useState('');
+  const [cards, setCards] = useState<Card[]>([]);
   const [items, setItems] = useState<ApprovalItem[]>(
     [0,1,2,3,4].map(i => ({ ...EMPTY_ITEM, sort_order: i }))
   );
+
+  // 취소(환불) 모달
+  const [showCancelModal, setShowCancelModal] = useState(false);
+  const [refundDate, setRefundDate] = useState(today());
 
   // 휴가신청서 폼
   const [vacationType, setVacationType] = useState('annual');
@@ -208,6 +223,20 @@ export default function ApprovalContent() {
   }, [filterStatus]);
 
   useEffect(() => { loadApprovals(); }, [loadApprovals]);
+
+  // 카드 목록 로드 (지출결의서 결제카드 선택용)
+  useEffect(() => {
+    (async () => {
+      const res = await supabaseFetch('/cards?is_active=eq.true&order=sort_order.asc');
+      const data = await res.json();
+      setCards(Array.isArray(data) ? data : []);
+    })();
+  }, []);
+
+  const selectedCard = cards.find(c => c.id === cardId);
+  const paymentDuePreview = selectedCard
+    ? computePaymentDate(spendDate, selectedCard.billing_day, selectedCard.close_day)
+    : '';
 
   const loadLeaveData = useCallback(async () => {
     if (!isCeo && !isAdmin) return;
@@ -311,6 +340,8 @@ export default function ApprovalContent() {
           updated_at: new Date().toISOString(),
         };
       } else {
+        const card = cards.find(c => c.id === cardId);
+        const paymentDue = card ? computePaymentDate(spendDate, card.billing_day, card.close_day) : null;
         payload = {
           doc_type: '지출결의서', company,
           issue_date: issueDate, settle_date: settleDate, spend_date: spendDate,
@@ -323,6 +354,11 @@ export default function ApprovalContent() {
           approver2_status: hasStep2 ? 'pending' : null,
           final_approver_status: 'pending',
           rejection_reason: null,
+          card_id: cardId || null,
+          purchase_vendor: purchaseVendor || null,
+          payment_due_date: paymentDue,
+          purchase_status: 'normal',
+          canceled_at: null, refund_due_date: null,
           vacation_type: null, vacation_start: null, vacation_end: null,
           vacation_days: null, vacation_reason: null,
           updated_at: new Date().toISOString(),
@@ -430,6 +466,8 @@ export default function ApprovalContent() {
       setOrganizer(approval.organizer || '');
       setProcessor(approval.processor || '');
       setAccount(approval.account || '');
+      setCardId(approval.card_id || '');
+      setPurchaseVendor(approval.purchase_vendor || '');
       const loaded = (approval.items || []).map((i, idx) => ({ ...i, sort_order: idx }));
       const padded = [...loaded, ...[0,1,2,3,4].map(i => ({ ...EMPTY_ITEM, sort_order: i }))].slice(0, Math.max(5, loaded.length));
       setItems(padded);
@@ -445,11 +483,45 @@ export default function ApprovalContent() {
     await loadApprovals();
   }
 
+  // 카드 매입 취소 → 환불(-) 처리
+  function openCancelModal(approval: Approval) {
+    const card = cards.find(c => c.id === approval.card_id);
+    // 환불 예정일: 취소 시점(오늘) 기준 다음 결제일 자동 계산, 없으면 오늘
+    const def = card ? computePaymentDate(toISO(new Date()), card.billing_day, card.close_day) : today();
+    setRefundDate(def);
+    setShowCancelModal(true);
+  }
+
+  async function handleCancelPurchase(approval: Approval) {
+    await supabaseFetch(`/approvals?id=eq.${approval.id}`, {
+      method: 'PATCH', headers: { Prefer: 'return=minimal' },
+      body: JSON.stringify({
+        purchase_status: 'canceled',
+        canceled_at: new Date().toISOString(),
+        refund_due_date: refundDate,
+      }),
+    });
+    setShowCancelModal(false);
+    await loadDetail(approval.id);
+    await loadApprovals();
+  }
+
+  async function handleUncancelPurchase(approval: Approval) {
+    if (!confirm('취소를 철회하고 정상 매입으로 되돌리시겠습니까?')) return;
+    await supabaseFetch(`/approvals?id=eq.${approval.id}`, {
+      method: 'PATCH', headers: { Prefer: 'return=minimal' },
+      body: JSON.stringify({ purchase_status: 'normal', canceled_at: null, refund_due_date: null }),
+    });
+    await loadDetail(approval.id);
+    await loadApprovals();
+  }
+
   function resetForm() {
     setDocType('지출결의서');
     setCompany(me?.company || 'BNKNET');
     setIssueDate(today()); setSettleDate(today()); setSpendDate(today());
     setOrganizer(me?.name || ''); setProcessor(''); setAccount('');
+    setCardId(''); setPurchaseVendor('');
     setItems([0,1,2,3,4].map(i => ({ ...EMPTY_ITEM, sort_order: i })));
     setVacationType('annual');
     setVacationStart(today()); setVacationEnd(today()); setVacationReason('');
@@ -606,6 +678,27 @@ export default function ApprovalContent() {
                   <div className="w-36 px-2 py-2" />
                 </div>
               </div>
+              {/* 카드 매입 정보 */}
+              {selected.card_id && (
+                <div className={`border rounded-xl px-4 py-3 mb-4 ${selected.purchase_status === 'canceled' ? 'bg-red-50 border-red-200' : 'bg-blue-50 border-blue-100'}`}>
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <div className="text-sm">
+                      <span className="font-medium text-gray-700">💳 결제카드</span>
+                      <span className="ml-2 text-gray-600">{cards.find(c => c.id === selected.card_id)?.card_name || '(삭제된 카드)'}</span>
+                      {selected.purchase_vendor && <span className="ml-2 text-gray-400">· {selected.purchase_vendor}</span>}
+                    </div>
+                    {selected.payment_due_date && (
+                      <div className="text-sm text-blue-700">결제예정일 <span className="font-bold">{selected.payment_due_date}</span></div>
+                    )}
+                  </div>
+                  {selected.purchase_status === 'canceled' && (
+                    <div className="mt-2 text-sm text-red-600 font-medium">
+                      ⚠️ 구매 취소됨 · 환불예정일 {selected.refund_due_date} (-{selected.total_amount.toLocaleString()}원)
+                    </div>
+                  )}
+                </div>
+              )}
+
               <div className="text-center text-sm text-gray-600 border border-gray-400 py-4 mb-6">
                 <p>위 금액을 정히 영수(청구) 합니다.</p>
                 <p className="mt-1">{selected.issue_date} &nbsp;&nbsp; 영수자 [ {selected.organizer} ]</p>
@@ -633,12 +726,45 @@ export default function ApprovalContent() {
               <button onClick={() => openResubmit(selected)}
                 className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-medium">수정 후 재상신</button>
             )}
+            {/* 카드 매입 취소/철회 (승인된 카드 결제건) */}
+            {selected.doc_type === '지출결의서' && selected.card_id && selected.status === 'approved' &&
+              (isCeo || isAdmin || selected.submitter_name === me?.name) && (
+                selected.purchase_status === 'canceled' ? (
+                  <button onClick={() => handleUncancelPurchase(selected)}
+                    className="px-5 py-2 border border-gray-200 text-gray-600 rounded-xl text-sm hover:bg-gray-50">취소 철회</button>
+                ) : (
+                  <button onClick={() => openCancelModal(selected)}
+                    className="px-5 py-2 border border-orange-200 text-orange-600 rounded-xl text-sm hover:bg-orange-50">구매 취소(환불)</button>
+                )
+              )}
             {canDelete && (
               <button onClick={() => handleDelete(selected.id)}
                 className="px-5 py-2 border border-red-200 text-red-500 rounded-xl text-sm hover:bg-red-50">삭제</button>
             )}
           </div>
         </div>
+
+        {/* 카드 매입 취소 모달 */}
+        {showCancelModal && (
+          <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6">
+              <h3 className="text-lg font-bold text-gray-800 mb-2">구매 취소 (환불 처리)</h3>
+              <p className="text-sm text-gray-500 mb-4">
+                재고품절·판매자 사정 등으로 취소된 건입니다. 카드 캘린더에 <span className="text-red-500 font-medium">−{selected.total_amount.toLocaleString()}원</span>(환불)이 반영됩니다.
+              </p>
+              <label className="block text-xs font-medium text-gray-500 mb-1">환불 예정일</label>
+              <input type="date" value={refundDate} onChange={e => setRefundDate(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-orange-400" />
+              <p className="text-xs text-gray-400 mt-1.5">보통 다음 카드 명세서에 반영됩니다. (자동 계산됨, 수정 가능)</p>
+              <div className="flex gap-3 mt-5">
+                <button onClick={() => handleCancelPurchase(selected)}
+                  className="flex-1 px-5 py-2.5 bg-orange-500 hover:bg-orange-600 text-white rounded-xl text-sm font-medium">취소 확정</button>
+                <button onClick={() => setShowCancelModal(false)}
+                  className="px-5 py-2.5 border border-gray-200 text-gray-600 rounded-xl text-sm hover:bg-gray-50">닫기</button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {showRejectModal && (
           <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
@@ -759,7 +885,7 @@ export default function ApprovalContent() {
         ) : (
           /* ── 지출결의서 폼 ── */
           <>
-            <div className="flex items-center gap-3 mb-6">
+            <div className="flex items-center gap-3 mb-4">
               <span className="text-sm font-medium text-gray-600">사업자</span>
               <div className="flex gap-2">
                 {COMPANIES.map(c => (
@@ -768,6 +894,32 @@ export default function ApprovalContent() {
                     {c}
                   </button>
                 ))}
+              </div>
+            </div>
+
+            {/* 결제 카드 / 구매처 */}
+            <div className="grid sm:grid-cols-2 gap-3 mb-6 bg-blue-50/50 border border-blue-100 rounded-xl p-4">
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1">결제 카드</label>
+                <select value={cardId} onChange={e => setCardId(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-400">
+                  <option value="">선택 안 함 (현금/계좌이체 등)</option>
+                  {cards.map(c => (
+                    <option key={c.id} value={c.id}>[{c.card_type}] {c.card_name} {c.holder_name ? `· ${c.holder_name}` : ''}</option>
+                  ))}
+                </select>
+                {selectedCard && paymentDuePreview && (
+                  <p className="text-xs text-blue-600 mt-1.5">💳 결제예정일: <span className="font-bold">{paymentDuePreview}</span> (구매일 {spendDate} 기준)</p>
+                )}
+                {cards.length === 0 && (
+                  <p className="text-xs text-gray-400 mt-1.5">카드·매입 메뉴에서 카드를 먼저 등록하세요.</p>
+                )}
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1">구매처 (홈쇼핑사 등)</label>
+                <input value={purchaseVendor} onChange={e => setPurchaseVendor(e.target.value)}
+                  placeholder="예: GS홈쇼핑, 롯데홈쇼핑"
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-400" />
               </div>
             </div>
 
