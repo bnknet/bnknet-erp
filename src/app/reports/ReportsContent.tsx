@@ -230,7 +230,6 @@ export default function ReportsContent() {
             <div>
               <label className="block text-xs font-medium text-gray-500 mb-1">참석자</label>
               <input value={form.attendees} onChange={e => setForm({ ...form, attendees: e.target.value })}
-                placeholder="예: 강웅구, 현대백화점 김부장"
                 className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
             </div>
             {[
