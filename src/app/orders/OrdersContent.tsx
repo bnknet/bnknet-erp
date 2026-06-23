@@ -25,6 +25,7 @@ export default function OrdersContent() {
   const [tab, setTab] = useState<Tab>('convert');
   const [status, setStatus] = useState<Status>(null);
   const [resultData, setResultData] = useState<ConvertedOrderRow[]>([]);
+  const [headerOrder, setHeaderOrder] = useState<string[]>([]);
   const [fileName, setFileName] = useState('');
   const [history, setHistory] = useState<HistoryGroup[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -51,6 +52,10 @@ export default function OrdersContent() {
         return;
       }
 
+      // 원본 파일의 열 순서·열 구성을 그대로 보존 (다운로드 시 사용)
+      const headerRow = (XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' })[0] as unknown[]) || [];
+      setHeaderOrder(headerRow.map((h) => String(h)).filter((h) => h !== ''));
+
       const converted = convertOrders(raw);
       setResultData(converted);
       const bundleCount = converted.filter((r) => r._is_bundle).length;
@@ -68,24 +73,27 @@ export default function OrdersContent() {
     if (!resultData.length) return;
     const XLSX = await import('xlsx');
 
-    const exportRows = resultData.map((r) => ({
-      '몰명': r['몰명'] || '',
-      '주문번호': r['주문번호'] || '',
-      '수취인명': r['수취인명'] || '',
-      '전화번호': r['전화번호'] || '',
-      '핸드폰번호': r['핸드폰번호'] || '',
-      '우편번호': r['우편번호'] || '',
-      '주소': r['주소'] || '',
-      '배송메세지': r['배송메세지'] || '',
-      '상품명': r['상품명'] || '',
-      '옵션': r['옵션'] || '',
-      '수량(주문수량*EA)': r['수량(주문수량*EA)'],
-      '금액': r['금액'] || '',
-      '배송비': r['배송비'] || '',
-      '합구매여부': r['_is_bundle'] ? '합구매' : '',
-    }));
+    // 원본 파일의 열 순서·열 구성을 그대로 유지하고, 변환값(상품명·수량)만 덮어쓴다.
+    // 원본 헤더를 못 잡은 경우에만 변환 결과의 키를 사용 (_로 시작하는 내부 필드는 제외).
+    const headers = headerOrder.length
+      ? [...headerOrder]
+      : Object.keys(resultData[0]).filter((k) => !k.startsWith('_'));
+    if (!headers.includes('합구매여부')) headers.push('합구매여부');
 
-    const ws = XLSX.utils.json_to_sheet(exportRows);
+    const exportRows = resultData.map((r) => {
+      const obj: Record<string, string | number> = {};
+      headers.forEach((h) => {
+        if (h === '합구매여부') {
+          obj[h] = r['_is_bundle'] ? '합구매' : '';
+        } else {
+          const v = r[h];
+          obj[h] = v === undefined || v === null ? '' : (v as string | number);
+        }
+      });
+      return obj;
+    });
+
+    const ws = XLSX.utils.json_to_sheet(exportRows, { header: headers });
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, '변환결과');
     const today = new Date().toISOString().slice(0, 10);
@@ -245,7 +253,7 @@ export default function OrdersContent() {
                   💾 DB에 저장
                 </button>
                 <button
-                  onClick={() => { setResultData([]); setFileName(''); setStatus(null); }}
+                  onClick={() => { setResultData([]); setHeaderOrder([]); setFileName(''); setStatus(null); }}
                   className="px-5 py-2.5 bg-white hover:bg-gray-50 text-gray-600 rounded-xl font-medium text-sm border border-gray-200 transition-colors"
                 >
                   🔄 초기화
