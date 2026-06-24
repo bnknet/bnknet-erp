@@ -1,8 +1,16 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import { getUser } from '@/lib/auth';
+import { supabaseFetch } from '@/lib/supabase';
 
 const companies = ['더블아이', 'BNKNET', 'SJ글로벌', 'IX글로벌'];
+
+function yesterdayStr() {
+  const d = new Date();
+  d.setDate(d.getDate() - 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
 
 const quickMenus = [
   { href: '/orders', label: '주문 변환', icon: '📦', desc: '사방넷 파일 업로드·변환' },
@@ -15,13 +23,37 @@ const quickMenus = [
 
 export default function DashboardContent() {
   const user = getUser();
+  // 재고 자동저장 점검 대상 권한자
+  const canSeeSnapAlert = ['ceo', 'admin', 'sales', 'inventory'].includes(user?.role || '');
 
   const now = new Date();
   const greeting = now.getHours() < 12 ? '좋은 아침이에요' :
     now.getHours() < 18 ? '안녕하세요' : '수고하셨어요';
 
+  // 재고 자동저장(스냅샷) 누락 감지
+  const [lastSnapDate, setLastSnapDate] = useState<string | null>(null);
+  useEffect(() => {
+    if (!canSeeSnapAlert) return;
+    (async () => {
+      try {
+        const res = await supabaseFetch('/inventory_snapshots?select=snapshot_date&order=snapshot_date.desc&limit=1');
+        const data = await res.json();
+        setLastSnapDate(Array.isArray(data) && data[0] ? data[0].snapshot_date : null);
+      } catch { /* 무시 */ }
+    })();
+  }, [canSeeSnapAlert]);
+  const snapStale = !!lastSnapDate && lastSnapDate < yesterdayStr();
+
   return (
     <div className="space-y-6">
+      {/* 재고 자동저장 누락 경고 */}
+      {canSeeSnapAlert && snapStale && (
+        <a href="/inventory" className="block bg-red-50 border border-red-200 rounded-2xl px-5 py-4 hover:bg-red-100 transition-colors">
+          <div className="text-sm font-medium text-red-600">⚠️ 재고 자동저장이 멈춘 것 같습니다 — 마지막 저장: {lastSnapDate}</div>
+          <div className="text-xs text-red-400 mt-0.5">재고 관리 → 일자별 재고에서 &apos;지금 재고 저장&apos;을 눌러 복구하세요. (클릭하면 이동)</div>
+        </a>
+      )}
+
       {/* 인사말 */}
       <div className="bg-gradient-to-r from-blue-600 to-blue-700 rounded-2xl p-6 text-white shadow-lg shadow-blue-500/20">
         <p className="text-blue-200 text-sm">{greeting} 👋</p>
