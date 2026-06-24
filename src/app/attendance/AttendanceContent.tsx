@@ -75,8 +75,10 @@ export default function AttendanceContent() {
   const [records, setRecords] = useState<AttendanceRecord[]>([]);
   const [todayRecord, setTodayRecord] = useState<AttendanceRecord | null>(null);
   const [loading, setLoading] = useState(false);
-  const [locStatus, setLocStatus] = useState<'idle' | 'checking' | 'ok' | 'far' | 'denied'>('idle');
+  const [locStatus, setLocStatus] = useState<'idle' | 'checking' | 'ok' | 'far' | 'denied' | 'unavailable'>('idle');
   const [distance, setDistance] = useState<number | null>(null);
+  const [accuracy, setAccuracy] = useState<number | null>(null);
+  const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
 
   // 목록 필터
@@ -122,26 +124,46 @@ export default function AttendanceContent() {
 
   const isMobile = typeof navigator !== 'undefined' && /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
 
+  function getPosition(opts: PositionOptions): Promise<GeolocationPosition> {
+    return new Promise((resolve, reject) => {
+      navigator.geolocation.getCurrentPosition(resolve, reject, opts);
+    });
+  }
+
   async function checkLocation(): Promise<GeolocationPosition | null> {
     // PC에서는 위치 확인 없이 바로 통과
     if (!isMobile) {
       setLocStatus('ok');
       return { coords: { latitude: OFFICE_LAT, longitude: OFFICE_LNG, accuracy: 0, altitude: null, altitudeAccuracy: null, heading: null, speed: null }, timestamp: Date.now() } as GeolocationPosition;
     }
-    return new Promise((resolve) => {
-      if (!navigator.geolocation) { setLocStatus('denied'); resolve(null); return; }
-      setLocStatus('checking');
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          const dist = getDistanceM(pos.coords.latitude, pos.coords.longitude, OFFICE_LAT, OFFICE_LNG);
-          setDistance(Math.round(dist));
-          if (dist <= ALLOWED_RADIUS_M) { setLocStatus('ok'); resolve(pos); }
-          else { setLocStatus('far'); resolve(null); }
-        },
-        () => { setLocStatus('denied'); resolve(null); },
-        { enableHighAccuracy: true, timeout: 10000 }
-      );
-    });
+    if (!navigator.geolocation) { setLocStatus('denied'); return null; }
+    setLocStatus('checking');
+
+    let pos: GeolocationPosition;
+    try {
+      // 1차: 고정밀 시도 (최근 60초 내 잡은 위치는 재사용 허용 → 실내 지연 완화)
+      pos = await getPosition({ enableHighAccuracy: true, timeout: 12000, maximumAge: 60000 });
+    } catch (e1) {
+      // 권한 거부면 즉시 안내, 그 외(시간초과·위치불가)는 저정밀도로 재시도
+      if ((e1 as GeolocationPositionError)?.code === 1) { setLocStatus('denied'); return null; }
+      try {
+        pos = await getPosition({ enableHighAccuracy: false, timeout: 12000, maximumAge: 120000 });
+      } catch (e2) {
+        setLocStatus((e2 as GeolocationPositionError)?.code === 1 ? 'denied' : 'unavailable');
+        return null;
+      }
+    }
+
+    const dist = getDistanceM(pos.coords.latitude, pos.coords.longitude, OFFICE_LAT, OFFICE_LNG);
+    const acc = pos.coords.accuracy || 0;
+    setDistance(Math.round(dist));
+    setAccuracy(Math.round(acc));
+    setCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+    // GPS 오차(accuracy)를 허용 반경에 더해 실내 오차를 보정 (오차 보정은 최대 200m로 제한)
+    const tolerance = ALLOWED_RADIUS_M + Math.min(acc, 200);
+    if (dist <= tolerance) { setLocStatus('ok'); return pos; }
+    setLocStatus('far');
+    return null;
   }
 
   async function handleCheckIn() {
@@ -344,10 +366,24 @@ export default function AttendanceContent() {
             {locStatus === 'far' && distance !== null && (
               <div className="text-center text-sm text-red-500 mb-3 bg-red-50 rounded-xl py-2">
                 회사에서 {distance}m 떨어져 있습니다.<br />
-                <span className="text-xs text-red-400">{ALLOWED_RADIUS_M}m 이내에서만 가능합니다</span>
+                <span className="text-xs text-red-400">
+                  {ALLOWED_RADIUS_M}m 이내에서만 가능합니다
+                  {accuracy !== null && accuracy > 100 && ` · GPS 오차 약 ${accuracy}m`}
+                </span>
               </div>
             )}
-            {locStatus === 'denied' && <div className="text-center text-sm text-red-500 mb-3 bg-red-50 rounded-xl py-2">위치 권한을 허용해주세요</div>}
+            {locStatus === 'denied' && (
+              <div className="text-center text-sm text-red-500 mb-3 bg-red-50 rounded-xl py-2">
+                위치 권한을 허용해주세요<br />
+                <span className="text-xs text-red-400">브라우저 설정에서 이 사이트의 위치 권한을 허용으로 바꿔주세요</span>
+              </div>
+            )}
+            {locStatus === 'unavailable' && (
+              <div className="text-center text-sm text-red-500 mb-3 bg-red-50 rounded-xl py-2">
+                위치를 잡지 못했습니다<br />
+                <span className="text-xs text-red-400">실내에서는 신호가 약할 수 있어요. 창가나 실외에서 다시 눌러주세요</span>
+              </div>
+            )}
 
             {/* 출근 / 퇴근 버튼 — 항상 표시, 재클릭 시 시간 업데이트 */}
             <div className="grid grid-cols-2 gap-3">
@@ -368,6 +404,14 @@ export default function AttendanceContent() {
 
           {isMobile && (
             <p className="text-center text-xs text-gray-400">아이테코 {ALLOWED_RADIUS_M}m 이내에서만 가능합니다</p>
+          )}
+
+          {/* [임시] 회사 좌표 보정용 — 현재 GPS 좌표 표시 (보정 후 제거 예정) */}
+          {coords && (
+            <div className="text-center text-xs text-gray-400 bg-gray-50 rounded-xl py-2 px-3 select-all">
+              현재 좌표: {coords.lat.toFixed(6)}, {coords.lng.toFixed(6)}
+              {accuracy !== null && ` (오차 약 ${accuracy}m)`}
+            </div>
           )}
         </div>
       )}
