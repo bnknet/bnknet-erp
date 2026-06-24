@@ -37,6 +37,13 @@ function todayDate() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
+// 로컬 기준 어제 YYYY-MM-DD
+function yesterdayDate() {
+  const d = new Date();
+  d.setDate(d.getDate() - 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 interface InventoryLog {
   id: string;
   inventory_id: string;
@@ -97,11 +104,39 @@ export default function InventoryContent() {
   const [snapDate, setSnapDate] = useState(todayDate());
   const [snapshots, setSnapshots] = useState<InventorySnapshot[]>([]);
   const [snapLoading, setSnapLoading] = useState(false);
+  const [lastSnapDate, setLastSnapDate] = useState<string | null>(null); // 가장 최근 자동저장 날짜 (안전장치)
+  const [snapSaving, setSnapSaving] = useState(false);
 
   // 입출고 폼
   const [moveForm, setMoveForm] = useState({ type: '입고', quantity: 0, reason: '' });
 
-  useEffect(() => { loadItems(); }, []);
+  useEffect(() => { loadItems(); loadSnapHealth(); }, []);
+
+  // 가장 최근 자동저장 날짜 조회 (안전장치 — 자동저장 누락 감지용)
+  async function loadSnapHealth() {
+    try {
+      const res = await supabaseFetch('/inventory_snapshots?select=snapshot_date&order=snapshot_date.desc&limit=1');
+      const data = await res.json();
+      setLastSnapDate(Array.isArray(data) && data[0] ? data[0].snapshot_date : null);
+    } catch { setLastSnapDate(null); }
+  }
+
+  // 수동 스냅샷 저장 (자동저장 실패 시 복구용)
+  async function handleManualSnapshot() {
+    if (!confirm('지금 시점의 재고를 오늘 날짜로 저장할까요?')) return;
+    setSnapSaving(true);
+    try {
+      const res = await supabaseFetch('/rpc/take_inventory_snapshot', {
+        method: 'POST',
+        headers: { Prefer: 'return=minimal' },
+        body: '{}',
+      });
+      if (!res.ok) { alert(`저장 실패: ${res.status}`); return; }
+      await loadSnapHealth();
+      if (activeTab === 'snapshot') await loadSnapshots(snapDate);
+      alert('오늘 재고를 저장했습니다.');
+    } finally { setSnapSaving(false); }
+  }
 
   async function loadItems() {
     setLoading(true);
@@ -373,6 +408,20 @@ export default function InventoryContent() {
         ))}
       </div>
 
+      {/* 자동저장 안전장치 — 자동저장이 하루 이상 누락되면 경고 + 수동 저장 */}
+      {canManageStock && lastSnapDate && lastSnapDate < yesterdayDate() && (
+        <div className="flex items-center justify-between gap-3 bg-red-50 border border-red-200 rounded-xl px-4 py-3 flex-wrap">
+          <div className="text-sm text-red-600">
+            ⚠️ 재고 자동저장이 멈춘 것 같습니다 — 마지막 저장: <span className="font-bold">{lastSnapDate}</span>
+            <span className="block text-xs text-red-400">매일 밤 자동 저장돼야 정상입니다. 오른쪽 버튼으로 지금 바로 저장할 수 있어요.</span>
+          </div>
+          <button onClick={handleManualSnapshot} disabled={snapSaving}
+            className="px-4 py-2 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white rounded-xl text-sm font-medium flex-shrink-0">
+            {snapSaving ? '저장 중...' : '지금 재고 저장'}
+          </button>
+        </div>
+      )}
+
       {activeTab === 'stock' ? (
         <>
           {/* 필터 */}
@@ -630,11 +679,23 @@ export default function InventoryContent() {
                 </button>
               ))}
             </div>
-            <button onClick={exportSnapshotExcel} disabled={filteredSnap.length === 0}
-              className="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:opacity-40 text-white rounded-xl text-sm font-medium transition-colors">
-              엑셀 다운로드
-            </button>
+            <div className="flex items-center gap-2 flex-shrink-0">
+              {canManageStock && (
+                <button onClick={handleManualSnapshot} disabled={snapSaving}
+                  className="px-4 py-2 bg-white border border-gray-200 text-gray-700 hover:bg-gray-50 disabled:opacity-50 rounded-xl text-sm font-medium transition-colors">
+                  {snapSaving ? '저장 중...' : '지금 재고 저장'}
+                </button>
+              )}
+              <button onClick={exportSnapshotExcel} disabled={filteredSnap.length === 0}
+                className="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:opacity-40 text-white rounded-xl text-sm font-medium transition-colors">
+                엑셀 다운로드
+              </button>
+            </div>
           </div>
+
+          {lastSnapDate && (
+            <p className="text-xs text-gray-400">🕚 마지막 자동저장: {lastSnapDate} · 매일 밤 11:50 자동 저장됩니다</p>
+          )}
 
           <div className="relative">
             <svg className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
