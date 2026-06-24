@@ -93,6 +93,11 @@ export default function AttendanceContent() {
   const [manualSaving, setManualSaving] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
 
+  // 일괄 선택 (상태 수정·삭제)
+  const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set());
+  const [bulkStatus, setBulkStatus] = useState('');
+  const [bulkSaving, setBulkSaving] = useState(false);
+
   useEffect(() => {
     loadTodayRecord();
     if (tab === 'list') loadRecords();
@@ -119,7 +124,7 @@ export default function AttendanceContent() {
       const data = await res.json();
       setRecords(Array.isArray(data) ? data : []);
     } catch { setRecords([]); }
-    finally { setLoading(false); }
+    finally { setLoading(false); setCheckedIds(new Set()); }
   }
 
   const isMobile = typeof navigator !== 'undefined' && /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
@@ -262,6 +267,53 @@ export default function AttendanceContent() {
     await supabaseFetch(`/attendance?id=eq.${id}`, { method: 'DELETE' });
     await loadRecords();
     await loadTodayRecord();
+  }
+
+  function toggleCheck(id: string) {
+    setCheckedIds((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  }
+
+  function toggleAll() {
+    if (checkedIds.size === records.length) setCheckedIds(new Set());
+    else setCheckedIds(new Set(records.map((r) => r.id)));
+  }
+
+  // 선택 항목 일괄 상태 변경
+  async function handleBulkStatus() {
+    if (!bulkStatus || checkedIds.size === 0) return;
+    const label = STATUS_LABELS[bulkStatus]?.label || bulkStatus;
+    if (!confirm(`선택한 ${checkedIds.size}건의 상태를 "${label}"(으)로 변경할까요?`)) return;
+    setBulkSaving(true);
+    try {
+      await Promise.all([...checkedIds].map((id) =>
+        supabaseFetch(`/attendance?id=eq.${id}`, {
+          method: 'PATCH',
+          headers: { Prefer: 'return=minimal' },
+          body: JSON.stringify({ status: bulkStatus }),
+        })
+      ));
+      setBulkStatus('');
+      await loadRecords();
+      await loadTodayRecord();
+    } finally { setBulkSaving(false); }
+  }
+
+  // 선택 항목 일괄 삭제
+  async function handleBulkDelete() {
+    if (checkedIds.size === 0) return;
+    if (!confirm(`선택한 ${checkedIds.size}건의 출퇴근 기록을 삭제할까요?`)) return;
+    setBulkSaving(true);
+    try {
+      await Promise.all([...checkedIds].map((id) =>
+        supabaseFetch(`/attendance?id=eq.${id}`, { method: 'DELETE' })
+      ));
+      await loadRecords();
+      await loadTodayRecord();
+    } finally { setBulkSaving(false); }
   }
 
   function openEdit(rec: AttendanceRecord) {
@@ -454,6 +506,33 @@ export default function AttendanceContent() {
             </div>
           </div>
 
+          {/* 일괄 변경 바 */}
+          {canManageAtt && checkedIds.size > 0 && (
+            <div className="flex items-center gap-3 bg-blue-600 text-white px-5 py-3 rounded-xl flex-wrap">
+              <span className="text-sm font-medium flex-shrink-0">{checkedIds.size}건 선택됨</span>
+              <div className="flex items-center gap-2 ml-auto flex-wrap">
+                <span className="text-sm text-blue-200 flex-shrink-0">상태 변경:</span>
+                <select value={bulkStatus} onChange={(e) => setBulkStatus(e.target.value)}
+                  className="px-3 py-1.5 rounded-lg text-sm text-gray-800 bg-white border-0 focus:outline-none">
+                  <option value="">선택</option>
+                  {Object.entries(STATUS_LABELS).map(([v, { label }]) => <option key={v} value={v}>{label}</option>)}
+                </select>
+                <button onClick={handleBulkStatus} disabled={!bulkStatus || bulkSaving}
+                  className="px-4 py-1.5 bg-white text-blue-600 rounded-lg text-sm font-medium disabled:opacity-50 hover:bg-blue-50 transition-colors">
+                  {bulkSaving ? '처리 중...' : '적용'}
+                </button>
+                <button onClick={handleBulkDelete} disabled={bulkSaving}
+                  className="px-4 py-1.5 bg-red-500 text-white rounded-lg text-sm font-medium disabled:opacity-50 hover:bg-red-600 transition-colors">
+                  삭제
+                </button>
+                <button onClick={() => { setCheckedIds(new Set()); setBulkStatus(''); }}
+                  className="px-3 py-1.5 bg-blue-500 rounded-lg text-sm hover:bg-blue-400 transition-colors">
+                  취소
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* 테이블 */}
           <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
             {loading ? (
@@ -467,8 +546,16 @@ export default function AttendanceContent() {
                   <table className="w-full text-sm">
                     <thead className="bg-gray-50 border-b border-gray-100">
                       <tr>
-                        {['날짜', '이름', '사업자', '출근', '퇴근', '근무시간', '상태', ...(canManageAtt ? [''] : [])].map((h) => (
-                          <th key={h} className="px-4 py-3 text-left text-xs font-medium text-gray-500">{h}</th>
+                        {canManageAtt && (
+                          <th className="px-4 py-3">
+                            <input type="checkbox"
+                              checked={records.length > 0 && checkedIds.size === records.length}
+                              onChange={toggleAll}
+                              className="w-4 h-4 rounded border-gray-300 text-blue-600 cursor-pointer" />
+                          </th>
+                        )}
+                        {['날짜', '이름', '사업자', '출근', '퇴근', '근무시간', '상태', ...(canManageAtt ? [''] : [])].map((h, i) => (
+                          <th key={i} className="px-4 py-3 text-left text-xs font-medium text-gray-500">{h}</th>
                         ))}
                       </tr>
                     </thead>
@@ -480,7 +567,15 @@ export default function AttendanceContent() {
                         const workHour = workMin !== null ? `${Math.floor(workMin / 60)}h ${workMin % 60}m` : '-';
                         const st = STATUS_LABELS[r.status] || { label: r.status, color: 'bg-gray-100 text-gray-600' };
                         return (
-                          <tr key={r.id} className="hover:bg-gray-50">
+                          <tr key={r.id} className={`hover:bg-gray-50 ${checkedIds.has(r.id) ? 'bg-blue-50' : ''}`}>
+                            {canManageAtt && (
+                              <td className="px-4 py-3">
+                                <input type="checkbox"
+                                  checked={checkedIds.has(r.id)}
+                                  onChange={() => toggleCheck(r.id)}
+                                  className="w-4 h-4 rounded border-gray-300 text-blue-600 cursor-pointer" />
+                              </td>
+                            )}
                             <td className="px-4 py-3 text-gray-700">{r.work_date}</td>
                             <td className="px-4 py-3 font-medium text-gray-800">{r.employee_name}</td>
                             <td className="px-4 py-3 text-gray-500">{r.company}</td>
@@ -514,7 +609,14 @@ export default function AttendanceContent() {
                     const workHour = workMin !== null ? `${Math.floor(workMin / 60)}h ${workMin % 60}m` : '-';
                     const st = STATUS_LABELS[r.status] || { label: r.status, color: 'bg-gray-100 text-gray-600' };
                     return (
-                      <div key={r.id} className="px-4 py-3.5">
+                      <div key={r.id} className={`px-4 py-3.5 flex items-start gap-3 ${checkedIds.has(r.id) ? 'bg-blue-50' : ''}`}>
+                        {canManageAtt && (
+                          <input type="checkbox"
+                            checked={checkedIds.has(r.id)}
+                            onChange={() => toggleCheck(r.id)}
+                            className="w-4 h-4 mt-1 rounded border-gray-300 text-blue-600 cursor-pointer flex-shrink-0" />
+                        )}
+                        <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between gap-2 mb-1.5">
                           <div className="flex items-center gap-2 min-w-0">
                             <span className="font-bold text-gray-800 text-[15px]">{r.employee_name}</span>
@@ -534,6 +636,7 @@ export default function AttendanceContent() {
                             <button onClick={() => handleDelete(r.id)} className="text-xs text-red-500 font-medium">삭제</button>
                           </div>
                         )}
+                        </div>
                       </div>
                     );
                   })}
