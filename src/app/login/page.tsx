@@ -73,7 +73,7 @@ export default function LoginPage() {
             </svg>
           </div>
           <h1 className="text-2xl font-bold text-white">비앤케이넷 ERP</h1>
-          <p className="text-blue-300 text-sm mt-1">BNKNET Enterprise Resource Planning</p>
+          <p className="text-blue-300 text-base mt-1">BNKNET Enterprise Resource Planning</p>
         </div>
 
         {/* 로그인 카드 */}
@@ -82,7 +82,7 @@ export default function LoginPage() {
 
           <form onSubmit={handleLogin} className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">
+              <label className="block text-base font-medium text-gray-700 mb-1.5">
                 이메일
               </label>
               <input
@@ -96,7 +96,7 @@ export default function LoginPage() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">
+              <label className="block text-base font-medium text-gray-700 mb-1.5">
                 비밀번호
               </label>
               <input
@@ -110,7 +110,7 @@ export default function LoginPage() {
             </div>
 
             {error && (
-              <div className="bg-red-50 border border-red-200 text-red-600 text-sm px-4 py-3 rounded-xl">
+              <div className="bg-red-50 border border-red-200 text-red-600 text-base px-4 py-3 rounded-xl">
                 {error}
               </div>
             )}
@@ -125,7 +125,7 @@ export default function LoginPage() {
           </form>
         </div>
 
-        <p className="text-center text-blue-400 text-xs mt-6">
+        <p className="text-center text-blue-400 text-sm mt-6">
           © 2026 BNKNET · IX글로벌. All rights reserved.
         </p>
       </div>

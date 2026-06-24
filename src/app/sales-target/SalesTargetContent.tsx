@@ -138,17 +138,17 @@ export default function SalesTargetContent() {
       <div className="flex items-center justify-between flex-wrap gap-3 border-b border-gray-200 pb-3">
         <div className="flex items-center gap-2">
           <button onClick={() => setTab('dashboard')}
-            className={`px-4 py-2 rounded-t-lg text-sm font-medium border-b-2 ${tab === 'dashboard' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>대시보드</button>
+            className={`px-4 py-2 rounded-t-lg text-base font-medium border-b-2 ${tab === 'dashboard' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>대시보드</button>
           {canEdit && (
             <button onClick={() => setTab('edit')}
-              className={`px-4 py-2 rounded-t-lg text-sm font-medium border-b-2 ${tab === 'edit' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>목표 설정</button>
+              className={`px-4 py-2 rounded-t-lg text-base font-medium border-b-2 ${tab === 'edit' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>목표 설정</button>
           )}
         </div>
         <div className="flex items-center gap-2">
           <button onClick={() => setYear(year - 1)} className="w-8 h-8 rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-500">‹</button>
           <div className="text-base font-bold text-gray-800 w-16 text-center">{year}년</div>
           <button onClick={() => setYear(year + 1)} className="w-8 h-8 rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-500">›</button>
-          <button onClick={exportExcel} className="ml-1 px-3 py-1.5 text-xs border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50">📊 엑셀</button>
+          <button onClick={exportExcel} className="ml-1 px-3 py-1.5 text-sm border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50">📊 엑셀</button>
         </div>
       </div>
 
@@ -160,12 +160,12 @@ export default function SalesTargetContent() {
           <div className="bg-gradient-to-r from-slate-800 to-slate-600 rounded-2xl p-6 text-white">
             <div className="flex items-center justify-between flex-wrap gap-4">
               <div>
-                <div className="text-sm text-slate-300">{year}년 전체 매출 달성</div>
+                <div className="text-base text-slate-300">{year}년 전체 매출 달성</div>
                 <div className="text-3xl font-bold mt-1">{won(totalActual)}<span className="text-lg font-normal text-slate-300"> / {won(totalTarget)}원</span></div>
               </div>
               <div className="text-right">
                 <div className={`text-4xl font-bold ${totalPct >= 100 ? 'text-green-300' : 'text-white'}`}>{Math.round(totalPct)}%</div>
-                <div className="text-xs text-slate-300">달성률</div>
+                <div className="text-sm text-slate-300">달성률</div>
               </div>
             </div>
             <div className="h-2.5 bg-white/20 rounded-full overflow-hidden mt-4">
@@ -187,8 +187,8 @@ export default function SalesTargetContent() {
                       <div className="font-bold text-gray-800 flex items-center gap-1.5">
                         <span className="w-2.5 h-2.5 rounded-full" style={{ background: COMPANY_COLORS[c] }} />{c}
                       </div>
-                      <div className="text-xs text-gray-400 mt-1">목표 {manwon(t)}</div>
-                      <div className="text-xs text-gray-600">실적 <span className="font-medium">{manwon(a)}</span></div>
+                      <div className="text-sm text-gray-400 mt-1">목표 {manwon(t)}</div>
+                      <div className="text-sm text-gray-600">실적 <span className="font-medium">{manwon(a)}</span></div>
                     </div>
                   </div>
                 </div>
@@ -203,11 +203,11 @@ export default function SalesTargetContent() {
               <div className="flex gap-1.5 flex-wrap">
                 {['전체', ...COMPANIES].map(c => (
                   <button key={c} onClick={() => setChartCompany(c)}
-                    className={`px-2.5 py-1 rounded-lg text-xs font-medium ${chartCompany === c ? 'bg-slate-700 text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>{c}</button>
+                    className={`px-2.5 py-1 rounded-lg text-sm font-medium ${chartCompany === c ? 'bg-slate-700 text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>{c}</button>
                 ))}
               </div>
             </div>
-            <div className="flex items-center gap-3 text-xs text-gray-500 mb-3">
+            <div className="flex items-center gap-3 text-sm text-gray-500 mb-3">
               <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm bg-gray-300" />목표</span>
               <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm bg-blue-500" />실적</span>
             </div>
@@ -236,9 +236,9 @@ export default function SalesTargetContent() {
           <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
             <h3 className="font-bold text-gray-800 mb-4">분기별 달성률</h3>
             <div className="overflow-x-auto">
-              <table className="w-full text-sm min-w-[480px]">
+              <table className="w-full text-base min-w-[480px]">
                 <thead>
-                  <tr className="text-xs text-gray-400 border-b border-gray-100">
+                  <tr className="text-sm text-gray-400 border-b border-gray-100">
                     <th className="py-2 text-left font-medium">사업자</th>
                     {[1, 2, 3, 4].map(q => <th key={q} className="py-2 text-center font-medium">{q}분기</th>)}
                     <th className="py-2 text-center font-medium">연간</th>
@@ -268,7 +268,7 @@ export default function SalesTargetContent() {
             </div>
           </div>
 
-          <p className="text-xs text-gray-400 text-center">💡 실적은 현재 수동 입력이며, 추후 주문 변환 매출 데이터와 자동 연동됩니다.</p>
+          <p className="text-sm text-gray-400 text-center">💡 실적은 현재 수동 입력이며, 추후 주문 변환 매출 데이터와 자동 연동됩니다.</p>
         </div>
       ) : (
         // ── 목표 설정 ──
@@ -276,18 +276,18 @@ export default function SalesTargetContent() {
           <div className="flex gap-2 flex-wrap">
             {COMPANIES.map(c => (
               <button key={c} onClick={() => setEditCompany(c)}
-                className={`px-3 py-1.5 rounded-lg text-sm font-medium ${editCompany === c ? 'bg-slate-700 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}>{c}</button>
+                className={`px-3 py-1.5 rounded-lg text-base font-medium ${editCompany === c ? 'bg-slate-700 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}>{c}</button>
             ))}
           </div>
           <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
             <div className="overflow-x-auto">
-              <table className="w-full text-sm min-w-[520px]">
+              <table className="w-full text-base min-w-[520px]">
                 <thead className="bg-gray-50 border-b border-gray-100">
                   <tr>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">월</th>
-                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">목표 금액</th>
-                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">실적 금액</th>
-                    <th className="px-4 py-3 text-center text-xs font-medium text-gray-500">달성률</th>
+                    <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">월</th>
+                    <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">목표 금액</th>
+                    <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">실적 금액</th>
+                    <th className="px-4 py-3 text-center text-sm font-medium text-gray-500">달성률</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
@@ -300,12 +300,12 @@ export default function SalesTargetContent() {
                         <td className="px-4 py-2 text-right">
                           <input type="number" defaultValue={cc.target_amount || ''} placeholder="0"
                             onBlur={e => { const v = Number(e.target.value) || 0; if (v !== (cc.target_amount || 0)) saveCell(editCompany, m, 'target_amount', v); }}
-                            className="w-32 text-right px-2 py-1 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
+                            className="w-32 text-right px-2 py-1 border border-gray-200 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-blue-400" />
                         </td>
                         <td className="px-4 py-2 text-right">
                           <input type="number" defaultValue={cc.actual_amount || ''} placeholder="0"
                             onBlur={e => { const v = Number(e.target.value) || 0; if (v !== (cc.actual_amount || 0)) saveCell(editCompany, m, 'actual_amount', v); }}
-                            className="w-32 text-right px-2 py-1 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
+                            className="w-32 text-right px-2 py-1 border border-gray-200 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-blue-400" />
                         </td>
                         <td className="px-4 py-2.5 text-center">
                           <span className={`font-bold ${achColor(pct).text}`}>{cc.target_amount > 0 ? `${Math.round(pct)}%` : '-'}</span>
@@ -328,7 +328,7 @@ export default function SalesTargetContent() {
               </table>
             </div>
           </div>
-          <p className="text-xs text-gray-400">💡 금액 입력 후 칸 밖을 클릭하면 자동 저장됩니다. 실적은 추후 주문 변환 매출과 자동 연동 예정입니다.</p>
+          <p className="text-sm text-gray-400">💡 금액 입력 후 칸 밖을 클릭하면 자동 저장됩니다. 실적은 추후 주문 변환 매출과 자동 연동 예정입니다.</p>
         </div>
       )}
     </div>

@@ -160,9 +160,9 @@ export default function HrContent() {
   if (view === 'list') return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <p className="text-sm text-gray-400">재직 {active.length}명 · 퇴사 {inactive.length}명</p>
+        <p className="text-base text-gray-400">재직 {active.length}명 · 퇴사 {inactive.length}명</p>
         {isAdmin && (
-          <button onClick={() => openForm()} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-medium transition-colors">
+          <button onClick={() => openForm()} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-base font-medium transition-colors">
             + 직원 등록
           </button>
         )}
@@ -171,7 +171,7 @@ export default function HrContent() {
       {/* 재직자 */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
         <div className="px-5 py-3 border-b border-gray-100 bg-gray-50">
-          <span className="text-sm font-semibold text-gray-600">재직자</span>
+          <span className="text-base font-semibold text-gray-600">재직자</span>
         </div>
         {loading ? (
           <div className="text-center py-10 text-gray-400">불러오는 중...</div>
@@ -189,13 +189,13 @@ export default function HrContent() {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
                     <span className="font-semibold text-gray-800">{emp.name}</span>
-                    <span className={`text-xs px-2 py-0.5 rounded-md ${ROLE_COLORS[emp.role] || 'bg-gray-100 text-gray-600'}`}>
+                    <span className={`text-sm px-2 py-0.5 rounded-md ${ROLE_COLORS[emp.role] || 'bg-gray-100 text-gray-600'}`}>
                       {ROLE_LABELS[emp.role] || emp.role}
                     </span>
                   </div>
-                  <div className="text-sm text-gray-400 mt-0.5">{emp.company} · {emp.email}</div>
+                  <div className="text-base text-gray-400 mt-0.5">{emp.company} · {emp.email}</div>
                 </div>
-                <div className="text-sm text-gray-400 hidden sm:block">{calcTenure(emp.hire_date)}</div>
+                <div className="text-base text-gray-400 hidden sm:block">{calcTenure(emp.hire_date)}</div>
               </div>
             ))}
             {active.length === 0 && <div className="text-center py-10 text-gray-400">재직자가 없습니다</div>}
@@ -207,7 +207,7 @@ export default function HrContent() {
       {inactive.length > 0 && (
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
           <div className="px-5 py-3 border-b border-gray-100 bg-gray-50">
-            <span className="text-sm font-semibold text-gray-400">퇴사자</span>
+            <span className="text-base font-semibold text-gray-400">퇴사자</span>
           </div>
           <div className="divide-y divide-gray-50">
             {inactive.map((emp) => (
@@ -222,9 +222,9 @@ export default function HrContent() {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
                     <span className="font-semibold text-gray-600">{emp.name}</span>
-                    <span className="text-xs px-2 py-0.5 rounded-md bg-gray-100 text-gray-500">퇴사</span>
+                    <span className="text-sm px-2 py-0.5 rounded-md bg-gray-100 text-gray-500">퇴사</span>
                   </div>
-                  <div className="text-sm text-gray-400">{emp.company}</div>
+                  <div className="text-base text-gray-400">{emp.company}</div>
                 </div>
               </div>
             ))}
@@ -237,7 +237,7 @@ export default function HrContent() {
   // 상세
   if (view === 'detail' && selected) return (
     <div className="space-y-4">
-      <button onClick={() => setView('list')} className="text-sm text-blue-600 hover:text-blue-700">← 목록으로</button>
+      <button onClick={() => setView('list')} className="text-base text-blue-600 hover:text-blue-700">← 목록으로</button>
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
         <div className="flex items-start justify-between mb-6">
           <div className="flex items-center gap-4">
@@ -247,22 +247,22 @@ export default function HrContent() {
             <div>
               <div className="flex items-center gap-2">
                 <h2 className="text-xl font-bold text-gray-800">{selected.name}</h2>
-                <span className={`text-xs px-2 py-0.5 rounded-md ${ROLE_COLORS[selected.role] || 'bg-gray-100 text-gray-600'}`}>
+                <span className={`text-sm px-2 py-0.5 rounded-md ${ROLE_COLORS[selected.role] || 'bg-gray-100 text-gray-600'}`}>
                   {ROLE_LABELS[selected.role] || selected.role}
                 </span>
                 {selected.status === 'inactive' && (
-                  <span className="text-xs px-2 py-0.5 rounded-md bg-gray-100 text-gray-500">퇴사</span>
+                  <span className="text-sm px-2 py-0.5 rounded-md bg-gray-100 text-gray-500">퇴사</span>
                 )}
               </div>
-              <p className="text-gray-400 text-sm mt-1">{selected.company}</p>
+              <p className="text-gray-400 text-base mt-1">{selected.company}</p>
             </div>
           </div>
           {isAdmin && (
             <div className="flex gap-2">
-              <button onClick={() => openForm(selected)} className="px-3 py-1.5 text-sm text-blue-600 border border-blue-200 rounded-lg hover:bg-blue-50">수정</button>
+              <button onClick={() => openForm(selected)} className="px-3 py-1.5 text-base text-blue-600 border border-blue-200 rounded-lg hover:bg-blue-50">수정</button>
               <button
                 onClick={() => handleToggleStatus(selected)}
-                className={`px-3 py-1.5 text-sm rounded-lg border transition-colors ${selected.status === 'active' ? 'text-red-500 border-red-200 hover:bg-red-50' : 'text-green-600 border-green-200 hover:bg-green-50'}`}
+                className={`px-3 py-1.5 text-base rounded-lg border transition-colors ${selected.status === 'active' ? 'text-red-500 border-red-200 hover:bg-red-50' : 'text-green-600 border-green-200 hover:bg-green-50'}`}
               >
                 {selected.status === 'active' ? '퇴사 처리' : '복직 처리'}
               </button>
@@ -280,8 +280,8 @@ export default function HrContent() {
             { label: '소속 사업자', value: selected.company },
           ].map((item) => (
             <div key={item.label} className="bg-gray-50 rounded-xl px-4 py-3">
-              <div className="text-xs text-gray-400 mb-1">{item.label}</div>
-              <div className="text-sm font-medium text-gray-700">{item.value}</div>
+              <div className="text-sm text-gray-400 mb-1">{item.label}</div>
+              <div className="text-base font-medium text-gray-700">{item.value}</div>
             </div>
           ))}
         </div>
@@ -292,7 +292,7 @@ export default function HrContent() {
   // 등록/수정 폼
   return (
     <div className="space-y-4">
-      <button onClick={() => { setView('list'); setEditId(null); }} className="text-sm text-blue-600 hover:text-blue-700">← 목록으로</button>
+      <button onClick={() => { setView('list'); setEditId(null); }} className="text-base text-blue-600 hover:text-blue-700">← 목록으로</button>
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
         <h2 className="text-lg font-bold text-gray-800 mb-5">{editId ? '직원 정보 수정' : '직원 등록'}</h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -304,7 +304,7 @@ export default function HrContent() {
             { label: '입사일', key: 'hire_date', type: 'date', placeholder: '' },
           ].map((f) => (
             <div key={f.key}>
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">{f.label}</label>
+              <label className="block text-base font-medium text-gray-700 mb-1.5">{f.label}</label>
               <input
                 type={f.type}
                 value={form[f.key as keyof typeof form] as string}
@@ -316,7 +316,7 @@ export default function HrContent() {
           ))}
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">소속 사업자</label>
+            <label className="block text-base font-medium text-gray-700 mb-1.5">소속 사업자</label>
             <select
               value={form.company}
               onChange={(e) => setForm({ ...form, company: e.target.value })}
@@ -327,7 +327,7 @@ export default function HrContent() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">역할</label>
+            <label className="block text-base font-medium text-gray-700 mb-1.5">역할</label>
             <select
               value={form.role}
               onChange={(e) => setForm({ ...form, role: e.target.value })}
@@ -339,7 +339,7 @@ export default function HrContent() {
 
           {!editId && (
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">초기 비밀번호</label>
+              <label className="block text-base font-medium text-gray-700 mb-1.5">초기 비밀번호</label>
               <input
                 type="text"
                 value={form.password_hash}
@@ -354,13 +354,13 @@ export default function HrContent() {
           <button
             onClick={handleSave}
             disabled={saving || !form.name.trim() || !form.email.trim()}
-            className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white rounded-xl font-medium text-sm transition-colors"
+            className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white rounded-xl font-medium text-base transition-colors"
           >
             {saving ? '저장 중...' : editId ? '수정 완료' : '등록 완료'}
           </button>
           <button
             onClick={() => { setView('list'); setEditId(null); }}
-            className="px-6 py-2.5 bg-white border border-gray-200 text-gray-600 rounded-xl font-medium text-sm hover:bg-gray-50"
+            className="px-6 py-2.5 bg-white border border-gray-200 text-gray-600 rounded-xl font-medium text-base hover:bg-gray-50"
           >
             취소
           </button>

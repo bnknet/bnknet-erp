@@ -402,7 +402,7 @@ export default function InventoryContent() {
               if (t === 'log') loadLogs();
               if (t === 'snapshot') loadSnapshots(snapDate);
             }}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === t ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
+            className={`px-4 py-2 rounded-lg text-base font-medium transition-colors ${activeTab === t ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
             {t === 'stock' ? '재고 현황' : t === 'log' ? '입출고 내역' : '일자별 재고'}
           </button>
         ))}
@@ -411,12 +411,12 @@ export default function InventoryContent() {
       {/* 자동저장 안전장치 — 자동저장이 하루 이상 누락되면 경고 + 수동 저장 */}
       {canManageStock && lastSnapDate && lastSnapDate < yesterdayDate() && (
         <div className="flex items-center justify-between gap-3 bg-red-50 border border-red-200 rounded-xl px-4 py-3 flex-wrap">
-          <div className="text-sm text-red-600">
+          <div className="text-base text-red-600">
             ⚠️ 재고 자동저장이 멈춘 것 같습니다 — 마지막 저장: <span className="font-bold">{lastSnapDate}</span>
-            <span className="block text-xs text-red-400">매일 밤 자동 저장돼야 정상입니다. 오른쪽 버튼으로 지금 바로 저장할 수 있어요.</span>
+            <span className="block text-sm text-red-400">매일 밤 자동 저장돼야 정상입니다. 오른쪽 버튼으로 지금 바로 저장할 수 있어요.</span>
           </div>
           <button onClick={handleManualSnapshot} disabled={snapSaving}
-            className="px-4 py-2 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white rounded-xl text-sm font-medium flex-shrink-0">
+            className="px-4 py-2 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white rounded-xl text-base font-medium flex-shrink-0">
             {snapSaving ? '저장 중...' : '지금 재고 저장'}
           </button>
         </div>
@@ -428,27 +428,27 @@ export default function InventoryContent() {
           <div className="flex items-start justify-between gap-3 flex-wrap">
             <div className="space-y-2 flex-1">
               <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-xs text-gray-400 w-14">카테고리</span>
+                <span className="text-sm text-gray-400 w-14">카테고리</span>
                 {CATEGORIES.map((c) => (
                   <button key={c} onClick={() => setFilterCategory(c)}
-                    className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${filterCategory === c ? 'bg-blue-600 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
+                    className={`px-3 py-1.5 rounded-lg text-base font-medium transition-colors ${filterCategory === c ? 'bg-blue-600 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
                     {c}
                   </button>
                 ))}
               </div>
               <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-xs text-gray-400 w-14">사업자</span>
+                <span className="text-sm text-gray-400 w-14">사업자</span>
                 {COMPANIES.map((c) => (
                   <button key={c} onClick={() => setFilterCompany(c)}
-                    className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${filterCompany === c ? 'bg-slate-700 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
+                    className={`px-3 py-1.5 rounded-lg text-base font-medium transition-colors ${filterCompany === c ? 'bg-slate-700 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
                     {c}
                   </button>
                 ))}
               </div>
               <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-xs text-gray-400 w-14">브랜드</span>
+                <span className="text-sm text-gray-400 w-14">브랜드</span>
                 <select value={filterBrand} onChange={(e) => setFilterBrand(e.target.value)}
-                  className="px-3 py-1.5 rounded-lg text-sm font-medium bg-white border border-gray-200 text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                  className="px-3 py-1.5 rounded-lg text-base font-medium bg-white border border-gray-200 text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500">
                   {brandOptions.map((b) => (
                     <option key={b} value={b}>{b === '기타1' ? '기타1 (부진재고)' : b}</option>
                   ))}
@@ -457,12 +457,12 @@ export default function InventoryContent() {
             </div>
             <div className="flex gap-2 flex-shrink-0">
               <button onClick={exportExcel}
-                className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-xl text-sm font-medium transition-colors">
+                className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-xl text-base font-medium transition-colors">
                 엑셀 다운로드
               </button>
               {canManageStock && (
                 <button onClick={() => openForm()}
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-medium transition-colors">
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-base font-medium transition-colors">
                   + 재고 등록
                 </button>
               )}
@@ -476,7 +476,7 @@ export default function InventoryContent() {
             </svg>
             <input value={search} onChange={(e) => setSearch(e.target.value)}
               placeholder="상품명, 브랜드 검색"
-              className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" />
+              className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" />
           </div>
 
           {/* 통계 */}
@@ -487,7 +487,7 @@ export default function InventoryContent() {
               { label: '재고 원가총합', value: `${totalCost.toLocaleString()}원` },
             ].map((s) => (
               <div key={s.label} className="bg-white rounded-xl border border-gray-100 px-4 py-3">
-                <div className="text-xs text-gray-400">{s.label}</div>
+                <div className="text-sm text-gray-400">{s.label}</div>
                 <div className="text-lg font-bold mt-0.5 text-gray-800">{s.value}</div>
               </div>
             ))}
@@ -496,42 +496,42 @@ export default function InventoryContent() {
           {/* 일괄변경 바 */}
           {checkedIds.size > 0 && canManageStock && (
             <div className="flex items-center gap-3 bg-blue-600 text-white px-5 py-3 rounded-xl flex-wrap">
-              <span className="text-sm font-medium flex-shrink-0">{checkedIds.size}개 선택됨</span>
+              <span className="text-base font-medium flex-shrink-0">{checkedIds.size}개 선택됨</span>
               <div className="flex items-center gap-2 ml-auto flex-wrap">
-                <span className="text-sm text-blue-200 flex-shrink-0">일괄 변경:</span>
+                <span className="text-base text-blue-200 flex-shrink-0">일괄 변경:</span>
                 {/* 필드 선택 */}
                 <select value={bulkField} onChange={(e) => { setBulkField(e.target.value as any); setBulkValue(''); }}
-                  className="px-3 py-1.5 rounded-lg text-sm text-gray-800 bg-white border-0 focus:outline-none">
+                  className="px-3 py-1.5 rounded-lg text-base text-gray-800 bg-white border-0 focus:outline-none">
                   {BULK_FIELDS.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}
                 </select>
                 {/* 값 입력 — 필드에 따라 드롭다운 or 텍스트 */}
                 {bulkField === 'company' ? (
                   <select value={bulkValue} onChange={(e) => setBulkValue(e.target.value)}
-                    className="px-3 py-1.5 rounded-lg text-sm text-gray-800 bg-white border-0 focus:outline-none">
+                    className="px-3 py-1.5 rounded-lg text-base text-gray-800 bg-white border-0 focus:outline-none">
                     <option value="">선택</option>
                     {COMPANIES.filter(c => c !== '전체').map(c => <option key={c}>{c}</option>)}
                   </select>
                 ) : bulkField === 'category' ? (
                   <select value={bulkValue} onChange={(e) => setBulkValue(e.target.value)}
-                    className="px-3 py-1.5 rounded-lg text-sm text-gray-800 bg-white border-0 focus:outline-none">
+                    className="px-3 py-1.5 rounded-lg text-base text-gray-800 bg-white border-0 focus:outline-none">
                     <option value="">선택</option>
                     {CATEGORIES.filter(c => c !== '전체').map(c => <option key={c}>{c}</option>)}
                   </select>
                 ) : bulkField === 'quantity' ? (
                   <input type="number" value={bulkValue} onChange={(e) => setBulkValue(e.target.value)}
                     placeholder="수량 입력" min={0}
-                    className="w-24 px-3 py-1.5 rounded-lg text-sm text-gray-800 bg-white border-0 focus:outline-none" />
+                    className="w-24 px-3 py-1.5 rounded-lg text-base text-gray-800 bg-white border-0 focus:outline-none" />
                 ) : (
                   <input type="text" value={bulkValue} onChange={(e) => setBulkValue(e.target.value)}
                     placeholder="브랜드명 입력"
-                    className="w-32 px-3 py-1.5 rounded-lg text-sm text-gray-800 bg-white border-0 focus:outline-none" />
+                    className="w-32 px-3 py-1.5 rounded-lg text-base text-gray-800 bg-white border-0 focus:outline-none" />
                 )}
                 <button onClick={handleBulkEdit} disabled={!bulkValue || bulkSaving}
-                  className="px-4 py-1.5 bg-white text-blue-600 rounded-lg text-sm font-medium disabled:opacity-50 hover:bg-blue-50 transition-colors">
+                  className="px-4 py-1.5 bg-white text-blue-600 rounded-lg text-base font-medium disabled:opacity-50 hover:bg-blue-50 transition-colors">
                   {bulkSaving ? '변경 중...' : '적용'}
                 </button>
                 <button onClick={() => { setCheckedIds(new Set()); setBulkValue(''); }}
-                  className="px-3 py-1.5 bg-blue-500 rounded-lg text-sm hover:bg-blue-400 transition-colors">
+                  className="px-3 py-1.5 bg-blue-500 rounded-lg text-base hover:bg-blue-400 transition-colors">
                   취소
                 </button>
               </div>
@@ -548,7 +548,7 @@ export default function InventoryContent() {
               <>
                 {/* 데스크탑: 표 */}
                 <div className="overflow-x-auto hidden sm:block">
-                  <table className="w-full text-sm">
+                  <table className="w-full text-base">
                     <thead className="bg-gray-50 border-b border-gray-100">
                       <tr>
                         <th className="px-4 py-3">
@@ -558,7 +558,7 @@ export default function InventoryContent() {
                             className="w-4 h-4 rounded border-gray-300 text-blue-600 cursor-pointer" />
                         </th>
                         {['상품명', '카테고리', '브랜드', '사업자', '재고수량', '개당원가', '원가총합', '최종수정'].map((h) => (
-                          <th key={h} className="px-4 py-3 text-left text-xs font-medium text-gray-500">{h}</th>
+                          <th key={h} className="px-4 py-3 text-left text-sm font-medium text-gray-500">{h}</th>
                         ))}
                       </tr>
                     </thead>
@@ -583,7 +583,7 @@ export default function InventoryContent() {
                           </td>
                           <td className="px-4 py-3 text-gray-600 cursor-pointer" onClick={() => openDetail(p)}>{(p.cost_price || 0).toLocaleString()}원</td>
                           <td className="px-4 py-3 font-medium text-gray-800 cursor-pointer" onClick={() => openDetail(p)}>{(p.quantity * (p.cost_price || 0)).toLocaleString()}원</td>
-                          <td className="px-4 py-3 text-gray-400 text-xs cursor-pointer" onClick={() => openDetail(p)}>{new Date(p.updated_at).toLocaleDateString('ko-KR')}</td>
+                          <td className="px-4 py-3 text-gray-400 text-sm cursor-pointer" onClick={() => openDetail(p)}>{new Date(p.updated_at).toLocaleDateString('ko-KR')}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -605,10 +605,10 @@ export default function InventoryContent() {
                             {p.quantity.toLocaleString()} {p.unit}
                           </span>
                         </div>
-                        <div className="text-xs text-gray-400 mt-1">
+                        <div className="text-sm text-gray-400 mt-1">
                           {p.company}{p.brand ? ` · ${p.brand}` : ''}{p.category ? ` · ${p.category}` : ''}
                         </div>
-                        <div className="text-xs text-gray-500 mt-1">
+                        <div className="text-sm text-gray-500 mt-1">
                           개당 {(p.cost_price || 0).toLocaleString()}원 · 총 <span className="font-medium text-gray-700">{(p.quantity * (p.cost_price || 0)).toLocaleString()}원</span>
                         </div>
                       </div>
@@ -626,11 +626,11 @@ export default function InventoryContent() {
             <div className="text-center py-12 text-gray-400">입출고 내역이 없습니다</div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+              <table className="w-full text-base">
                 <thead className="bg-gray-50 border-b border-gray-100">
                   <tr>
                     {['일시', '상품명', '구분', '수량', '변경 전', '변경 후', '사유', '처리자', ...(canDeleteLog ? ['삭제'] : [])].map((h) => (
-                      <th key={h} className="px-4 py-3 text-left text-xs font-medium text-gray-500">{h}</th>
+                      <th key={h} className="px-4 py-3 text-left text-sm font-medium text-gray-500">{h}</th>
                     ))}
                   </tr>
                 </thead>
@@ -639,10 +639,10 @@ export default function InventoryContent() {
                     const typeInfo = LOG_TYPES.find(t => t.value === log.type);
                     return (
                       <tr key={log.id}>
-                        <td className="px-4 py-3 text-gray-400 text-xs">{new Date(log.created_at).toLocaleString('ko-KR')}</td>
+                        <td className="px-4 py-3 text-gray-400 text-sm">{new Date(log.created_at).toLocaleString('ko-KR')}</td>
                         <td className="px-4 py-3 font-medium text-gray-800">{log.product_name}</td>
                         <td className="px-4 py-3">
-                          <span className={`text-xs px-2 py-0.5 rounded-md font-medium ${typeInfo?.color || 'bg-gray-100 text-gray-600'}`}>{log.type}</span>
+                          <span className={`text-sm px-2 py-0.5 rounded-md font-medium ${typeInfo?.color || 'bg-gray-100 text-gray-600'}`}>{log.type}</span>
                         </td>
                         <td className="px-4 py-3 font-medium text-gray-800">{log.quantity}</td>
                         <td className="px-4 py-3 text-gray-500">{log.before_qty}</td>
@@ -652,7 +652,7 @@ export default function InventoryContent() {
                         {canDeleteLog && (
                           <td className="px-4 py-3">
                             <button onClick={() => handleDeleteLog(log)}
-                              className="text-xs text-red-400 hover:text-red-600 hover:underline">삭제</button>
+                              className="text-sm text-red-400 hover:text-red-600 hover:underline">삭제</button>
                           </td>
                         )}
                       </tr>
@@ -668,13 +668,13 @@ export default function InventoryContent() {
         <>
           <div className="flex items-center justify-between gap-3 flex-wrap">
             <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-xs text-gray-400">조회 날짜</span>
+              <span className="text-sm text-gray-400">조회 날짜</span>
               <input type="date" value={snapDate} max={todayDate()}
                 onChange={(e) => { setSnapDate(e.target.value); loadSnapshots(e.target.value); }}
-                className="px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" />
+                className="px-3 py-2 border border-gray-200 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" />
               {COMPANIES.map((c) => (
                 <button key={c} onClick={() => setFilterCompany(c)}
-                  className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${filterCompany === c ? 'bg-slate-700 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
+                  className={`px-3 py-1.5 rounded-lg text-base font-medium transition-colors ${filterCompany === c ? 'bg-slate-700 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
                   {c}
                 </button>
               ))}
@@ -682,19 +682,19 @@ export default function InventoryContent() {
             <div className="flex items-center gap-2 flex-shrink-0">
               {canManageStock && (
                 <button onClick={handleManualSnapshot} disabled={snapSaving}
-                  className="px-4 py-2 bg-white border border-gray-200 text-gray-700 hover:bg-gray-50 disabled:opacity-50 rounded-xl text-sm font-medium transition-colors">
+                  className="px-4 py-2 bg-white border border-gray-200 text-gray-700 hover:bg-gray-50 disabled:opacity-50 rounded-xl text-base font-medium transition-colors">
                   {snapSaving ? '저장 중...' : '지금 재고 저장'}
                 </button>
               )}
               <button onClick={exportSnapshotExcel} disabled={filteredSnap.length === 0}
-                className="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:opacity-40 text-white rounded-xl text-sm font-medium transition-colors">
+                className="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:opacity-40 text-white rounded-xl text-base font-medium transition-colors">
                 엑셀 다운로드
               </button>
             </div>
           </div>
 
           {lastSnapDate && (
-            <p className="text-xs text-gray-400">🕚 마지막 자동저장: {lastSnapDate} · 매일 밤 11:50 자동 저장됩니다</p>
+            <p className="text-sm text-gray-400">🕚 마지막 자동저장: {lastSnapDate} · 매일 밤 11:50 자동 저장됩니다</p>
           )}
 
           <div className="relative">
@@ -703,7 +703,7 @@ export default function InventoryContent() {
             </svg>
             <input value={search} onChange={(e) => setSearch(e.target.value)}
               placeholder="상품명, 브랜드 검색"
-              className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" />
+              className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" />
           </div>
 
           <div className="grid grid-cols-3 gap-3">
@@ -713,7 +713,7 @@ export default function InventoryContent() {
               { label: '재고 원가총합', value: `${snapTotalCost.toLocaleString()}원` },
             ].map((s) => (
               <div key={s.label} className="bg-white rounded-xl border border-gray-100 px-4 py-3">
-                <div className="text-xs text-gray-400">{s.label}</div>
+                <div className="text-sm text-gray-400">{s.label}</div>
                 <div className="text-lg font-bold mt-0.5 text-gray-800">{s.value}</div>
               </div>
             ))}
@@ -725,15 +725,15 @@ export default function InventoryContent() {
             ) : filteredSnap.length === 0 ? (
               <div className="text-center py-12 text-gray-400">
                 {snapDate} 재고 기록이 없습니다
-                <div className="text-xs text-gray-300 mt-1">일자별 재고는 매일 자동 저장되며, 저장이 시작된 날부터 조회할 수 있습니다</div>
+                <div className="text-sm text-gray-300 mt-1">일자별 재고는 매일 자동 저장되며, 저장이 시작된 날부터 조회할 수 있습니다</div>
               </div>
             ) : (
               <div className="overflow-x-auto">
-                <table className="w-full text-sm">
+                <table className="w-full text-base">
                   <thead className="bg-gray-50 border-b border-gray-100">
                     <tr>
                       {['상품명', '카테고리', '브랜드', '사업자', '재고수량', '개당원가', '원가총합'].map((h) => (
-                        <th key={h} className="px-4 py-3 text-left text-xs font-medium text-gray-500">{h}</th>
+                        <th key={h} className="px-4 py-3 text-left text-sm font-medium text-gray-500">{h}</th>
                       ))}
                     </tr>
                   </thead>
@@ -762,38 +762,38 @@ export default function InventoryContent() {
   // 상세
   if (view === 'detail' && selected) return (
     <div className="space-y-4">
-      <button onClick={() => setView('list')} className="text-sm text-blue-600 hover:text-blue-700">← 목록으로</button>
+      <button onClick={() => setView('list')} className="text-base text-blue-600 hover:text-blue-700">← 목록으로</button>
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
         <div className="flex items-start justify-between mb-6">
           <div>
             <div className="flex items-center gap-2 flex-wrap">
               <h2 className="text-xl font-bold text-gray-800">{selected.product_name}</h2>
-              {selected.category && <span className="text-xs px-2 py-0.5 rounded-md bg-blue-100 text-blue-700">{selected.category}</span>}
-              <span className="text-xs px-2 py-0.5 rounded-md bg-slate-100 text-slate-600">{selected.company}</span>
+              {selected.category && <span className="text-sm px-2 py-0.5 rounded-md bg-blue-100 text-blue-700">{selected.category}</span>}
+              <span className="text-sm px-2 py-0.5 rounded-md bg-slate-100 text-slate-600">{selected.company}</span>
             </div>
-            {selected.brand && <p className="text-gray-400 text-sm mt-1">{selected.brand}</p>}
+            {selected.brand && <p className="text-gray-400 text-base mt-1">{selected.brand}</p>}
           </div>
           <div className="flex gap-2">
             {canManageStock && (
               <button onClick={() => { setMoveForm({ type: '입고', quantity: 0, reason: '' }); setView('move'); }}
-                className="px-3 py-1.5 text-sm text-white bg-blue-600 rounded-lg hover:bg-blue-700">입출고</button>
+                className="px-3 py-1.5 text-base text-white bg-blue-600 rounded-lg hover:bg-blue-700">입출고</button>
             )}
             {canManageStock && (
-              <button onClick={() => openForm(selected)} className="px-3 py-1.5 text-sm text-blue-600 border border-blue-200 rounded-lg hover:bg-blue-50">수정</button>
+              <button onClick={() => openForm(selected)} className="px-3 py-1.5 text-base text-blue-600 border border-blue-200 rounded-lg hover:bg-blue-50">수정</button>
             )}
             {canDeleteLog && (
-              <button onClick={() => handleDelete(selected.id)} className="px-3 py-1.5 text-sm text-red-500 border border-red-200 rounded-lg hover:bg-red-50">삭제</button>
+              <button onClick={() => handleDelete(selected.id)} className="px-3 py-1.5 text-base text-red-500 border border-red-200 rounded-lg hover:bg-red-50">삭제</button>
             )}
           </div>
         </div>
 
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-6">
           <div className="bg-blue-50 rounded-xl px-4 py-4 col-span-2 sm:col-span-1">
-            <div className="text-xs text-blue-400 mb-1">현재 재고</div>
+            <div className="text-sm text-blue-400 mb-1">현재 재고</div>
             <div className={`text-3xl font-bold ${selected.quantity === 0 ? 'text-red-500' : selected.quantity <= 10 ? 'text-orange-500' : 'text-blue-600'}`}>
               {selected.quantity.toLocaleString()}
             </div>
-            <div className="text-sm text-blue-400 mt-0.5">{selected.unit}</div>
+            <div className="text-base text-blue-400 mt-0.5">{selected.unit}</div>
           </div>
           {[
             { label: '개당원가', value: `${(selected.cost_price || 0).toLocaleString()}원` },
@@ -803,31 +803,31 @@ export default function InventoryContent() {
             { label: '최종수정', value: new Date(selected.updated_at).toLocaleDateString('ko-KR') },
           ].map((item) => (
             <div key={item.label} className="bg-gray-50 rounded-xl px-4 py-3">
-              <div className="text-xs text-gray-400 mb-1">{item.label}</div>
-              <div className="text-sm font-medium text-gray-700">{item.value}</div>
+              <div className="text-sm text-gray-400 mb-1">{item.label}</div>
+              <div className="text-base font-medium text-gray-700">{item.value}</div>
             </div>
           ))}
         </div>
 
         {selected.memo && (
           <div className="mb-6 bg-gray-50 rounded-xl px-4 py-3">
-            <div className="text-xs text-gray-400 mb-1">메모</div>
-            <div className="text-sm text-gray-700">{selected.memo}</div>
+            <div className="text-sm text-gray-400 mb-1">메모</div>
+            <div className="text-base text-gray-700">{selected.memo}</div>
           </div>
         )}
 
         {/* 입출고 내역 */}
         <div>
-          <div className="text-sm font-medium text-gray-700 mb-3">입출고 내역</div>
+          <div className="text-base font-medium text-gray-700 mb-3">입출고 내역</div>
           {logs.length === 0 ? (
-            <div className="text-center py-8 text-gray-400 text-sm bg-gray-50 rounded-xl">입출고 내역이 없습니다</div>
+            <div className="text-center py-8 text-gray-400 text-base bg-gray-50 rounded-xl">입출고 내역이 없습니다</div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+              <table className="w-full text-base">
                 <thead className="bg-gray-50 rounded-xl">
                   <tr>
                     {['일시', '구분', '수량', '변경 전→후', '사유', '처리자', ...(canDeleteLog ? [''] : [])].map((h, i) => (
-                      <th key={i} className="px-3 py-2 text-left text-xs font-medium text-gray-500">{h}</th>
+                      <th key={i} className="px-3 py-2 text-left text-sm font-medium text-gray-500">{h}</th>
                     ))}
                   </tr>
                 </thead>
@@ -836,9 +836,9 @@ export default function InventoryContent() {
                     const typeInfo = LOG_TYPES.find(t => t.value === log.type);
                     return (
                       <tr key={log.id}>
-                        <td className="px-3 py-2 text-gray-400 text-xs">{new Date(log.created_at).toLocaleString('ko-KR')}</td>
+                        <td className="px-3 py-2 text-gray-400 text-sm">{new Date(log.created_at).toLocaleString('ko-KR')}</td>
                         <td className="px-3 py-2">
-                          <span className={`text-xs px-2 py-0.5 rounded-md font-medium ${typeInfo?.color || 'bg-gray-100 text-gray-600'}`}>{log.type}</span>
+                          <span className={`text-sm px-2 py-0.5 rounded-md font-medium ${typeInfo?.color || 'bg-gray-100 text-gray-600'}`}>{log.type}</span>
                         </td>
                         <td className="px-3 py-2 font-medium text-gray-800">{log.quantity}</td>
                         <td className="px-3 py-2 text-gray-500">{log.before_qty} → {log.after_qty}</td>
@@ -847,7 +847,7 @@ export default function InventoryContent() {
                         {canDeleteLog && (
                           <td className="px-3 py-2">
                             <button onClick={() => handleDeleteLog(log)}
-                              className="text-xs text-red-400 hover:text-red-600 hover:underline">삭제</button>
+                              className="text-sm text-red-400 hover:text-red-600 hover:underline">삭제</button>
                           </td>
                         )}
                       </tr>
@@ -865,18 +865,18 @@ export default function InventoryContent() {
   // 입출고 처리
   if (view === 'move' && selected) return (
     <div className="space-y-4">
-      <button onClick={() => setView('detail')} className="text-sm text-blue-600 hover:text-blue-700">← 상세로</button>
+      <button onClick={() => setView('detail')} className="text-base text-blue-600 hover:text-blue-700">← 상세로</button>
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
         <h2 className="text-lg font-bold text-gray-800 mb-1">입출고 처리</h2>
-        <p className="text-sm text-gray-400 mb-6">{selected.product_name} · 현재 재고: <span className="font-bold text-gray-700">{selected.quantity} {selected.unit}</span></p>
+        <p className="text-base text-gray-400 mb-6">{selected.product_name} · 현재 재고: <span className="font-bold text-gray-700">{selected.quantity} {selected.unit}</span></p>
 
         <div className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">구분</label>
+            <label className="block text-base font-medium text-gray-700 mb-2">구분</label>
             <div className="flex gap-2 flex-wrap">
               {LOG_TYPES.map((t) => (
                 <button key={t.value} onClick={() => setMoveForm({ ...moveForm, type: t.value })}
-                  className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors border ${moveForm.type === t.value ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}>
+                  className={`px-4 py-2 rounded-xl text-base font-medium transition-colors border ${moveForm.type === t.value ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}>
                   {t.label}
                 </button>
               ))}
@@ -884,17 +884,17 @@ export default function InventoryContent() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">
+            <label className="block text-base font-medium text-gray-700 mb-1.5">
               {moveForm.type === '조정' ? '조정 후 수량' : '수량'}
             </label>
             <input type="number" value={moveForm.quantity || ''}
               onChange={(e) => setMoveForm({ ...moveForm, quantity: Number(e.target.value) })}
               placeholder="0"
-              className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              className="w-full px-4 py-3 border border-gray-200 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-blue-500" />
           </div>
 
           {moveForm.quantity > 0 && (
-            <div className="bg-blue-50 rounded-xl px-4 py-3 text-sm text-blue-600">
+            <div className="bg-blue-50 rounded-xl px-4 py-3 text-base text-blue-600">
               처리 후 재고: <span className="font-bold text-lg">
                 {moveForm.type === '출고'
                   ? selected.quantity - moveForm.quantity
@@ -906,21 +906,21 @@ export default function InventoryContent() {
           )}
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">사유 (선택)</label>
+            <label className="block text-base font-medium text-gray-700 mb-1.5">사유 (선택)</label>
             <input value={moveForm.reason}
               onChange={(e) => setMoveForm({ ...moveForm, reason: e.target.value })}
               placeholder="입출고 사유 입력"
-              className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              className="w-full px-4 py-3 border border-gray-200 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-blue-500" />
           </div>
         </div>
 
         <div className="flex gap-3 mt-6">
           <button onClick={handleMove} disabled={saving || !moveForm.quantity}
-            className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white rounded-xl font-medium text-sm transition-colors">
+            className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white rounded-xl font-medium text-base transition-colors">
             {saving ? '처리 중...' : '처리 완료'}
           </button>
           <button onClick={() => setView('detail')}
-            className="px-6 py-2.5 bg-white border border-gray-200 text-gray-600 rounded-xl font-medium text-sm hover:bg-gray-50">
+            className="px-6 py-2.5 bg-white border border-gray-200 text-gray-600 rounded-xl font-medium text-base hover:bg-gray-50">
             취소
           </button>
         </div>
@@ -931,77 +931,77 @@ export default function InventoryContent() {
   // 등록/수정 폼
   return (
     <div className="space-y-4">
-      <button onClick={() => { setView('list'); setEditId(null); }} className="text-sm text-blue-600 hover:text-blue-700">← 목록으로</button>
+      <button onClick={() => { setView('list'); setEditId(null); }} className="text-base text-blue-600 hover:text-blue-700">← 목록으로</button>
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
         <h2 className="text-lg font-bold text-gray-800 mb-5">{editId ? '재고 수정' : '재고 등록'}</h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="sm:col-span-2">
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">상품명 *</label>
+            <label className="block text-base font-medium text-gray-700 mb-1.5">상품명 *</label>
             <input value={form.product_name} onChange={(e) => setForm({ ...form, product_name: e.target.value })}
-              placeholder="상품명" className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              placeholder="상품명" className="w-full px-4 py-3 border border-gray-200 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-blue-500" />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">카테고리</label>
+            <label className="block text-base font-medium text-gray-700 mb-1.5">카테고리</label>
             <select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}
-              className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+              className="w-full px-4 py-3 border border-gray-200 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-blue-500">
               {CATEGORIES.filter(c => c !== '전체').map((c) => <option key={c}>{c}</option>)}
             </select>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">소속 사업자</label>
+            <label className="block text-base font-medium text-gray-700 mb-1.5">소속 사업자</label>
             <select value={form.company} onChange={(e) => setForm({ ...form, company: e.target.value })}
-              className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+              className="w-full px-4 py-3 border border-gray-200 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-blue-500">
               {COMPANIES.map((c) => <option key={c}>{c}</option>)}
             </select>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">브랜드</label>
+            <label className="block text-base font-medium text-gray-700 mb-1.5">브랜드</label>
             <input value={form.brand} onChange={(e) => setForm({ ...form, brand: e.target.value })}
               placeholder="브랜드명 (부진재고는 기타1)" list="inv-brand-list"
-              className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              className="w-full px-4 py-3 border border-gray-200 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-blue-500" />
             <datalist id="inv-brand-list">
               {brandOptions.filter((b) => b !== '전체').map((b) => <option key={b} value={b} />)}
             </datalist>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">단위</label>
+            <label className="block text-base font-medium text-gray-700 mb-1.5">단위</label>
             <select value={form.unit} onChange={(e) => setForm({ ...form, unit: e.target.value })}
-              className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+              className="w-full px-4 py-3 border border-gray-200 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-blue-500">
               {['개', '박스', '세트', '포', '병', '팩'].map((u) => <option key={u}>{u}</option>)}
             </select>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">초기 재고수량</label>
+            <label className="block text-base font-medium text-gray-700 mb-1.5">초기 재고수량</label>
             <input type="number" value={form.quantity} onChange={(e) => setForm({ ...form, quantity: Number(e.target.value) })}
-              placeholder="0" className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              placeholder="0" className="w-full px-4 py-3 border border-gray-200 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-blue-500" />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">개당원가 (원)</label>
+            <label className="block text-base font-medium text-gray-700 mb-1.5">개당원가 (원)</label>
             <input type="number" value={form.cost_price} onChange={(e) => setForm({ ...form, cost_price: Number(e.target.value) })}
-              placeholder="0" min={0} className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              placeholder="0" min={0} className="w-full px-4 py-3 border border-gray-200 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-blue-500" />
             {Number(form.quantity) > 0 && Number(form.cost_price) > 0 && (
-              <p className="text-xs text-gray-400 mt-1">원가총합 {(Number(form.quantity) * Number(form.cost_price)).toLocaleString()}원</p>
+              <p className="text-sm text-gray-400 mt-1">원가총합 {(Number(form.quantity) * Number(form.cost_price)).toLocaleString()}원</p>
             )}
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">보관위치</label>
+            <label className="block text-base font-medium text-gray-700 mb-1.5">보관위치</label>
             <input value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })}
-              placeholder="창고 A, 선반 3 등" className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              placeholder="창고 A, 선반 3 등" className="w-full px-4 py-3 border border-gray-200 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-blue-500" />
           </div>
           <div className="sm:col-span-2">
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">메모</label>
+            <label className="block text-base font-medium text-gray-700 mb-1.5">메모</label>
             <textarea value={form.memo} onChange={(e) => setForm({ ...form, memo: e.target.value })}
               placeholder="추가 메모" rows={2}
-              className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none" />
+              className="w-full px-4 py-3 border border-gray-200 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none" />
           </div>
         </div>
         <div className="flex gap-3 mt-5">
           <button onClick={handleSave} disabled={saving || !form.product_name.trim()}
-            className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white rounded-xl font-medium text-sm transition-colors">
+            className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white rounded-xl font-medium text-base transition-colors">
             {saving ? '저장 중...' : editId ? '수정 완료' : '등록 완료'}
           </button>
           <button onClick={() => { setView('list'); setEditId(null); }}
-            className="px-6 py-2.5 bg-white border border-gray-200 text-gray-600 rounded-xl font-medium text-sm hover:bg-gray-50">
+            className="px-6 py-2.5 bg-white border border-gray-200 text-gray-600 rounded-xl font-medium text-base hover:bg-gray-50">
             취소
           </button>
         </div>

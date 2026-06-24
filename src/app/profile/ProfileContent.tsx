@@ -68,16 +68,16 @@ export default function ProfileContent() {
           </div>
           <div>
             <div className="text-lg font-bold text-gray-800">{me?.name}</div>
-            <div className="text-sm text-gray-400">{me?.email}</div>
+            <div className="text-base text-gray-400">{me?.email}</div>
           </div>
         </div>
-        <div className="grid grid-cols-2 gap-3 mt-5 text-sm">
+        <div className="grid grid-cols-2 gap-3 mt-5 text-base">
           <div className="bg-gray-50 rounded-xl px-4 py-3">
-            <div className="text-xs text-gray-400 mb-0.5">소속</div>
+            <div className="text-sm text-gray-400 mb-0.5">소속</div>
             <div className="font-medium text-gray-700">{me?.company || '-'}</div>
           </div>
           <div className="bg-gray-50 rounded-xl px-4 py-3">
-            <div className="text-xs text-gray-400 mb-0.5">권한</div>
+            <div className="text-sm text-gray-400 mb-0.5">권한</div>
             <div className="font-medium text-gray-700">{ROLE_LABEL[me?.role || ''] || me?.role || '-'}</div>
           </div>
         </div>
@@ -86,36 +86,36 @@ export default function ProfileContent() {
       {/* 비밀번호 변경 */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
         <h2 className="font-bold text-gray-800 mb-1">비밀번호 변경</h2>
-        <p className="text-xs text-gray-400 mb-5">보안을 위해 주기적으로 비밀번호를 변경해주세요.</p>
+        <p className="text-sm text-gray-400 mb-5">보안을 위해 주기적으로 비밀번호를 변경해주세요.</p>
 
         <form onSubmit={changePassword} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-600 mb-1.5">현재 비밀번호</label>
+            <label className="block text-base font-medium text-gray-600 mb-1.5">현재 비밀번호</label>
             <input type="password" value={curPw} onChange={e => setCurPw(e.target.value)}
               autoComplete="current-password"
-              className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
+              className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-blue-400" />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-600 mb-1.5">새 비밀번호</label>
+            <label className="block text-base font-medium text-gray-600 mb-1.5">새 비밀번호</label>
             <input type="password" value={newPw} onChange={e => setNewPw(e.target.value)}
               autoComplete="new-password" placeholder="4자 이상"
-              className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
+              className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-blue-400" />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-600 mb-1.5">새 비밀번호 확인</label>
+            <label className="block text-base font-medium text-gray-600 mb-1.5">새 비밀번호 확인</label>
             <input type="password" value={newPw2} onChange={e => setNewPw2(e.target.value)}
               autoComplete="new-password"
-              className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
+              className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-blue-400" />
           </div>
 
           {msg && (
-            <div className={`text-sm px-4 py-3 rounded-xl ${msg.type === 'ok' ? 'bg-green-50 border border-green-200 text-green-700' : 'bg-red-50 border border-red-200 text-red-600'}`}>
+            <div className={`text-base px-4 py-3 rounded-xl ${msg.type === 'ok' ? 'bg-green-50 border border-green-200 text-green-700' : 'bg-red-50 border border-red-200 text-red-600'}`}>
               {msg.text}
             </div>
           )}
 
           <button type="submit" disabled={saving}
-            className="w-full px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-medium disabled:opacity-50">
+            className="w-full px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-base font-medium disabled:opacity-50">
             {saving ? '변경 중...' : '비밀번호 변경'}
           </button>
         </form>

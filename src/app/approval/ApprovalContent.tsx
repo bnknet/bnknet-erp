@@ -578,7 +578,7 @@ export default function ApprovalContent() {
 
     return (
       <div className="space-y-4">
-        <button onClick={() => setView('list')} className="text-sm text-blue-600 hover:text-blue-700">← 목록으로</button>
+        <button onClick={() => setView('list')} className="text-base text-blue-600 hover:text-blue-700">← 목록으로</button>
 
         <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-4 sm:p-8 max-w-3xl mx-auto">
           {/* 헤더 */}
@@ -588,22 +588,22 @@ export default function ApprovalContent() {
                 〈 {isVacation ? '휴 가 신 청 서' : '지 출 결 의 서'} 〉
               </h2>
               <div className="mt-2 flex items-center gap-2">
-                <span className={`text-xs px-2 py-1 rounded-md font-medium ${STATUS_MAP[selected.status]?.color}`}>
+                <span className={`text-sm px-2 py-1 rounded-md font-medium ${STATUS_MAP[selected.status]?.color}`}>
                   {STATUS_MAP[selected.status]?.label}
                 </span>
-                <span className="text-xs text-gray-400">{selected.company}</span>
+                <span className="text-sm text-gray-400">{selected.company}</span>
               </div>
             </div>
             <div className="border border-gray-400">
               <div className="flex">
                 {approverSlots.map((a) => (
                   <div key={a.role} className="border-l border-gray-400 first:border-l-0 w-20 text-center">
-                    <div className="text-xs py-1 border-b border-gray-400 bg-gray-50">{a.role}</div>
+                    <div className="text-sm py-1 border-b border-gray-400 bg-gray-50">{a.role}</div>
                     <div className="py-3 min-h-[48px] flex flex-col items-center justify-center">
-                      {a.status === 'approved' && <span className="text-xs text-green-600 font-bold">승인</span>}
-                      {a.status === 'rejected' && <span className="text-xs text-red-500 font-bold">반려</span>}
+                      {a.status === 'approved' && <span className="text-sm text-green-600 font-bold">승인</span>}
+                      {a.status === 'rejected' && <span className="text-sm text-red-500 font-bold">반려</span>}
                       {a.at && a.status !== 'pending' && (
-                        <span className="text-xs text-gray-400 mt-0.5">
+                        <span className="text-sm text-gray-400 mt-0.5">
                           {new Date(a.at).toLocaleDateString('ko-KR', { month: 'numeric', day: 'numeric' })}
                         </span>
                       )}
@@ -616,8 +616,8 @@ export default function ApprovalContent() {
 
           {selected.status === 'rejected' && selected.rejection_reason && (
             <div className="mb-4 bg-red-50 border border-red-200 rounded-xl px-4 py-3">
-              <div className="text-xs text-red-400 font-medium mb-1">반려 사유</div>
-              <div className="text-sm text-red-700">{selected.rejection_reason}</div>
+              <div className="text-sm text-red-400 font-medium mb-1">반려 사유</div>
+              <div className="text-base text-red-700">{selected.rejection_reason}</div>
             </div>
           )}
 
@@ -634,7 +634,7 @@ export default function ApprovalContent() {
                 { label: '사용 일수', value: `${selected.vacation_days}일` },
                 { label: '신청 사유', value: selected.vacation_reason || '-' },
               ].map((row, i) => (
-                <div key={i} className={`flex text-sm ${i > 0 ? 'border-t border-gray-300' : ''}`}>
+                <div key={i} className={`flex text-base ${i > 0 ? 'border-t border-gray-300' : ''}`}>
                   <div className="w-28 px-4 py-3 bg-gray-50 border-r border-gray-400 font-medium text-gray-600">{row.label}</div>
                   <div className="px-4 py-3 flex-1">{row.value}</div>
                 </div>
@@ -645,9 +645,9 @@ export default function ApprovalContent() {
               {/* 지출결의서 — 금액 */}
               <div className="border border-gray-400 mb-4">
                 <div className="flex">
-                  <div className="px-4 py-2 text-sm font-medium bg-gray-50 border-r border-gray-400 w-28 text-center">일금(정)</div>
-                  <div className="px-4 py-2 text-sm flex-1">{numberToKorean(selected.total_amount)}</div>
-                  <div className="px-4 py-2 text-sm font-bold border-l border-gray-400 w-36 text-right">{selected.total_amount.toLocaleString()} 원</div>
+                  <div className="px-4 py-2 text-base font-medium bg-gray-50 border-r border-gray-400 w-28 text-center">일금(정)</div>
+                  <div className="px-4 py-2 text-base flex-1">{numberToKorean(selected.total_amount)}</div>
+                  <div className="px-4 py-2 text-base font-bold border-l border-gray-400 w-36 text-right">{selected.total_amount.toLocaleString()} 원</div>
                 </div>
               </div>
               <div className="overflow-x-auto mb-4">
@@ -657,7 +657,7 @@ export default function ApprovalContent() {
                   { label: '결재', date: selected.settle_date, l2: '인', v2: '', l3: '계정과목', v3: selected.account },
                   { label: '지출', date: selected.spend_date, l2: '인', v2: '', l3: '', v3: '' },
                 ].map((row, i) => (
-                  <div key={i} className={`flex text-sm ${i > 0 ? 'border-t border-gray-400' : ''}`}>
+                  <div key={i} className={`flex text-base ${i > 0 ? 'border-t border-gray-400' : ''}`}>
                     <div className="w-12 px-2 py-2 bg-gray-50 border-r border-gray-400 text-center font-medium flex items-center justify-center">{row.label}</div>
                     <div className="px-3 py-2 border-r border-gray-400 w-36">{row.date}</div>
                     <div className="px-3 py-2 border-r border-gray-400 w-20 bg-gray-50 text-center">{row.l2}</div>
@@ -670,21 +670,21 @@ export default function ApprovalContent() {
               </div>
               <div className="overflow-x-auto mb-4">
                <div className="border border-gray-400 min-w-[480px]">
-                <div className="flex bg-gray-50 border-b border-gray-400 text-sm font-medium text-center">
+                <div className="flex bg-gray-50 border-b border-gray-400 text-base font-medium text-center">
                   <div className="w-20 px-2 py-2 border-r border-gray-400">월/일</div>
                   <div className="flex-1 px-2 py-2 border-r border-gray-400">적 요</div>
                   <div className="w-32 px-2 py-2 border-r border-gray-400">금 액</div>
                   <div className="w-36 px-2 py-2">비 고</div>
                 </div>
                 {[...(selected.items || []), ...Array(Math.max(0, 5 - (selected.items?.length || 0))).fill(null)].map((item, i) => (
-                  <div key={i} className="flex border-t border-gray-200 text-sm min-h-[36px]">
+                  <div key={i} className="flex border-t border-gray-200 text-base min-h-[36px]">
                     <div className="w-20 px-2 py-2 border-r border-gray-400 text-center">{item?.item_date || ''}</div>
                     <div className="flex-1 px-2 py-2 border-r border-gray-400">{item?.description || ''}</div>
                     <div className="w-32 px-2 py-2 border-r border-gray-400 text-right">{item?.amount ? item.amount.toLocaleString() : ''}</div>
                     <div className="w-36 px-2 py-2">{item?.note || ''}</div>
                   </div>
                 ))}
-                <div className="flex border-t border-gray-400 text-sm font-bold bg-gray-50">
+                <div className="flex border-t border-gray-400 text-base font-bold bg-gray-50">
                   <div className="w-20 px-2 py-2 border-r border-gray-400" />
                   <div className="flex-1 px-2 py-2 border-r border-gray-400 text-center">합 계</div>
                   <div className="w-32 px-2 py-2 border-r border-gray-400 text-right">₩{selected.total_amount.toLocaleString()}</div>
@@ -696,24 +696,24 @@ export default function ApprovalContent() {
               {selected.card_id && (
                 <div className={`border rounded-xl px-4 py-3 mb-4 ${selected.purchase_status === 'canceled' ? 'bg-red-50 border-red-200' : 'bg-blue-50 border-blue-100'}`}>
                   <div className="flex items-center justify-between flex-wrap gap-2">
-                    <div className="text-sm">
+                    <div className="text-base">
                       <span className="font-medium text-gray-700">💳 결제카드</span>
                       <span className="ml-2 text-gray-600">{cards.find(c => c.id === selected.card_id)?.card_name || '(삭제된 카드)'}</span>
                       {selected.purchase_vendor && <span className="ml-2 text-gray-400">· {selected.purchase_vendor}</span>}
                     </div>
                     {selected.payment_due_date && (
-                      <div className="text-sm text-blue-700">결제예정일 <span className="font-bold">{selected.payment_due_date}</span></div>
+                      <div className="text-base text-blue-700">결제예정일 <span className="font-bold">{selected.payment_due_date}</span></div>
                     )}
                   </div>
                   {selected.purchase_status === 'canceled' && (
-                    <div className="mt-2 text-sm text-red-600 font-medium">
+                    <div className="mt-2 text-base text-red-600 font-medium">
                       ⚠️ 구매 취소됨 · 환불예정일 {selected.refund_due_date} (-{selected.total_amount.toLocaleString()}원)
                     </div>
                   )}
                 </div>
               )}
 
-              <div className="text-center text-sm text-gray-600 border border-gray-400 py-4 mb-6">
+              <div className="text-center text-base text-gray-600 border border-gray-400 py-4 mb-6">
                 <p>위 금액을 정히 영수(청구) 합니다.</p>
                 <p className="mt-1">{selected.issue_date} &nbsp;&nbsp; 영수자 [ {selected.organizer} ]</p>
               </div>
@@ -721,7 +721,7 @@ export default function ApprovalContent() {
           )}
 
           {isVacation && (
-            <div className="text-center text-sm text-gray-600 border-t border-gray-200 pt-4 mt-4">
+            <div className="text-center text-base text-gray-600 border-t border-gray-200 pt-4 mt-4">
               <p>위와 같이 휴가를 신청합니다.</p>
               <p className="mt-1">{selected.issue_date} &nbsp;&nbsp; 신청자 [ {selected.submitter_name} ]</p>
             </div>
@@ -731,29 +731,29 @@ export default function ApprovalContent() {
             {myTurn && (
               <>
                 <button onClick={() => handleApprove(selected)}
-                  className="px-5 py-2 bg-green-600 hover:bg-green-700 text-white rounded-xl text-sm font-medium">승인</button>
+                  className="px-5 py-2 bg-green-600 hover:bg-green-700 text-white rounded-xl text-base font-medium">승인</button>
                 <button onClick={() => setShowRejectModal(true)}
-                  className="px-5 py-2 bg-red-500 hover:bg-red-600 text-white rounded-xl text-sm font-medium">반려</button>
+                  className="px-5 py-2 bg-red-500 hover:bg-red-600 text-white rounded-xl text-base font-medium">반려</button>
               </>
             )}
             {canResubmit && (
               <button onClick={() => openResubmit(selected)}
-                className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-medium">수정 후 재상신</button>
+                className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-base font-medium">수정 후 재상신</button>
             )}
             {/* 카드 매입 취소/철회 (승인된 카드 결제건) */}
             {selected.doc_type === '지출결의서' && selected.card_id && selected.status === 'approved' &&
               (isCeo || isAdmin || selected.submitter_name === me?.name) && (
                 selected.purchase_status === 'canceled' ? (
                   <button onClick={() => handleUncancelPurchase(selected)}
-                    className="px-5 py-2 border border-gray-200 text-gray-600 rounded-xl text-sm hover:bg-gray-50">취소 철회</button>
+                    className="px-5 py-2 border border-gray-200 text-gray-600 rounded-xl text-base hover:bg-gray-50">취소 철회</button>
                 ) : (
                   <button onClick={() => openCancelModal(selected)}
-                    className="px-5 py-2 border border-orange-200 text-orange-600 rounded-xl text-sm hover:bg-orange-50">구매 취소(환불)</button>
+                    className="px-5 py-2 border border-orange-200 text-orange-600 rounded-xl text-base hover:bg-orange-50">구매 취소(환불)</button>
                 )
               )}
             {canDelete && (
               <button onClick={() => handleDelete(selected.id)}
-                className="px-5 py-2 border border-red-200 text-red-500 rounded-xl text-sm hover:bg-red-50">삭제</button>
+                className="px-5 py-2 border border-red-200 text-red-500 rounded-xl text-base hover:bg-red-50">삭제</button>
             )}
           </div>
         </div>
@@ -763,18 +763,18 @@ export default function ApprovalContent() {
           <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
             <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6">
               <h3 className="text-lg font-bold text-gray-800 mb-2">구매 취소 (환불 처리)</h3>
-              <p className="text-sm text-gray-500 mb-4">
+              <p className="text-base text-gray-500 mb-4">
                 재고품절·판매자 사정 등으로 취소된 건입니다. 카드 캘린더에 <span className="text-red-500 font-medium">−{selected.total_amount.toLocaleString()}원</span>(환불)이 반영됩니다.
               </p>
-              <label className="block text-xs font-medium text-gray-500 mb-1">환불 예정일</label>
+              <label className="block text-sm font-medium text-gray-500 mb-1">환불 예정일</label>
               <input type="date" value={refundDate} onChange={e => setRefundDate(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-orange-400" />
-              <p className="text-xs text-gray-400 mt-1.5">보통 다음 카드 명세서에 반영됩니다. (자동 계산됨, 수정 가능)</p>
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-orange-400" />
+              <p className="text-sm text-gray-400 mt-1.5">보통 다음 카드 명세서에 반영됩니다. (자동 계산됨, 수정 가능)</p>
               <div className="flex gap-3 mt-5">
                 <button onClick={() => handleCancelPurchase(selected)}
-                  className="flex-1 px-5 py-2.5 bg-orange-500 hover:bg-orange-600 text-white rounded-xl text-sm font-medium">취소 확정</button>
+                  className="flex-1 px-5 py-2.5 bg-orange-500 hover:bg-orange-600 text-white rounded-xl text-base font-medium">취소 확정</button>
                 <button onClick={() => setShowCancelModal(false)}
-                  className="px-5 py-2.5 border border-gray-200 text-gray-600 rounded-xl text-sm hover:bg-gray-50">닫기</button>
+                  className="px-5 py-2.5 border border-gray-200 text-gray-600 rounded-xl text-base hover:bg-gray-50">닫기</button>
               </div>
             </div>
           </div>
@@ -786,12 +786,12 @@ export default function ApprovalContent() {
               <h3 className="text-lg font-bold text-gray-800 mb-4">반려 사유</h3>
               <textarea value={rejectReason} onChange={(e) => setRejectReason(e.target.value)}
                 placeholder="반려 사유를 입력해주세요" rows={4}
-                className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-400 resize-none" />
+                className="w-full px-4 py-3 border border-gray-200 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-red-400 resize-none" />
               <div className="flex gap-3 mt-4">
                 <button onClick={() => handleReject(selected)}
-                  className="px-5 py-2.5 bg-red-500 hover:bg-red-600 text-white rounded-xl text-sm font-medium flex-1">반려 확인</button>
+                  className="px-5 py-2.5 bg-red-500 hover:bg-red-600 text-white rounded-xl text-base font-medium flex-1">반려 확인</button>
                 <button onClick={() => { setShowRejectModal(false); setRejectReason(''); }}
-                  className="px-5 py-2.5 border border-gray-200 text-gray-600 rounded-xl text-sm hover:bg-gray-50">취소</button>
+                  className="px-5 py-2.5 border border-gray-200 text-gray-600 rounded-xl text-base hover:bg-gray-50">취소</button>
               </div>
             </div>
           </div>
@@ -803,14 +803,14 @@ export default function ApprovalContent() {
   // ─── 작성/수정 폼 ───
   if (view === 'form') return (
     <div className="space-y-4">
-      <button onClick={() => { setView('list'); resetForm(); }} className="text-sm text-blue-600 hover:text-blue-700">← 목록으로</button>
+      <button onClick={() => { setView('list'); resetForm(); }} className="text-base text-blue-600 hover:text-blue-700">← 목록으로</button>
 
       {/* 문서 종류 선택 */}
       {!editId && (
         <div className="flex gap-2">
           {(['지출결의서', '휴가신청서'] as DocType[]).map(dt => (
             <button key={dt} onClick={() => setDocType(dt)}
-              className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${docType === dt ? 'bg-slate-700 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
+              className={`px-4 py-2 rounded-xl text-base font-medium transition-colors ${docType === dt ? 'bg-slate-700 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
               {dt}
             </button>
           ))}
@@ -824,27 +824,27 @@ export default function ApprovalContent() {
             <div className="flex items-start justify-between mb-6">
               <h2 className="text-2xl font-bold text-gray-800 tracking-widest">〈 휴 가 신 청 서 〉</h2>
               <div className="text-right">
-                <div className="text-xs text-gray-400 mb-1">연차 현황</div>
-                <div className="text-sm font-bold text-gray-700">
+                <div className="text-sm text-gray-400 mb-1">연차 현황</div>
+                <div className="text-base font-bold text-gray-700">
                   {myEmployee?.hire_date ? (
                     <>부여 <span className="text-blue-600">{entitlement}일</span> · 사용 <span className="text-orange-500">{usedLeave}일</span> · 잔여 <span className={remaining < 0 ? 'text-red-500' : 'text-green-600'}>{remaining}일</span></>
                   ) : (
-                    <span className="text-gray-400 text-xs">입사일 미등록</span>
+                    <span className="text-gray-400 text-sm">입사일 미등록</span>
                   )}
                 </div>
               </div>
             </div>
 
             <div className="border border-gray-400">
-              <div className="flex text-sm border-b border-gray-300">
+              <div className="flex text-base border-b border-gray-300">
                 <div className="w-28 px-4 py-3 bg-gray-50 border-r border-gray-400 font-medium text-gray-600">신청자</div>
                 <div className="px-4 py-3 flex-1 text-gray-700">{me?.name}</div>
               </div>
-              <div className="flex text-sm border-b border-gray-300">
+              <div className="flex text-base border-b border-gray-300">
                 <div className="w-28 px-4 py-3 bg-gray-50 border-r border-gray-400 font-medium text-gray-600">소속</div>
                 <div className="px-4 py-3 flex-1 text-gray-700">{me?.company}</div>
               </div>
-              <div className="flex text-sm border-b border-gray-300">
+              <div className="flex text-base border-b border-gray-300">
                 <div className="w-28 px-4 py-3 bg-gray-50 border-r border-gray-400 font-medium text-gray-600">휴가 종류</div>
                 <div className="px-4 py-2 flex-1 flex gap-3 items-center flex-wrap">
                   {VACATION_TYPES.map(vt => (
@@ -853,45 +853,45 @@ export default function ApprovalContent() {
                         checked={vacationType === vt.value}
                         onChange={() => setVacationType(vt.value)}
                         className="accent-blue-600" />
-                      <span className="text-sm text-gray-700">{vt.label}</span>
-                      <span className="text-xs text-gray-400">({vt.time})</span>
+                      <span className="text-base text-gray-700">{vt.label}</span>
+                      <span className="text-sm text-gray-400">({vt.time})</span>
                     </label>
                   ))}
                 </div>
               </div>
-              <div className="flex text-sm border-b border-gray-300">
+              <div className="flex text-base border-b border-gray-300">
                 <div className="w-28 px-4 py-3 bg-gray-50 border-r border-gray-400 font-medium text-gray-600">휴가 일자</div>
                 <div className="px-4 py-2 flex-1 flex items-center gap-2 flex-wrap">
                   <input type="date" value={vacationStart} onChange={(e) => setVacationStart(e.target.value)}
-                    className="text-sm focus:outline-none border border-gray-200 rounded-lg px-2 py-1.5" />
+                    className="text-base focus:outline-none border border-gray-200 rounded-lg px-2 py-1.5" />
                   {vacationType === 'annual' && (
                     <>
-                      <span className="text-sm text-gray-400">~</span>
+                      <span className="text-base text-gray-400">~</span>
                       <input type="date" value={vacationEnd} onChange={(e) => setVacationEnd(e.target.value)}
                         min={vacationStart}
-                        className="text-sm focus:outline-none border border-gray-200 rounded-lg px-2 py-1.5" />
+                        className="text-base focus:outline-none border border-gray-200 rounded-lg px-2 py-1.5" />
                     </>
                   )}
-                  <span className="text-sm font-medium text-blue-600">({vacDays}일)</span>
+                  <span className="text-base font-medium text-blue-600">({vacDays}일)</span>
                 </div>
               </div>
-              <div className="flex text-sm">
+              <div className="flex text-base">
                 <div className="w-28 px-4 py-3 bg-gray-50 border-r border-gray-400 font-medium text-gray-600">신청 사유</div>
                 <div className="px-4 py-2 flex-1">
                   <input value={vacationReason} onChange={(e) => setVacationReason(e.target.value)}
                     placeholder="사유를 입력하세요"
-                    className="w-full text-sm focus:outline-none border-b border-gray-200 pb-1 focus:border-blue-400 outline-none" />
+                    className="w-full text-base focus:outline-none border-b border-gray-200 pb-1 focus:border-blue-400 outline-none" />
                 </div>
               </div>
             </div>
 
-            <div className="text-center text-sm text-gray-600 border border-gray-200 py-3 mt-4 mb-6 rounded-xl bg-gray-50">
+            <div className="text-center text-base text-gray-600 border border-gray-200 py-3 mt-4 mb-6 rounded-xl bg-gray-50">
               <p>위와 같이 휴가를 신청합니다.</p>
               <p className="mt-1">{today()} &nbsp;&nbsp; 신청자 [ {me?.name} ]</p>
             </div>
 
             {vacDays > remaining && remaining >= 0 && (
-              <div className="mb-4 bg-orange-50 border border-orange-200 rounded-xl px-4 py-3 text-sm text-orange-700">
+              <div className="mb-4 bg-orange-50 border border-orange-200 rounded-xl px-4 py-3 text-base text-orange-700">
                 ⚠️ 신청 일수({vacDays}일)가 잔여 연차({remaining}일)를 초과합니다.
               </div>
             )}
@@ -900,11 +900,11 @@ export default function ApprovalContent() {
           /* ── 지출결의서 폼 ── */
           <>
             <div className="flex items-center gap-3 mb-4">
-              <span className="text-sm font-medium text-gray-600">사업자</span>
+              <span className="text-base font-medium text-gray-600">사업자</span>
               <div className="flex gap-2">
                 {COMPANIES.map(c => (
                   <button key={c} onClick={() => setCompany(c)}
-                    className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${company === c ? 'bg-slate-700 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+                    className={`px-3 py-1.5 rounded-lg text-base font-medium transition-colors ${company === c ? 'bg-slate-700 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
                     {c}
                   </button>
                 ))}
@@ -914,26 +914,26 @@ export default function ApprovalContent() {
             {/* 결제 카드 / 구매처 */}
             <div className="grid sm:grid-cols-2 gap-3 mb-6 bg-blue-50/50 border border-blue-100 rounded-xl p-4">
               <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1">결제 카드</label>
+                <label className="block text-sm font-medium text-gray-500 mb-1">결제 카드</label>
                 <select value={cardId} onChange={e => setCardId(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-400">
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-base bg-white focus:outline-none focus:ring-2 focus:ring-blue-400">
                   <option value="">선택 안 함 (현금/계좌이체 등)</option>
                   {cards.map(c => (
                     <option key={c.id} value={c.id}>[{c.card_type}] {c.card_name} {c.holder_name ? `· ${c.holder_name}` : ''}</option>
                   ))}
                 </select>
                 {selectedCard && paymentDuePreview && (
-                  <p className="text-xs text-blue-600 mt-1.5">💳 결제예정일: <span className="font-bold">{paymentDuePreview}</span> (구매일 {spendDate} 기준)</p>
+                  <p className="text-sm text-blue-600 mt-1.5">💳 결제예정일: <span className="font-bold">{paymentDuePreview}</span> (구매일 {spendDate} 기준)</p>
                 )}
                 {cards.length === 0 && (
-                  <p className="text-xs text-gray-400 mt-1.5">카드·매입 메뉴에서 카드를 먼저 등록하세요.</p>
+                  <p className="text-sm text-gray-400 mt-1.5">카드·매입 메뉴에서 카드를 먼저 등록하세요.</p>
                 )}
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1">구매처 (홈쇼핑사 등)</label>
+                <label className="block text-sm font-medium text-gray-500 mb-1">구매처 (홈쇼핑사 등)</label>
                 <input value={purchaseVendor} onChange={e => setPurchaseVendor(e.target.value)}
                   placeholder="예: GS홈쇼핑, 롯데홈쇼핑"
-                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-400" />
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-base bg-white focus:outline-none focus:ring-2 focus:ring-blue-400" />
               </div>
             </div>
 
@@ -943,7 +943,7 @@ export default function ApprovalContent() {
                 <div className="flex">
                   {approvalLine.map((role) => (
                     <div key={role} className="border-l border-gray-400 first:border-l-0 w-20 text-center">
-                      <div className="text-xs py-1 border-b border-gray-400 bg-gray-50">{role}</div>
+                      <div className="text-sm py-1 border-b border-gray-400 bg-gray-50">{role}</div>
                       <div className="py-6" />
                     </div>
                   ))}
@@ -953,9 +953,9 @@ export default function ApprovalContent() {
 
             <div className="border border-gray-400 mb-4">
               <div className="flex">
-                <div className="px-4 py-2 text-sm font-medium bg-gray-50 border-r border-gray-400 w-28 text-center">일금(정)</div>
-                <div className="px-4 py-2 text-sm flex-1 text-gray-600">{total > 0 ? numberToKorean(total) : ''}</div>
-                <div className="px-4 py-2 text-sm font-bold border-l border-gray-400 w-36 text-right">{total > 0 ? `${total.toLocaleString()} 원` : ''}</div>
+                <div className="px-4 py-2 text-base font-medium bg-gray-50 border-r border-gray-400 w-28 text-center">일금(정)</div>
+                <div className="px-4 py-2 text-base flex-1 text-gray-600">{total > 0 ? numberToKorean(total) : ''}</div>
+                <div className="px-4 py-2 text-base font-bold border-l border-gray-400 w-36 text-right">{total > 0 ? `${total.toLocaleString()} 원` : ''}</div>
               </div>
             </div>
 
@@ -965,52 +965,52 @@ export default function ApprovalContent() {
                 { label: '결재', date: settleDate, setDate: setSettleDate, l2: '인', v2: null, sv2: null, l3: '계정과목', v3: account, sv3: setAccount },
                 { label: '지출', date: spendDate, setDate: setSpendDate, l2: '인', v2: null, sv2: null, l3: '', v3: null, sv3: null },
               ].map((row, i) => (
-                <div key={i} className={`flex text-sm ${i > 0 ? 'border-t border-gray-400' : ''}`}>
+                <div key={i} className={`flex text-base ${i > 0 ? 'border-t border-gray-400' : ''}`}>
                   <div className="w-12 px-2 py-1 bg-gray-50 border-r border-gray-400 text-center font-medium flex items-center justify-center">{row.label}</div>
                   <div className="px-1 py-1 border-r border-gray-400 w-36">
-                    <input type="date" value={row.date} onChange={(e) => row.setDate(e.target.value)} className="w-full text-sm focus:outline-none px-1" />
+                    <input type="date" value={row.date} onChange={(e) => row.setDate(e.target.value)} className="w-full text-base focus:outline-none px-1" />
                   </div>
-                  <div className="px-2 py-2 border-r border-gray-400 w-20 bg-gray-50 text-center text-xs flex items-center justify-center">{row.l2}</div>
+                  <div className="px-2 py-2 border-r border-gray-400 w-20 bg-gray-50 text-center text-sm flex items-center justify-center">{row.l2}</div>
                   <div className="px-1 py-1 border-r border-gray-400 flex-1">
-                    {row.sv2 && <input value={row.v2 ?? ''} onChange={(e) => row.sv2!(e.target.value)} className="w-full text-sm focus:outline-none px-1" />}
+                    {row.sv2 && <input value={row.v2 ?? ''} onChange={(e) => row.sv2!(e.target.value)} className="w-full text-base focus:outline-none px-1" />}
                   </div>
-                  <div className="px-2 py-2 border-r border-gray-400 w-20 bg-gray-50 text-center text-xs flex items-center justify-center">{row.l3}</div>
+                  <div className="px-2 py-2 border-r border-gray-400 w-20 bg-gray-50 text-center text-sm flex items-center justify-center">{row.l3}</div>
                   <div className="px-1 py-1 flex-1">
-                    {row.sv3 && <input value={row.v3 ?? ''} onChange={(e) => row.sv3!(e.target.value)} className="w-full text-sm focus:outline-none px-1" />}
+                    {row.sv3 && <input value={row.v3 ?? ''} onChange={(e) => row.sv3!(e.target.value)} className="w-full text-base focus:outline-none px-1" />}
                   </div>
                 </div>
               ))}
             </div>
 
             <div className="border border-gray-400 mb-1">
-              <div className="flex bg-gray-50 border-b border-gray-400 text-sm font-medium text-center">
+              <div className="flex bg-gray-50 border-b border-gray-400 text-base font-medium text-center">
                 <div className="w-20 px-2 py-2 border-r border-gray-400">월/일</div>
                 <div className="flex-1 px-2 py-2 border-r border-gray-400">적 요</div>
                 <div className="w-32 px-2 py-2 border-r border-gray-400">금 액</div>
                 <div className="w-36 px-2 py-2">비 고</div>
               </div>
               {items.map((item, i) => (
-                <div key={i} className="flex border-t border-gray-200 text-sm">
+                <div key={i} className="flex border-t border-gray-200 text-base">
                   <div className="w-20 border-r border-gray-400">
                     <input value={item.item_date} onChange={(e) => updateItem(i, 'item_date', e.target.value)}
-                      className="w-full px-2 py-2 text-center focus:outline-none focus:bg-blue-50 text-sm" />
+                      className="w-full px-2 py-2 text-center focus:outline-none focus:bg-blue-50 text-base" />
                   </div>
                   <div className="flex-1 border-r border-gray-400">
                     <input value={item.description} onChange={(e) => updateItem(i, 'description', e.target.value)}
-                      className="w-full px-2 py-2 focus:outline-none focus:bg-blue-50 text-sm" />
+                      className="w-full px-2 py-2 focus:outline-none focus:bg-blue-50 text-base" />
                   </div>
                   <div className="w-32 border-r border-gray-400">
                     <input type="text" inputMode="numeric" value={item.amount ? item.amount.toLocaleString() : ''}
                       onChange={(e) => updateItem(i, 'amount', Number(e.target.value.replace(/[^\d]/g, '')) || 0)}
-                      className="w-full px-2 py-2 text-right focus:outline-none focus:bg-blue-50 text-sm" />
+                      className="w-full px-2 py-2 text-right focus:outline-none focus:bg-blue-50 text-base" />
                   </div>
                   <div className="w-36">
                     <input value={item.note} onChange={(e) => updateItem(i, 'note', e.target.value)}
-                      className="w-full px-2 py-2 focus:outline-none focus:bg-blue-50 text-sm" />
+                      className="w-full px-2 py-2 focus:outline-none focus:bg-blue-50 text-base" />
                   </div>
                 </div>
               ))}
-              <div className="flex border-t border-gray-400 text-sm font-bold bg-gray-50">
+              <div className="flex border-t border-gray-400 text-base font-bold bg-gray-50">
                 <div className="w-20 px-2 py-2 border-r border-gray-400" />
                 <div className="flex-1 px-2 py-2 border-r border-gray-400 text-center">합 계</div>
                 <div className="w-32 px-2 py-2 border-r border-gray-400 text-right">₩{total.toLocaleString()}</div>
@@ -1018,9 +1018,9 @@ export default function ApprovalContent() {
               </div>
             </div>
             <button onClick={() => setItems(p => [...p, { ...EMPTY_ITEM, sort_order: p.length }])}
-              className="text-xs text-blue-500 hover:underline mb-4 block">+ 항목 추가</button>
+              className="text-sm text-blue-500 hover:underline mb-4 block">+ 항목 추가</button>
 
-            <div className="text-center text-sm text-gray-600 border border-gray-400 py-3 mb-6">
+            <div className="text-center text-base text-gray-600 border border-gray-400 py-3 mb-6">
               <p>위 금액을 정히 영수(청구) 합니다.</p>
               <p className="mt-1">{issueDate} &nbsp;&nbsp; 영수자 [ {organizer} ]</p>
             </div>
@@ -1029,11 +1029,11 @@ export default function ApprovalContent() {
 
         <div className="flex gap-3 justify-end">
           <button onClick={() => handleSave(false)} disabled={saving}
-            className="px-5 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl text-sm font-medium">
+            className="px-5 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl text-base font-medium">
             임시저장
           </button>
           <button onClick={() => handleSave(true)} disabled={saving}
-            className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-medium disabled:opacity-50">
+            className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-base font-medium disabled:opacity-50">
             {saving ? '저장 중...' : editId ? '재상신' : '상신'}
           </button>
         </div>
@@ -1049,12 +1049,12 @@ export default function ApprovalContent() {
         {/* 상단 탭 */}
         <div className="flex items-center gap-3 flex-wrap">
           <button onClick={() => setView('list')}
-            className="px-3 py-2 rounded-xl text-sm font-medium bg-white border border-gray-200 text-gray-600 hover:bg-gray-50">
+            className="px-3 py-2 rounded-xl text-base font-medium bg-white border border-gray-200 text-gray-600 hover:bg-gray-50">
             ← 결재 목록
           </button>
           <h2 className="text-lg font-bold text-gray-800">직원 연차 현황 ({new Date().getFullYear()}년)</h2>
           <button onClick={loadLeaveData}
-            className="ml-auto px-3 py-1.5 text-xs border border-gray-200 rounded-lg text-gray-500 hover:bg-gray-50">
+            className="ml-auto px-3 py-1.5 text-sm border border-gray-200 rounded-lg text-gray-500 hover:bg-gray-50">
             새로고침
           </button>
         </div>
@@ -1072,12 +1072,12 @@ export default function ApprovalContent() {
                 >
                   <div className="flex-1">
                     <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center text-sm font-bold text-blue-600">
+                      <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center text-base font-bold text-blue-600">
                         {row.name[0]}
                       </div>
                       <div>
                         <div className="font-medium text-gray-800">{row.name}</div>
-                        <div className="text-xs text-gray-400">{row.company} · 입사일: {row.hire_date || '미등록'}</div>
+                        <div className="text-sm text-gray-400">{row.company} · 입사일: {row.hire_date || '미등록'}</div>
                       </div>
                     </div>
                   </div>
@@ -1090,11 +1090,11 @@ export default function ApprovalContent() {
                             type="number" value={editLeaveVal} min={0} max={99} step={0.5}
                             onChange={e => setEditLeaveVal(Number(e.target.value))}
                             onKeyDown={e => { if (e.key === 'Enter') saveLeaveTotal(row.id); if (e.key === 'Escape') setEditingLeave(null); }}
-                            className="w-14 text-center border border-blue-400 rounded-lg text-sm font-bold px-1 py-0.5 focus:outline-none"
+                            className="w-14 text-center border border-blue-400 rounded-lg text-base font-bold px-1 py-0.5 focus:outline-none"
                             autoFocus
                           />
-                          <button onClick={() => saveLeaveTotal(row.id)} className="text-xs text-blue-600 font-medium hover:underline">저장</button>
-                          <button onClick={() => setEditingLeave(null)} className="text-xs text-gray-400 hover:underline">취소</button>
+                          <button onClick={() => saveLeaveTotal(row.id)} className="text-sm text-blue-600 font-medium hover:underline">저장</button>
+                          <button onClick={() => setEditingLeave(null)} className="text-sm text-gray-400 hover:underline">취소</button>
                         </div>
                       ) : (
                         <div
@@ -1103,25 +1103,25 @@ export default function ApprovalContent() {
                           onClick={() => { setEditingLeave(row.id); setEditLeaveVal(row.annual_leave_total); }}
                         >
                           {row.annual_leave_total}
-                          <span className="text-xs text-blue-400 ml-0.5 opacity-0 group-hover:opacity-100">✏️</span>
+                          <span className="text-sm text-blue-400 ml-0.5 opacity-0 group-hover:opacity-100">✏️</span>
                         </div>
                       )}
-                      <div className="text-xs text-gray-400">부여</div>
+                      <div className="text-sm text-gray-400">부여</div>
                     </div>
                     <div className="text-center">
                       <div className="text-lg font-bold text-orange-500">{row.used}</div>
-                      <div className="text-xs text-gray-400">사용</div>
+                      <div className="text-sm text-gray-400">사용</div>
                     </div>
                     <div className="text-center">
                       <div className={`text-lg font-bold ${row.remaining < 0 ? 'text-red-500' : row.remaining <= 3 ? 'text-orange-500' : 'text-green-600'}`}>
                         {row.remaining}
                       </div>
-                      <div className="text-xs text-gray-400">잔여</div>
+                      <div className="text-sm text-gray-400">잔여</div>
                     </div>
                   </div>
                   {/* 진행 바 */}
                   <div className="w-32 hidden sm:block">
-                    <div className="text-xs text-gray-400 mb-1 text-right">{row.annual_leave_total > 0 ? Math.round(row.used / row.annual_leave_total * 100) : 0}% 사용</div>
+                    <div className="text-sm text-gray-400 mb-1 text-right">{row.annual_leave_total > 0 ? Math.round(row.used / row.annual_leave_total * 100) : 0}% 사용</div>
                     <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
                       <div
                         className="h-full bg-orange-400 rounded-full transition-all"
@@ -1129,18 +1129,18 @@ export default function ApprovalContent() {
                       />
                     </div>
                   </div>
-                  <div className="ml-4 text-gray-400 text-sm">{expandedEmp === row.id ? '▲' : '▼'}</div>
+                  <div className="ml-4 text-gray-400 text-base">{expandedEmp === row.id ? '▲' : '▼'}</div>
                 </div>
 
                 {/* 사용 내역 (펼치기) */}
                 {expandedEmp === row.id && (
                   <div className="border-t border-gray-100 px-5 pb-4">
                     {row.history.length === 0 ? (
-                      <div className="text-center py-6 text-sm text-gray-400">사용 내역 없음</div>
+                      <div className="text-center py-6 text-base text-gray-400">사용 내역 없음</div>
                     ) : (
-                      <table className="w-full text-sm mt-3">
+                      <table className="w-full text-base mt-3">
                         <thead>
-                          <tr className="text-xs text-gray-400 border-b border-gray-100">
+                          <tr className="text-sm text-gray-400 border-b border-gray-100">
                             <th className="py-2 text-left font-medium">일자</th>
                             <th className="py-2 text-left font-medium">종류</th>
                             <th className="py-2 text-left font-medium">사유</th>
@@ -1154,7 +1154,7 @@ export default function ApprovalContent() {
                                 {h.vacation_start}{h.vacation_end && h.vacation_end !== h.vacation_start ? ` ~ ${h.vacation_end}` : ''}
                               </td>
                               <td className="py-2">
-                                <span className="text-xs px-2 py-0.5 rounded-md bg-blue-50 text-blue-600 font-medium">
+                                <span className="text-sm px-2 py-0.5 rounded-md bg-blue-50 text-blue-600 font-medium">
                                   {VTYPE_LABEL[h.vacation_type || ''] || h.vacation_type}
                                 </span>
                               </td>
@@ -1165,7 +1165,7 @@ export default function ApprovalContent() {
                         </tbody>
                         <tfoot>
                           <tr className="border-t border-gray-200">
-                            <td colSpan={3} className="py-2 text-xs text-gray-400">합계</td>
+                            <td colSpan={3} className="py-2 text-sm text-gray-400">합계</td>
                             <td className="py-2 text-right font-bold text-orange-500">{row.used}일</td>
                           </tr>
                         </tfoot>
@@ -1187,14 +1187,14 @@ export default function ApprovalContent() {
       {/* 상단 탭 */}
       <div className="flex items-center gap-2 border-b border-gray-200 pb-3">
         <button
-          className="px-4 py-2 rounded-t-lg text-sm font-medium border-b-2 border-blue-600 text-blue-600 bg-white"
+          className="px-4 py-2 rounded-t-lg text-base font-medium border-b-2 border-blue-600 text-blue-600 bg-white"
         >
           결재 문서
         </button>
         {(isCeo || isAdmin) && (
           <button
             onClick={() => { setView('leave'); loadLeaveData(); }}
-            className="px-4 py-2 rounded-t-lg text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700"
+            className="px-4 py-2 rounded-t-lg text-base font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700"
           >
             연차 현황
           </button>
@@ -1205,13 +1205,13 @@ export default function ApprovalContent() {
         <div className="flex gap-2 flex-wrap">
           {[['all','전체'], ['draft','임시저장'], ['pending','결재중'], ['approved','승인완료'], ['rejected','반려']].map(([v, l]) => (
             <button key={v} onClick={() => setFilterStatus(v)}
-              className={`px-3 py-2 rounded-xl text-sm font-medium transition-colors ${filterStatus === v ? 'bg-slate-700 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
+              className={`px-3 py-2 rounded-xl text-base font-medium transition-colors ${filterStatus === v ? 'bg-slate-700 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
               {l}
             </button>
           ))}
         </div>
         <button onClick={() => { resetForm(); setView('form'); }}
-          className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-medium">
+          className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-base font-medium">
           + 문서 작성
         </button>
       </div>
@@ -1225,11 +1225,11 @@ export default function ApprovalContent() {
           <>
             {/* 데스크탑: 표 */}
             <div className="overflow-x-auto hidden sm:block">
-              <table className="w-full text-sm">
+              <table className="w-full text-base">
                 <thead className="bg-gray-50 border-b border-gray-100">
                   <tr>
                     {['문서종류', '사업자', '발의일', '내용', '작성자', '상태', ''].map(h => (
-                      <th key={h} className="px-4 py-3 text-left text-xs font-medium text-gray-500">{h}</th>
+                      <th key={h} className="px-4 py-3 text-left text-sm font-medium text-gray-500">{h}</th>
                     ))}
                   </tr>
                 </thead>
@@ -1239,20 +1239,20 @@ export default function ApprovalContent() {
                       <td className="px-4 py-3 font-medium text-gray-800">{a.doc_type}</td>
                       <td className="px-4 py-3 text-gray-500">{a.company}</td>
                       <td className="px-4 py-3 text-gray-500">{a.issue_date}</td>
-                      <td className="px-4 py-3 text-gray-500 text-xs">
+                      <td className="px-4 py-3 text-gray-500 text-sm">
                         {a.doc_type === '휴가신청서'
                           ? `${VACATION_TYPES.find(v => v.value === a.vacation_type)?.label || a.vacation_type} ${a.vacation_days}일`
                           : `${a.total_amount.toLocaleString()}원`}
                       </td>
                       <td className="px-4 py-3 text-gray-500">{a.submitter_name}</td>
                       <td className="px-4 py-3">
-                        <span className={`text-xs px-2 py-0.5 rounded-md font-medium ${STATUS_MAP[a.status]?.color}`}>
+                        <span className={`text-sm px-2 py-0.5 rounded-md font-medium ${STATUS_MAP[a.status]?.color}`}>
                           {STATUS_MAP[a.status]?.label}
                         </span>
                       </td>
                       <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
                         {isMyTurn(a) && (
-                          <span className="text-xs text-yellow-600 font-medium bg-yellow-50 px-2 py-0.5 rounded-md">결재 대기</span>
+                          <span className="text-sm text-yellow-600 font-medium bg-yellow-50 px-2 py-0.5 rounded-md">결재 대기</span>
                         )}
                       </td>
                     </tr>
@@ -1268,23 +1268,23 @@ export default function ApprovalContent() {
                   <div className="flex items-center justify-between gap-2 mb-1.5">
                     <div className="flex items-center gap-2 min-w-0">
                       <span className="font-bold text-gray-800 text-[15px]">{a.doc_type}</span>
-                      <span className="text-xs text-gray-400 truncate">{a.company}</span>
+                      <span className="text-sm text-gray-400 truncate">{a.company}</span>
                     </div>
-                    <span className={`text-xs px-2 py-0.5 rounded-md font-medium flex-shrink-0 ${STATUS_MAP[a.status]?.color}`}>
+                    <span className={`text-sm px-2 py-0.5 rounded-md font-medium flex-shrink-0 ${STATUS_MAP[a.status]?.color}`}>
                       {STATUS_MAP[a.status]?.label}
                     </span>
                   </div>
                   <div className="flex items-center justify-between gap-2">
-                    <div className="text-sm text-gray-600 font-medium">
+                    <div className="text-base text-gray-600 font-medium">
                       {a.doc_type === '휴가신청서'
                         ? `${VACATION_TYPES.find(v => v.value === a.vacation_type)?.label || a.vacation_type} ${a.vacation_days}일`
                         : `${a.total_amount.toLocaleString()}원`}
                     </div>
-                    <div className="text-xs text-gray-400">{a.submitter_name} · {a.issue_date}</div>
+                    <div className="text-sm text-gray-400">{a.submitter_name} · {a.issue_date}</div>
                   </div>
                   {isMyTurn(a) && (
                     <div className="mt-2">
-                      <span className="text-xs text-yellow-700 font-bold bg-yellow-50 px-2 py-1 rounded-md">⏳ 내 결재 대기</span>
+                      <span className="text-sm text-yellow-700 font-bold bg-yellow-50 px-2 py-1 rounded-md">⏳ 내 결재 대기</span>
                     </div>
                   )}
                 </div>

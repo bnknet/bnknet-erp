@@ -120,12 +120,12 @@ export default function AccountsContent() {
         <div className="flex-1 space-y-2">
           {/* 사업자 필터 */}
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-xs text-gray-400 w-12">사업자</span>
+            <span className="text-sm text-gray-400 w-12">사업자</span>
             {COMPANIES.map((c) => (
               <button
                 key={c}
                 onClick={() => setFilterCompany(c)}
-                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${filterCompany === c ? 'bg-slate-700 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}
+                className={`px-3 py-1.5 rounded-lg text-base font-medium transition-colors ${filterCompany === c ? 'bg-slate-700 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}
               >
                 {c}
               </button>
@@ -133,12 +133,12 @@ export default function AccountsContent() {
           </div>
           {/* 카테고리 필터 */}
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-xs text-gray-400 w-12">카테고리</span>
+            <span className="text-sm text-gray-400 w-12">카테고리</span>
             {CATEGORIES.map((c) => (
               <button
                 key={c}
                 onClick={() => setFilterCat(c)}
-                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${filterCat === c ? 'bg-blue-600 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}
+                className={`px-3 py-1.5 rounded-lg text-base font-medium transition-colors ${filterCat === c ? 'bg-blue-600 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}
               >
                 {c}
               </button>
@@ -147,7 +147,7 @@ export default function AccountsContent() {
         </div>
         <button
           onClick={() => { setShowForm(true); setEditId(null); setForm({ ...EMPTY_FORM }); }}
-          className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-medium transition-colors flex-shrink-0"
+          className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-base font-medium transition-colors flex-shrink-0"
         >
           + 계정 추가
         </button>
@@ -162,7 +162,7 @@ export default function AccountsContent() {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="서비스명 또는 아이디 검색"
-          className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+          className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
         />
       </div>
 
@@ -181,15 +181,15 @@ export default function AccountsContent() {
                 <div>
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="font-semibold text-gray-800">{acc.service_name}</span>
-                    <span className={`text-xs px-2 py-0.5 rounded-md ${CATEGORY_COLORS[acc.category] || 'bg-gray-100 text-gray-600'}`}>
+                    <span className={`text-sm px-2 py-0.5 rounded-md ${CATEGORY_COLORS[acc.category] || 'bg-gray-100 text-gray-600'}`}>
                       {acc.category}
                     </span>
-                    <span className="text-xs px-2 py-0.5 rounded-md bg-slate-100 text-slate-600">
+                    <span className="text-sm px-2 py-0.5 rounded-md bg-slate-100 text-slate-600">
                       {(acc as Account & { company?: string }).company || '공통'}
                     </span>
                   </div>
                   {acc.url && (
-                    <a href={acc.url} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-500 hover:underline mt-0.5 block truncate max-w-[200px]">
+                    <a href={acc.url} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-500 hover:underline mt-0.5 block truncate max-w-[200px]">
                       {acc.url}
                     </a>
                   )}
@@ -208,30 +208,30 @@ export default function AccountsContent() {
                 {/* 아이디 */}
                 <div className="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-2">
                   <div>
-                    <div className="text-xs text-gray-400">아이디</div>
-                    <div className="text-sm font-medium text-gray-700">{acc.login_id}</div>
+                    <div className="text-sm text-gray-400">아이디</div>
+                    <div className="text-base font-medium text-gray-700">{acc.login_id}</div>
                   </div>
-                  <button onClick={() => copyToClipboard(acc.login_id)} className="text-xs text-gray-400 hover:text-blue-600 px-2 py-1 hover:bg-blue-50 rounded transition-colors">복사</button>
+                  <button onClick={() => copyToClipboard(acc.login_id)} className="text-sm text-gray-400 hover:text-blue-600 px-2 py-1 hover:bg-blue-50 rounded transition-colors">복사</button>
                 </div>
 
                 {/* 비밀번호 */}
                 <div className="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-2">
                   <div>
-                    <div className="text-xs text-gray-400">비밀번호</div>
-                    <div className="text-sm font-medium text-gray-700 font-mono">
+                    <div className="text-sm text-gray-400">비밀번호</div>
+                    <div className="text-base font-medium text-gray-700 font-mono">
                       {visiblePw.has(acc.id) ? acc.password : '••••••••'}
                     </div>
                   </div>
                   <div className="flex gap-1">
-                    <button onClick={() => togglePw(acc.id)} className="text-xs text-gray-400 hover:text-blue-600 px-2 py-1 hover:bg-blue-50 rounded transition-colors">
+                    <button onClick={() => togglePw(acc.id)} className="text-sm text-gray-400 hover:text-blue-600 px-2 py-1 hover:bg-blue-50 rounded transition-colors">
                       {visiblePw.has(acc.id) ? '숨기기' : '보기'}
                     </button>
-                    <button onClick={() => copyToClipboard(acc.password)} className="text-xs text-gray-400 hover:text-blue-600 px-2 py-1 hover:bg-blue-50 rounded transition-colors">복사</button>
+                    <button onClick={() => copyToClipboard(acc.password)} className="text-sm text-gray-400 hover:text-blue-600 px-2 py-1 hover:bg-blue-50 rounded transition-colors">복사</button>
                   </div>
                 </div>
 
                 {acc.memo && (
-                  <div className="text-xs text-gray-400 px-1">{acc.memo}</div>
+                  <div className="text-sm text-gray-400 px-1">{acc.memo}</div>
                 )}
               </div>
             </div>
@@ -246,52 +246,52 @@ export default function AccountsContent() {
             <h3 className="text-lg font-bold text-gray-800 mb-5">{editId ? '계정 수정' : '계정 추가'}</h3>
             <div className="space-y-3">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">서비스명 *</label>
+                <label className="block text-base font-medium text-gray-700 mb-1.5">서비스명 *</label>
                 <input value={form.service_name} onChange={(e) => setForm({ ...form, service_name: e.target.value })}
-                  placeholder="예: 사방넷, 쿠팡 파트너스" className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  placeholder="예: 사방넷, 쿠팡 파트너스" className="w-full px-4 py-3 border border-gray-200 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-blue-500" />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">사업자</label>
+                <label className="block text-base font-medium text-gray-700 mb-1.5">사업자</label>
                 <select value={form.company} onChange={(e) => setForm({ ...form, company: e.target.value })}
-                  className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                  className="w-full px-4 py-3 border border-gray-200 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-blue-500">
                   {COMPANIES.filter((c) => c !== '전체').map((c) => <option key={c}>{c}</option>)}
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">카테고리</label>
+                <label className="block text-base font-medium text-gray-700 mb-1.5">카테고리</label>
                 <select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}
-                  className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                  className="w-full px-4 py-3 border border-gray-200 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-blue-500">
                   {CATEGORIES.filter((c) => c !== '전체').map((c) => <option key={c}>{c}</option>)}
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">아이디 *</label>
+                <label className="block text-base font-medium text-gray-700 mb-1.5">아이디 *</label>
                 <input value={form.login_id} onChange={(e) => setForm({ ...form, login_id: e.target.value })}
-                  placeholder="로그인 아이디" className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  placeholder="로그인 아이디" className="w-full px-4 py-3 border border-gray-200 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-blue-500" />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">비밀번호</label>
+                <label className="block text-base font-medium text-gray-700 mb-1.5">비밀번호</label>
                 <input value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })}
-                  placeholder="비밀번호" className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  placeholder="비밀번호" className="w-full px-4 py-3 border border-gray-200 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-blue-500" />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">URL</label>
+                <label className="block text-base font-medium text-gray-700 mb-1.5">URL</label>
                 <input value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })}
-                  placeholder="https://" className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  placeholder="https://" className="w-full px-4 py-3 border border-gray-200 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-blue-500" />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">메모</label>
+                <label className="block text-base font-medium text-gray-700 mb-1.5">메모</label>
                 <input value={form.memo} onChange={(e) => setForm({ ...form, memo: e.target.value })}
-                  placeholder="추가 메모" className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  placeholder="추가 메모" className="w-full px-4 py-3 border border-gray-200 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-blue-500" />
               </div>
             </div>
             <div className="flex gap-3 mt-5">
               <button onClick={handleSave} disabled={saving || !form.service_name.trim() || !form.login_id.trim()}
-                className="flex-1 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white rounded-xl font-medium text-sm transition-colors">
+                className="flex-1 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white rounded-xl font-medium text-base transition-colors">
                 {saving ? '저장 중...' : editId ? '수정 완료' : '추가 완료'}
               </button>
               <button onClick={() => { setShowForm(false); setEditId(null); }}
-                className="flex-1 py-3 bg-white border border-gray-200 text-gray-600 rounded-xl font-medium text-sm hover:bg-gray-50">
+                className="flex-1 py-3 bg-white border border-gray-200 text-gray-600 rounded-xl font-medium text-base hover:bg-gray-50">
                 취소
               </button>
             </div>

@@ -230,80 +230,80 @@ export default function CardsContent() {
         <h3 className="text-lg font-bold text-gray-800 mb-5">{editId ? '카드 수정' : '카드 등록'}</h3>
         <div className="space-y-4">
           <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">카드 별칭 *</label>
+            <label className="block text-sm font-medium text-gray-500 mb-1">카드 별칭 *</label>
             <input value={form.card_name} onChange={e => setForm({ ...form, card_name: e.target.value })}
               placeholder="예: 현대 법인카드"
-              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
+              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-blue-400" />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">종류</label>
+              <label className="block text-sm font-medium text-gray-500 mb-1">종류</label>
               <select value={form.card_type} onChange={e => setForm({ ...form, card_type: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none">
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-base focus:outline-none">
                 {CARD_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
               </select>
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">담당자</label>
+              <label className="block text-sm font-medium text-gray-500 mb-1">담당자</label>
               <input value={form.holder_name} onChange={e => setForm({ ...form, holder_name: e.target.value })}
                 placeholder="예: 방성훈"
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-blue-400" />
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">카드사</label>
+              <label className="block text-sm font-medium text-gray-500 mb-1">카드사</label>
               <select value={form.card_company} onChange={e => setForm({ ...form, card_company: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none">
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-base focus:outline-none">
                 {CARD_COMPANIES.map(c => <option key={c} value={c}>{c}</option>)}
               </select>
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">끝 4자리</label>
+              <label className="block text-sm font-medium text-gray-500 mb-1">끝 4자리</label>
               <input value={form.last4} maxLength={4} onChange={e => setForm({ ...form, last4: e.target.value.replace(/\D/g, '') })}
                 placeholder="1234"
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-blue-400" />
             </div>
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">월 한도 (원)</label>
+            <label className="block text-sm font-medium text-gray-500 mb-1">월 한도 (원)</label>
             <input type="number" value={form.limit_amount || ''} onChange={e => setForm({ ...form, limit_amount: Number(e.target.value) })}
               placeholder="10000000"
-              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
+              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-blue-400" />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">결제일 (매월)</label>
+              <label className="block text-sm font-medium text-gray-500 mb-1">결제일 (매월)</label>
               <input type="number" min={1} max={31} value={form.billing_day} onChange={e => setForm({ ...form, billing_day: Number(e.target.value) })}
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-blue-400" />
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">사용 마감일 (31=말일)</label>
+              <label className="block text-sm font-medium text-gray-500 mb-1">사용 마감일 (31=말일)</label>
               <input type="number" min={1} max={31} value={form.close_day} onChange={e => setForm({ ...form, close_day: Number(e.target.value) })}
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-blue-400" />
             </div>
           </div>
-          <p className="text-xs text-gray-400">
+          <p className="text-sm text-gray-400">
             {formatBillingCycle({ ...form, id: '', is_active: true } as Card)}
           </p>
           <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">주요 혜택 / 제휴 메모</label>
+            <label className="block text-sm font-medium text-gray-500 mb-1">주요 혜택 / 제휴 메모</label>
             <input value={form.benefit_memo} onChange={e => setForm({ ...form, benefit_memo: e.target.value })}
               placeholder="예: GS홈쇼핑 7% 할인"
-              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
+              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-blue-400" />
           </div>
-          <label className="flex items-center gap-2 text-sm text-gray-600">
+          <label className="flex items-center gap-2 text-base text-gray-600">
             <input type="checkbox" checked={form.is_active} onChange={e => setForm({ ...form, is_active: e.target.checked })} className="accent-blue-600" />
             사용 중인 카드
           </label>
         </div>
         <div className="flex gap-3 mt-6">
           <button onClick={saveCard} disabled={saving}
-            className="flex-1 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-medium disabled:opacity-50">
+            className="flex-1 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-base font-medium disabled:opacity-50">
             {saving ? '저장 중...' : '저장'}
           </button>
           <button onClick={() => { setShowForm(false); setEditId(null); setForm({ ...EMPTY_CARD }); }}
-            className="px-5 py-2.5 border border-gray-200 text-gray-600 rounded-xl text-sm hover:bg-gray-50">취소</button>
+            className="px-5 py-2.5 border border-gray-200 text-gray-600 rounded-xl text-base hover:bg-gray-50">취소</button>
         </div>
       </div>
     </div>
@@ -313,7 +313,7 @@ export default function CardsContent() {
     return (
       <div className="text-center py-20 text-gray-400">
         <div className="text-3xl mb-2">🔒</div>
-        <div className="text-sm">카드·매입은 대표·실장·영업 담당자만 열람할 수 있습니다.</div>
+        <div className="text-base">카드·매입은 대표·실장·영업 담당자만 열람할 수 있습니다.</div>
       </div>
     );
   }
@@ -323,16 +323,16 @@ export default function CardsContent() {
       {/* 탭 */}
       <div className="flex items-center gap-2 border-b border-gray-200 pb-3">
         <button onClick={() => setTab('calendar')}
-          className={`px-4 py-2 rounded-t-lg text-sm font-medium border-b-2 ${tab === 'calendar' ? 'border-blue-600 text-blue-600 bg-white' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
+          className={`px-4 py-2 rounded-t-lg text-base font-medium border-b-2 ${tab === 'calendar' ? 'border-blue-600 text-blue-600 bg-white' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
           결제 캘린더
         </button>
         <button onClick={() => setTab('cards')}
-          className={`px-4 py-2 rounded-t-lg text-sm font-medium border-b-2 ${tab === 'cards' ? 'border-blue-600 text-blue-600 bg-white' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
+          className={`px-4 py-2 rounded-t-lg text-base font-medium border-b-2 ${tab === 'cards' ? 'border-blue-600 text-blue-600 bg-white' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
           카드 목록
         </button>
         {canManage && (
           <button onClick={() => setTab('log')}
-            className={`px-4 py-2 rounded-t-lg text-sm font-medium border-b-2 ${tab === 'log' ? 'border-blue-600 text-blue-600 bg-white' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
+            className={`px-4 py-2 rounded-t-lg text-base font-medium border-b-2 ${tab === 'log' ? 'border-blue-600 text-blue-600 bg-white' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
             변경 로그
           </button>
         )}
@@ -344,10 +344,10 @@ export default function CardsContent() {
         // ─────────── 카드 목록 ───────────
         <div className="space-y-4">
           <div className="flex justify-between items-center">
-            <p className="text-sm text-gray-500">법인/개인/대표 카드와 결제 주기를 관리합니다.</p>
+            <p className="text-base text-gray-500">법인/개인/대표 카드와 결제 주기를 관리합니다.</p>
             {canManage && (
               <button onClick={() => { setForm({ ...EMPTY_CARD }); setEditId(null); setShowForm(true); }}
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-medium">+ 카드 등록</button>
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-base font-medium">+ 카드 등록</button>
             )}
           </div>
 
@@ -363,25 +363,25 @@ export default function CardsContent() {
                     <div className="flex items-start justify-between mb-3">
                       <div>
                         <div className="flex items-center gap-2">
-                          <span className={`text-xs px-2 py-0.5 rounded-md font-medium ${CARD_TYPE_COLORS[c.card_type] || 'bg-gray-100 text-gray-600'}`}>{c.card_type}</span>
-                          {!c.is_active && <span className="text-xs text-gray-400">(미사용)</span>}
+                          <span className={`text-sm px-2 py-0.5 rounded-md font-medium ${CARD_TYPE_COLORS[c.card_type] || 'bg-gray-100 text-gray-600'}`}>{c.card_type}</span>
+                          {!c.is_active && <span className="text-sm text-gray-400">(미사용)</span>}
                         </div>
                         <div className="font-bold text-gray-800 mt-1.5">{c.card_name}</div>
-                        <div className="text-xs text-gray-400 mt-0.5">
+                        <div className="text-sm text-gray-400 mt-0.5">
                           {c.card_company} {c.last4 && `****${c.last4}`} {c.holder_name && `· ${c.holder_name}`}
                         </div>
                       </div>
                       {canManage && (
                         <div className="flex gap-1">
-                          <button onClick={() => openEdit(c)} className="text-xs text-gray-400 hover:text-blue-600 px-1">수정</button>
-                          <button onClick={() => deleteCard(c.id)} className="text-xs text-gray-400 hover:text-red-500 px-1">삭제</button>
+                          <button onClick={() => openEdit(c)} className="text-sm text-gray-400 hover:text-blue-600 px-1">수정</button>
+                          <button onClick={() => deleteCard(c.id)} className="text-sm text-gray-400 hover:text-red-500 px-1">삭제</button>
                         </div>
                       )}
                     </div>
-                    <div className="text-xs text-gray-500 mb-2">{formatBillingCycle(c)}</div>
-                    {c.benefit_memo && <div className="text-xs text-blue-600 bg-blue-50 rounded-lg px-2 py-1 mb-3">💳 {c.benefit_memo}</div>}
+                    <div className="text-sm text-gray-500 mb-2">{formatBillingCycle(c)}</div>
+                    {c.benefit_memo && <div className="text-sm text-blue-600 bg-blue-50 rounded-lg px-2 py-1 mb-3">💳 {c.benefit_memo}</div>}
                     <div className="border-t border-gray-100 pt-3">
-                      <div className="flex justify-between text-xs text-gray-400 mb-1">
+                      <div className="flex justify-between text-sm text-gray-400 mb-1">
                         <span>이번 달 결제예정</span>
                         <span>한도 {c.limit_amount > 0 ? `${won(c.limit_amount)}원` : '미설정'}</span>
                       </div>
@@ -410,11 +410,11 @@ export default function CardsContent() {
                   : l.action.includes('등록') ? 'bg-green-50 text-green-600' : 'bg-blue-50 text-blue-600';
                 return (
                   <div key={l.id} className="px-4 py-3 flex items-start gap-3">
-                    <span className={`text-xs px-2 py-0.5 rounded-md font-medium flex-shrink-0 ${color}`}>{l.action}</span>
+                    <span className={`text-sm px-2 py-0.5 rounded-md font-medium flex-shrink-0 ${color}`}>{l.action}</span>
                     <div className="flex-1 min-w-0">
-                      <div className="text-sm font-medium text-gray-800">{l.target}</div>
-                      {l.detail && <div className="text-xs text-gray-500 mt-0.5">{l.detail}</div>}
-                      <div className="text-xs text-gray-400 mt-0.5">
+                      <div className="text-base font-medium text-gray-800">{l.target}</div>
+                      {l.detail && <div className="text-sm text-gray-500 mt-0.5">{l.detail}</div>}
+                      <div className="text-sm text-gray-400 mt-0.5">
                         {l.actor} · {new Date(l.created_at).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                       </div>
                     </div>
@@ -434,34 +434,34 @@ export default function CardsContent() {
               <div className="text-lg font-bold text-gray-800 w-32 text-center">{year}년 {month + 1}월</div>
               <button onClick={nextMonthFn} className="w-8 h-8 rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-500">›</button>
               <button onClick={() => { setYear(now.getFullYear()); setMonth(now.getMonth()); }}
-                className="ml-1 px-2 py-1 text-xs border border-gray-200 rounded-lg text-gray-500 hover:bg-gray-50">오늘</button>
+                className="ml-1 px-2 py-1 text-sm border border-gray-200 rounded-lg text-gray-500 hover:bg-gray-50">오늘</button>
             </div>
-            <button onClick={exportExcel} className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50">📊 엑셀</button>
+            <button onClick={exportExcel} className="px-3 py-1.5 text-sm border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50">📊 엑셀</button>
           </div>
 
           <div className="flex gap-2 flex-wrap">
             <button onClick={() => setCardFilter('all')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium ${cardFilter === 'all' ? 'bg-slate-700 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}>전체</button>
+              className={`px-3 py-1.5 rounded-lg text-sm font-medium ${cardFilter === 'all' ? 'bg-slate-700 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}>전체</button>
             {cards.filter(c => c.is_active).map(c => (
               <button key={c.id} onClick={() => setCardFilter(c.id)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium ${cardFilter === c.id ? 'bg-slate-700 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}>{c.card_name}</button>
+                className={`px-3 py-1.5 rounded-lg text-sm font-medium ${cardFilter === c.id ? 'bg-slate-700 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}>{c.card_name}</button>
             ))}
           </div>
 
           {/* 이번 달 합계 */}
           <div className="bg-gradient-to-r from-slate-700 to-slate-600 rounded-2xl p-5 text-white flex items-center justify-between">
             <div>
-              <div className="text-xs text-slate-300">{year}년 {month + 1}월 결제 예정 합계 {cardFilter !== 'all' && `· ${cardName(cardFilter)}`}</div>
+              <div className="text-sm text-slate-300">{year}년 {month + 1}월 결제 예정 합계 {cardFilter !== 'all' && `· ${cardName(cardFilter)}`}</div>
               <div className="text-2xl font-bold mt-1">{won(monthTotalAll)}원</div>
             </div>
-            <div className="text-xs text-slate-300 text-right">매입 − 취소환불<br />상계 금액</div>
+            <div className="text-sm text-slate-300 text-right">매입 − 취소환불<br />상계 금액</div>
           </div>
 
           {/* 달력 */}
           <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
             <div className="grid grid-cols-7 border-b border-gray-100">
               {WEEKDAYS.map((w, i) => (
-                <div key={w} className={`py-2 text-center text-xs font-medium ${i === 0 ? 'text-red-400' : i === 6 ? 'text-blue-400' : 'text-gray-400'}`}>{w}</div>
+                <div key={w} className={`py-2 text-center text-sm font-medium ${i === 0 ? 'text-red-400' : i === 6 ? 'text-blue-400' : 'text-gray-400'}`}>{w}</div>
               ))}
             </div>
             <div className="grid grid-cols-7">
@@ -476,10 +476,10 @@ export default function CardsContent() {
                   <div key={i}
                     onClick={() => dayEvents.length && setSelectedDay(selectedDay === date ? null : date)}
                     className={`min-h-[90px] border-b border-r border-gray-50 p-1.5 ${dayEvents.length ? 'cursor-pointer hover:bg-blue-50/40' : ''} ${selectedDay === date ? 'bg-blue-50' : ''}`}>
-                    <div className={`text-xs font-medium ${isToday ? 'bg-blue-600 text-white rounded-full w-5 h-5 flex items-center justify-center' : dow === 0 ? 'text-red-400' : dow === 6 ? 'text-blue-400' : 'text-gray-500'}`}>{dayNum}</div>
+                    <div className={`text-sm font-medium ${isToday ? 'bg-blue-600 text-white rounded-full w-5 h-5 flex items-center justify-center' : dow === 0 ? 'text-red-400' : dow === 6 ? 'text-blue-400' : 'text-gray-500'}`}>{dayNum}</div>
                     {dayEvents.length > 0 && (
                       <div className="mt-1 space-y-0.5">
-                        <div className={`text-xs font-bold ${dayTotal < 0 ? 'text-red-500' : 'text-gray-700'}`}>{won(dayTotal)}</div>
+                        <div className={`text-sm font-bold ${dayTotal < 0 ? 'text-red-500' : 'text-gray-700'}`}>{won(dayTotal)}</div>
                         <div className="text-[10px] text-gray-400">{dayEvents.length}건</div>
                       </div>
                     )}
@@ -494,11 +494,11 @@ export default function CardsContent() {
             <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
               <div className="flex items-center justify-between mb-3">
                 <h3 className="font-bold text-gray-800">{selectedDay} 결제 상세</h3>
-                <button onClick={() => setSelectedDay(null)} className="text-gray-400 text-sm">✕</button>
+                <button onClick={() => setSelectedDay(null)} className="text-gray-400 text-base">✕</button>
               </div>
-              <table className="w-full text-sm">
+              <table className="w-full text-base">
                 <thead>
-                  <tr className="text-xs text-gray-400 border-b border-gray-100">
+                  <tr className="text-sm text-gray-400 border-b border-gray-100">
                     <th className="py-2 text-left font-medium">구분</th>
                     <th className="py-2 text-left font-medium">카드</th>
                     <th className="py-2 text-left font-medium">사업자</th>
@@ -511,7 +511,7 @@ export default function CardsContent() {
                   {byDate[selectedDay].map((e, idx) => (
                     <tr key={idx}>
                       <td className="py-2">
-                        <span className={`text-xs px-2 py-0.5 rounded-md font-medium ${e.type === 'refund' ? 'bg-red-50 text-red-500' : 'bg-blue-50 text-blue-600'}`}>
+                        <span className={`text-sm px-2 py-0.5 rounded-md font-medium ${e.type === 'refund' ? 'bg-red-50 text-red-500' : 'bg-blue-50 text-blue-600'}`}>
                           {e.type === 'refund' ? '환불' : '매입'}
                         </span>
                       </td>
@@ -525,7 +525,7 @@ export default function CardsContent() {
                 </tbody>
                 <tfoot>
                   <tr className="border-t border-gray-200 font-bold">
-                    <td colSpan={5} className="py-2 text-xs text-gray-400">합계 (상계)</td>
+                    <td colSpan={5} className="py-2 text-sm text-gray-400">합계 (상계)</td>
                     <td className="py-2 text-right text-gray-800">{won(byDate[selectedDay].reduce((s, e) => s + e.amount, 0))}원</td>
                   </tr>
                 </tfoot>
@@ -534,7 +534,7 @@ export default function CardsContent() {
           )}
 
           {cards.length === 0 && (
-            <div className="text-center py-6 text-sm text-gray-400">
+            <div className="text-center py-6 text-base text-gray-400">
               먼저 <button onClick={() => setTab('cards')} className="text-blue-600 underline">카드 목록</button>에서 카드를 등록하세요.
             </div>
           )}

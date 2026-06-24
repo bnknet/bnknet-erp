@@ -131,8 +131,8 @@ export default function Sidebar({ mobileOpen, onClose }: SidebarProps) {
               </svg>
             </div>
             <div>
-              <div className="font-bold text-sm leading-tight">비앤케이넷 ERP</div>
-              <div className="text-xs text-slate-400 leading-tight">BNKNET</div>
+              <div className="font-bold text-base leading-tight">비앤케이넷 ERP</div>
+              <div className="text-sm text-slate-400 leading-tight">BNKNET</div>
             </div>
           </Link>
         </div>
@@ -146,7 +146,7 @@ export default function Sidebar({ mobileOpen, onClose }: SidebarProps) {
             if (visibleItems.length === 0) return null;
             return (
             <div key={group.group} className="mb-4">
-              <div className="px-3 py-1 text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">
+              <div className="px-3 py-1 text-sm font-semibold text-slate-500 uppercase tracking-wider mb-1">
                 {group.group}
               </div>
               {visibleItems.map((item) => {
@@ -158,7 +158,7 @@ export default function Sidebar({ mobileOpen, onClose }: SidebarProps) {
                     href={item.href}
                     onClick={onClose}
                     className={`
-                      flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all mb-0.5
+                      flex items-center gap-3 px-3 py-2 rounded-lg text-base transition-all mb-0.5
                       ${isActive
                         ? 'bg-blue-600 text-white font-medium'
                         : 'text-slate-300 hover:bg-slate-800 hover:text-white'
@@ -168,7 +168,7 @@ export default function Sidebar({ mobileOpen, onClose }: SidebarProps) {
                     <span className="text-base w-5 flex-shrink-0 inline-flex items-center justify-center leading-none">{item.icon}</span>
                     <span className="flex-1">{item.label}</span>
                     {showBadge && (
-                      <span className="bg-red-500 text-white text-xs font-bold rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1">
+                      <span className="bg-red-500 text-white text-sm font-bold rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1">
                         {pendingCount}
                       </span>
                     )}
@@ -184,12 +184,12 @@ export default function Sidebar({ mobileOpen, onClose }: SidebarProps) {
         <div className="px-4 py-4 border-t border-slate-700">
           <div className="flex items-center gap-3">
             <Link href="/profile" onClick={onClose} className="flex items-center gap-3 flex-1 min-w-0 hover:opacity-80 transition-opacity">
-              <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center text-sm font-semibold flex-shrink-0">
+              <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center text-base font-semibold flex-shrink-0">
                 {user?.name?.[0] || '?'}
               </div>
               <div className="flex-1 min-w-0">
-                <div className="text-sm font-medium text-white truncate">{user?.name || '사용자'}</div>
-                <div className="text-xs text-slate-400 truncate">내 정보 · 비밀번호 변경</div>
+                <div className="text-base font-medium text-white truncate">{user?.name || '사용자'}</div>
+                <div className="text-sm text-slate-400 truncate">내 정보 · 비밀번호 변경</div>
               </div>
             </Link>
             <button

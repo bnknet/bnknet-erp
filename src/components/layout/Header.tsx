@@ -70,7 +70,7 @@ export default function Header({ onMenuClick }: HeaderProps) {
 
         <div>
           <h1 className="text-xl font-bold text-gray-800">{title}</h1>
-          <p className="text-xs text-gray-400 hidden sm:block">{today}</p>
+          <p className="text-sm text-gray-400 hidden sm:block">{today}</p>
         </div>
       </div>
 
@@ -84,19 +84,19 @@ export default function Header({ onMenuClick }: HeaderProps) {
 
         {/* 사용자 정보 */}
         <div className="flex items-center gap-2">
-          <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center text-sm font-semibold text-white">
+          <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center text-base font-semibold text-white">
             {user?.name?.[0] || '?'}
           </div>
           <div className="hidden sm:block">
-            <div className="text-sm font-medium text-gray-700">{user?.name}</div>
-            <div className="text-xs text-gray-400">{user?.role ? (roleLabels[user.role] || user.role) : ''}</div>
+            <div className="text-base font-medium text-gray-700">{user?.name}</div>
+            <div className="text-sm text-gray-400">{user?.role ? (roleLabels[user.role] || user.role) : ''}</div>
           </div>
         </div>
 
         {/* 로그아웃 버튼 */}
         <button
           onClick={handleLogout}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-gray-500 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors border border-gray-200 hover:border-red-200"
+          className="flex items-center gap-1.5 px-3 py-1.5 text-base text-gray-500 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors border border-gray-200 hover:border-red-200"
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />

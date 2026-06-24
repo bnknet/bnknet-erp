@@ -231,14 +231,14 @@ export default function CalendarContent() {
           <div className="text-lg font-bold text-gray-800 w-32 text-center">{year}년 {month + 1}월</div>
           <button onClick={nextMonthFn} className="w-8 h-8 rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-500">›</button>
           <button onClick={() => { setYear(now.getFullYear()); setMonth(now.getMonth()); }}
-            className="ml-1 px-2 py-1 text-xs border border-gray-200 rounded-lg text-gray-500 hover:bg-gray-50">오늘</button>
+            className="ml-1 px-2 py-1 text-sm border border-gray-200 rounded-lg text-gray-500 hover:bg-gray-50">오늘</button>
         </div>
         <button onClick={() => openNew(selectedDay || undefined)}
-          className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-medium">+ 일정 등록</button>
+          className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-base font-medium">+ 일정 등록</button>
       </div>
 
       {/* 색상 범례 */}
-      <div className="flex gap-x-4 gap-y-2 flex-wrap text-sm font-medium text-gray-600">
+      <div className="flex gap-x-4 gap-y-2 flex-wrap text-base font-medium text-gray-600">
         {[...EVENT_TYPES, '휴가'].map(t => (
           <div key={t} className="flex items-center gap-1.5">
             <span className={`w-3 h-3 rounded-full ${TYPE_STYLE[t]?.dot}`} />
@@ -253,7 +253,7 @@ export default function CalendarContent() {
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
           <div className="grid grid-cols-7 border-b border-gray-100">
             {WEEKDAYS.map((w, i) => (
-              <div key={w} className={`py-2.5 text-center text-sm font-bold ${i === 0 ? 'text-red-500' : i === 6 ? 'text-blue-500' : 'text-gray-600'}`}>{w}</div>
+              <div key={w} className={`py-2.5 text-center text-base font-bold ${i === 0 ? 'text-red-500' : i === 6 ? 'text-blue-500' : 'text-gray-600'}`}>{w}</div>
             ))}
           </div>
           {weeks.map((week, wi) => {
@@ -273,7 +273,7 @@ export default function CalendarContent() {
                       <div key={di} onClick={() => setSelectedDay(ds)}
                         style={{ minHeight: cellMinH }}
                         className={`border-r border-gray-50 last:border-r-0 p-1.5 cursor-pointer hover:bg-blue-50/30 ${selectedDay === ds ? 'bg-blue-50' : ''} ${!inMonth ? 'bg-gray-50/40' : ''}`}>
-                        <div className={`text-sm font-bold ${isToday ? 'bg-blue-600 text-white rounded-full w-6 h-6 flex items-center justify-center' : !inMonth ? 'text-gray-300' : dow === 0 ? 'text-red-500' : dow === 6 ? 'text-blue-500' : 'text-gray-700'}`}>{day.getDate()}</div>
+                        <div className={`text-base font-bold ${isToday ? 'bg-blue-600 text-white rounded-full w-6 h-6 flex items-center justify-center' : !inMonth ? 'text-gray-300' : dow === 0 ? 'text-red-500' : dow === 6 ? 'text-blue-500' : 'text-gray-700'}`}>{day.getDate()}</div>
                       </div>
                     );
                   })}
@@ -287,7 +287,7 @@ export default function CalendarContent() {
                         <div key={pi}
                           onClick={(ev) => { ev.stopPropagation(); canEdit(p.e) ? openEdit(p.e) : setSelectedDay(p.date); }}
                           style={{ gridColumn: `${p.startCol + 1} / span ${p.span}`, gridRow: p.lane + 1 }}
-                          className={`pointer-events-auto h-[22px] px-2 rounded-md text-xs font-bold text-white truncate flex items-center cursor-pointer shadow-sm ${st?.bar || 'bg-gray-400'}`}
+                          className={`pointer-events-auto h-[22px] px-2 rounded-md text-sm font-bold text-white truncate flex items-center cursor-pointer shadow-sm ${st?.bar || 'bg-gray-400'}`}
                           title={p.e.title}>
                           {!p.e.all_day && p.e.start_time ? `${p.e.start_time} ` : ''}{p.e.title}
                         </div>
@@ -307,12 +307,12 @@ export default function CalendarContent() {
           <div className="flex items-center justify-between mb-3">
             <h3 className="font-bold text-gray-800">{selectedDay} 일정</h3>
             <div className="flex items-center gap-2">
-              <button onClick={() => openNew(selectedDay)} className="text-xs text-blue-600 hover:underline">+ 이 날 일정 추가</button>
-              <button onClick={() => setSelectedDay(null)} className="text-gray-400 text-sm ml-1">✕</button>
+              <button onClick={() => openNew(selectedDay)} className="text-sm text-blue-600 hover:underline">+ 이 날 일정 추가</button>
+              <button onClick={() => setSelectedDay(null)} className="text-gray-400 text-base ml-1">✕</button>
             </div>
           </div>
           {eventsOn(selectedDay).length === 0 ? (
-            <div className="text-center py-6 text-sm text-gray-400">등록된 일정이 없습니다</div>
+            <div className="text-center py-6 text-base text-gray-400">등록된 일정이 없습니다</div>
           ) : (
             <div className="space-y-2">
               {eventsOn(selectedDay).map((e, idx) => (
@@ -320,23 +320,23 @@ export default function CalendarContent() {
                   <span className={`mt-1 w-2.5 h-2.5 rounded-full flex-shrink-0 ${TYPE_STYLE[e.event_type]?.dot}`} />
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span className={`text-xs px-2 py-0.5 rounded-md font-medium ${TYPE_STYLE[e.event_type]?.chip}`}>{e.event_type}</span>
+                      <span className={`text-sm px-2 py-0.5 rounded-md font-medium ${TYPE_STYLE[e.event_type]?.chip}`}>{e.event_type}</span>
                       <span className="font-medium text-gray-800">{e.title}</span>
                     </div>
-                    <div className="text-xs text-gray-400 mt-1 space-x-2">
+                    <div className="text-sm text-gray-400 mt-1 space-x-2">
                       <span>
                         {e.start_date}{e.end_date && e.end_date !== e.start_date ? ` ~ ${e.end_date}` : ''}
                         {!e.all_day && e.start_time ? ` · ${e.start_time}${e.end_time ? `~${e.end_time}` : ''}` : ''}
                       </span>
                       {e.created_by && <span>· {e.created_by}</span>}
                     </div>
-                    {e.location && <div className="text-xs text-gray-500 mt-0.5">📍 {e.location}</div>}
-                    {e.description && <div className="text-xs text-gray-500 mt-0.5">{e.description}</div>}
+                    {e.location && <div className="text-sm text-gray-500 mt-0.5">📍 {e.location}</div>}
+                    {e.description && <div className="text-sm text-gray-500 mt-0.5">{e.description}</div>}
                   </div>
                   {canEdit(e) && (
                     <div className="flex gap-1 flex-shrink-0">
-                      <button onClick={() => openEdit(e)} className="text-xs text-gray-400 hover:text-blue-600">수정</button>
-                      <button onClick={() => deleteEvent(e.id)} className="text-xs text-gray-400 hover:text-red-500">삭제</button>
+                      <button onClick={() => openEdit(e)} className="text-sm text-gray-400 hover:text-blue-600">수정</button>
+                      <button onClick={() => deleteEvent(e.id)} className="text-sm text-gray-400 hover:text-red-500">삭제</button>
                     </div>
                   )}
                   {e.readonly_link && <span className="text-[10px] text-gray-300 flex-shrink-0">결재연동</span>}
@@ -354,76 +354,76 @@ export default function CalendarContent() {
             <h3 className="text-lg font-bold text-gray-800 mb-5">{editId ? '일정 수정' : '일정 등록'}</h3>
             <div className="space-y-4">
               <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1.5">종류</label>
+                <label className="block text-sm font-medium text-gray-500 mb-1.5">종류</label>
                 <div className="flex gap-2 flex-wrap">
                   {EVENT_TYPES.map(t => (
                     <button key={t} onClick={() => setForm({ ...form, event_type: t })}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-medium ${form.event_type === t ? TYPE_STYLE[t].chip + ' ring-2 ring-offset-1 ring-gray-300' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>
+                      className={`px-3 py-1.5 rounded-lg text-sm font-medium ${form.event_type === t ? TYPE_STYLE[t].chip + ' ring-2 ring-offset-1 ring-gray-300' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>
                       {t}
                     </button>
                   ))}
                 </div>
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1">제목 *</label>
+                <label className="block text-sm font-medium text-gray-500 mb-1">제목 *</label>
                 <input value={form.title} onChange={e => setForm({ ...form, title: e.target.value })}
                   placeholder="예: 현대백화점 외근, 신제품 라이브 방송"
-                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-blue-400" />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-medium text-gray-500 mb-1">시작일 *</label>
+                  <label className="block text-sm font-medium text-gray-500 mb-1">시작일 *</label>
                   <input type="date" value={form.start_date} onChange={e => setForm({ ...form, start_date: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-blue-400" />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-500 mb-1">종료일 (선택)</label>
+                  <label className="block text-sm font-medium text-gray-500 mb-1">종료일 (선택)</label>
                   <input type="date" value={form.end_date} min={form.start_date} onChange={e => setForm({ ...form, end_date: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-blue-400" />
                 </div>
               </div>
-              <label className="flex items-center gap-2 text-sm text-gray-600">
+              <label className="flex items-center gap-2 text-base text-gray-600">
                 <input type="checkbox" checked={form.all_day} onChange={e => setForm({ ...form, all_day: e.target.checked })} className="accent-blue-600" />
                 종일 일정
               </label>
               {!form.all_day && (
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-xs font-medium text-gray-500 mb-1">시작 시간</label>
+                    <label className="block text-sm font-medium text-gray-500 mb-1">시작 시간</label>
                     <input type="time" value={form.start_time} onChange={e => setForm({ ...form, start_time: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-blue-400" />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-gray-500 mb-1">종료 시간</label>
+                    <label className="block text-sm font-medium text-gray-500 mb-1">종료 시간</label>
                     <input type="time" value={form.end_time} onChange={e => setForm({ ...form, end_time: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-blue-400" />
                   </div>
                 </div>
               )}
               <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1">장소 / 온라인 링크</label>
+                <label className="block text-sm font-medium text-gray-500 mb-1">장소 / 온라인 링크</label>
                 <input value={form.location} onChange={e => setForm({ ...form, location: e.target.value })}
                   placeholder="예: 강남 코엑스 / https://zoom.us/..."
-                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-blue-400" />
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1">메모</label>
+                <label className="block text-sm font-medium text-gray-500 mb-1">메모</label>
                 <textarea value={form.description} onChange={e => setForm({ ...form, description: e.target.value })}
                   rows={2} placeholder="상세 내용"
-                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 resize-none" />
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-blue-400 resize-none" />
               </div>
             </div>
             <div className="flex gap-3 mt-6">
               <button onClick={saveEvent} disabled={saving}
-                className="flex-1 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-medium disabled:opacity-50">
+                className="flex-1 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-base font-medium disabled:opacity-50">
                 {saving ? '저장 중...' : '저장'}
               </button>
               {editId && (
                 <button onClick={() => deleteEvent(editId)}
-                  className="px-5 py-2.5 border border-red-200 text-red-500 rounded-xl text-sm hover:bg-red-50">삭제</button>
+                  className="px-5 py-2.5 border border-red-200 text-red-500 rounded-xl text-base hover:bg-red-50">삭제</button>
               )}
               <button onClick={() => { setShowForm(false); setEditId(null); setForm({ ...EMPTY_EVENT }); }}
-                className="px-5 py-2.5 border border-gray-200 text-gray-600 rounded-xl text-sm hover:bg-gray-50">취소</button>
+                className="px-5 py-2.5 border border-gray-200 text-gray-600 rounded-xl text-base hover:bg-gray-50">취소</button>
             </div>
           </div>
         </div>

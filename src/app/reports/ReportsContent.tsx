@@ -148,31 +148,31 @@ export default function ReportsContent() {
     const ev = linkedEvent(selected.event_id);
     return (
       <div className="max-w-2xl mx-auto space-y-4">
-        <button onClick={() => setView('list')} className="text-sm text-blue-600 hover:text-blue-700">← 목록으로</button>
+        <button onClick={() => setView('list')} className="text-base text-blue-600 hover:text-blue-700">← 목록으로</button>
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-7">
           <div className="flex items-start justify-between gap-3 mb-4">
             <div>
-              <span className={`text-xs px-2 py-0.5 rounded-md font-medium ${TYPE_COLOR[selected.report_type]}`}>{selected.report_type}</span>
+              <span className={`text-sm px-2 py-0.5 rounded-md font-medium ${TYPE_COLOR[selected.report_type]}`}>{selected.report_type}</span>
               <h2 className="text-xl font-bold text-gray-800 mt-2">{selected.title}</h2>
-              <div className="text-sm text-gray-400 mt-1">
+              <div className="text-base text-gray-400 mt-1">
                 {selected.report_date} · {selected.author}{selected.company ? ` · ${selected.company}` : ''}
               </div>
             </div>
             {canEdit(selected) && (
               <div className="flex gap-2 flex-shrink-0">
-                <button onClick={() => openEdit(selected)} className="text-sm text-gray-500 hover:text-blue-600">수정</button>
-                <button onClick={() => del(selected.id)} className="text-sm text-gray-500 hover:text-red-500">삭제</button>
+                <button onClick={() => openEdit(selected)} className="text-base text-gray-500 hover:text-blue-600">수정</button>
+                <button onClick={() => del(selected.id)} className="text-base text-gray-500 hover:text-red-500">삭제</button>
               </div>
             )}
           </div>
 
           {ev && (
-            <div className="mb-4 text-xs bg-blue-50 text-blue-700 rounded-lg px-3 py-2">
+            <div className="mb-4 text-sm bg-blue-50 text-blue-700 rounded-lg px-3 py-2">
               📅 연결 일정: {ev.title} ({ev.start_date})
             </div>
           )}
 
-          <div className="space-y-4 text-sm">
+          <div className="space-y-4 text-base">
             {[
               { label: '참석자', value: selected.attendees },
               { label: '논의·진행 내용', value: selected.content },
@@ -180,7 +180,7 @@ export default function ReportsContent() {
               { label: '후속 조치', value: selected.next_action },
             ].map((row, i) => (
               <div key={i}>
-                <div className="text-xs font-medium text-gray-400 mb-1">{row.label}</div>
+                <div className="text-sm font-medium text-gray-400 mb-1">{row.label}</div>
                 <div className="text-gray-700 whitespace-pre-wrap bg-gray-50 rounded-xl px-4 py-3 min-h-[44px]">{row.value || '-'}</div>
               </div>
             ))}
@@ -194,44 +194,44 @@ export default function ReportsContent() {
   if (view === 'form') {
     return (
       <div className="max-w-2xl mx-auto space-y-4">
-        <button onClick={() => { setView('list'); setEditId(null); setForm({ ...EMPTY }); }} className="text-sm text-blue-600 hover:text-blue-700">← 목록으로</button>
+        <button onClick={() => { setView('list'); setEditId(null); setForm({ ...EMPTY }); }} className="text-base text-blue-600 hover:text-blue-700">← 목록으로</button>
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-7">
           <h2 className="text-lg font-bold text-gray-800 mb-5">{editId ? '보고서 수정' : '보고서 작성'}</h2>
           <div className="space-y-4">
             <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1.5">종류</label>
+              <label className="block text-sm font-medium text-gray-500 mb-1.5">종류</label>
               <div className="flex gap-2 flex-wrap">
                 {REPORT_TYPES.map(t => (
                   <button key={t} onClick={() => setForm({ ...form, report_type: t })}
-                    className={`px-3 py-1.5 rounded-lg text-sm font-medium ${form.report_type === t ? TYPE_COLOR[t] + ' ring-2 ring-offset-1 ring-gray-300' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>{t}</button>
+                    className={`px-3 py-1.5 rounded-lg text-base font-medium ${form.report_type === t ? TYPE_COLOR[t] + ' ring-2 ring-offset-1 ring-gray-300' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>{t}</button>
                 ))}
               </div>
             </div>
             <div className="grid sm:grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1">제목 *</label>
+                <label className="block text-sm font-medium text-gray-500 mb-1">제목 *</label>
                 <input value={form.title} onChange={e => setForm({ ...form, title: e.target.value })}
                   placeholder="예: 현대백화점 입점 미팅"
-                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-blue-400" />
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1">날짜</label>
+                <label className="block text-sm font-medium text-gray-500 mb-1">날짜</label>
                 <input type="date" value={form.report_date} onChange={e => setForm({ ...form, report_date: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-blue-400" />
               </div>
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">연결 일정 (선택)</label>
+              <label className="block text-sm font-medium text-gray-500 mb-1">연결 일정 (선택)</label>
               <select value={form.event_id} onChange={e => setForm({ ...form, event_id: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-400">
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-base bg-white focus:outline-none focus:ring-2 focus:ring-blue-400">
                 <option value="">연결 안 함</option>
                 {events.map(ev => <option key={ev.id} value={ev.id}>{ev.start_date} · {ev.title}</option>)}
               </select>
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">참석자</label>
+              <label className="block text-sm font-medium text-gray-500 mb-1">참석자</label>
               <input value={form.attendees} onChange={e => setForm({ ...form, attendees: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-blue-400" />
             </div>
             {[
               { key: 'content', label: '논의·진행 내용', rows: 4, ph: '미팅에서 논의한 내용을 적어주세요' },
@@ -239,18 +239,18 @@ export default function ReportsContent() {
               { key: 'next_action', label: '후속 조치', rows: 2, ph: '다음에 할 일' },
             ].map(f => (
               <div key={f.key}>
-                <label className="block text-xs font-medium text-gray-500 mb-1">{f.label}</label>
+                <label className="block text-sm font-medium text-gray-500 mb-1">{f.label}</label>
                 <textarea value={form[f.key as 'content' | 'result' | 'next_action']} rows={f.rows} placeholder={f.ph}
                   onChange={e => setForm({ ...form, [f.key]: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 resize-none" />
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-blue-400 resize-none" />
               </div>
             ))}
           </div>
           <div className="flex gap-3 mt-6 justify-end">
             <button onClick={() => { setView('list'); setEditId(null); setForm({ ...EMPTY }); }}
-              className="px-5 py-2.5 border border-gray-200 text-gray-600 rounded-xl text-sm hover:bg-gray-50">취소</button>
+              className="px-5 py-2.5 border border-gray-200 text-gray-600 rounded-xl text-base hover:bg-gray-50">취소</button>
             <button onClick={save} disabled={saving}
-              className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-medium disabled:opacity-50">
+              className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-base font-medium disabled:opacity-50">
               {saving ? '저장 중...' : '저장'}
             </button>
           </div>
@@ -265,8 +265,8 @@ export default function ReportsContent() {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <h1 className="text-lg font-bold text-gray-800">업무 보고</h1>
         <div className="flex gap-2">
-          <button onClick={exportExcel} className="px-3 py-2 text-xs border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50">📊 엑셀</button>
-          <button onClick={openNew} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-medium">+ 보고서 작성</button>
+          <button onClick={exportExcel} className="px-3 py-2 text-sm border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50">📊 엑셀</button>
+          <button onClick={openNew} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-base font-medium">+ 보고서 작성</button>
         </div>
       </div>
 
@@ -274,11 +274,11 @@ export default function ReportsContent() {
         <div className="flex gap-2 flex-wrap">
           {['전체', ...REPORT_TYPES].map(t => (
             <button key={t} onClick={() => setFilterType(t)}
-              className={`px-3 py-2 rounded-xl text-sm font-medium ${filterType === t ? 'bg-slate-700 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}>{t}</button>
+              className={`px-3 py-2 rounded-xl text-base font-medium ${filterType === t ? 'bg-slate-700 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}>{t}</button>
           ))}
         </div>
         <input value={search} onChange={e => setSearch(e.target.value)} placeholder="제목·내용·작성자 검색"
-          className="px-3 py-2 border border-gray-200 rounded-xl text-sm w-56 focus:outline-none focus:ring-2 focus:ring-blue-400" />
+          className="px-3 py-2 border border-gray-200 rounded-xl text-base w-56 focus:outline-none focus:ring-2 focus:ring-blue-400" />
       </div>
 
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
@@ -288,11 +288,11 @@ export default function ReportsContent() {
           <div className="text-center py-12 text-gray-400">보고서가 없습니다</div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="w-full text-base">
               <thead className="bg-gray-50 border-b border-gray-100">
                 <tr>
                   {['날짜', '종류', '제목', '참석자', '작성자', ''].map(h => (
-                    <th key={h} className="px-4 py-3 text-left text-xs font-medium text-gray-500">{h}</th>
+                    <th key={h} className="px-4 py-3 text-left text-sm font-medium text-gray-500">{h}</th>
                   ))}
                 </tr>
               </thead>
@@ -301,13 +301,13 @@ export default function ReportsContent() {
                   <tr key={r.id} onClick={() => { setSelected(r); setView('detail'); }} className="hover:bg-blue-50/40 cursor-pointer">
                     <td className="px-4 py-3 text-gray-500 whitespace-nowrap">{r.report_date}</td>
                     <td className="px-4 py-3">
-                      <span className={`text-xs px-2 py-0.5 rounded-md font-medium ${TYPE_COLOR[r.report_type]}`}>{r.report_type}</span>
+                      <span className={`text-sm px-2 py-0.5 rounded-md font-medium ${TYPE_COLOR[r.report_type]}`}>{r.report_type}</span>
                     </td>
                     <td className="px-4 py-3 font-medium text-gray-800">{r.title}</td>
-                    <td className="px-4 py-3 text-gray-500 text-xs max-w-[180px] truncate">{r.attendees || '-'}</td>
+                    <td className="px-4 py-3 text-gray-500 text-sm max-w-[180px] truncate">{r.attendees || '-'}</td>
                     <td className="px-4 py-3 text-gray-500">{r.author}</td>
                     <td className="px-4 py-3 text-right">
-                      {r.event_id && <span className="text-xs text-blue-400">📅 연결</span>}
+                      {r.event_id && <span className="text-sm text-blue-400">📅 연결</span>}
                     </td>
                   </tr>
                 ))}

@@ -102,11 +102,11 @@ export default function NoticesContent() {
   if (view === 'list') return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <p className="text-sm text-gray-400">총 {notices.length}개의 공지</p>
+        <p className="text-base text-gray-400">총 {notices.length}개의 공지</p>
         {isAdmin && (
           <button
             onClick={() => openWrite()}
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-medium transition-colors"
+            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-base font-medium transition-colors"
           >
             + 공지 작성
           </button>
@@ -122,10 +122,10 @@ export default function NoticesContent() {
           <table className="w-full">
             <thead>
               <tr className="bg-gray-50 border-b border-gray-100">
-                <th className="text-left py-3 px-5 text-xs font-semibold text-gray-400 w-16">구분</th>
-                <th className="text-left py-3 px-5 text-xs font-semibold text-gray-400">제목</th>
-                <th className="text-left py-3 px-5 text-xs font-semibold text-gray-400 w-28 hidden sm:table-cell">작성자</th>
-                <th className="text-left py-3 px-5 text-xs font-semibold text-gray-400 w-32 hidden sm:table-cell">날짜</th>
+                <th className="text-left py-3 px-5 text-sm font-semibold text-gray-400 w-16">구분</th>
+                <th className="text-left py-3 px-5 text-sm font-semibold text-gray-400">제목</th>
+                <th className="text-left py-3 px-5 text-sm font-semibold text-gray-400 w-28 hidden sm:table-cell">작성자</th>
+                <th className="text-left py-3 px-5 text-sm font-semibold text-gray-400 w-32 hidden sm:table-cell">날짜</th>
               </tr>
             </thead>
             <tbody>
@@ -137,12 +137,12 @@ export default function NoticesContent() {
                 >
                   <td className="py-3.5 px-5">
                     {n.is_pinned
-                      ? <span className="bg-red-100 text-red-600 text-xs px-2 py-0.5 rounded-md font-semibold">공지</span>
-                      : <span className="text-gray-300 text-xs">일반</span>}
+                      ? <span className="bg-red-100 text-red-600 text-sm px-2 py-0.5 rounded-md font-semibold">공지</span>
+                      : <span className="text-gray-300 text-sm">일반</span>}
                   </td>
-                  <td className="py-3.5 px-5 text-gray-700 font-medium text-sm">{n.title}</td>
-                  <td className="py-3.5 px-5 text-gray-400 text-sm hidden sm:table-cell">{n.author_name}</td>
-                  <td className="py-3.5 px-5 text-gray-400 text-sm hidden sm:table-cell">{formatDate(n.created_at)}</td>
+                  <td className="py-3.5 px-5 text-gray-700 font-medium text-base">{n.title}</td>
+                  <td className="py-3.5 px-5 text-gray-400 text-base hidden sm:table-cell">{n.author_name}</td>
+                  <td className="py-3.5 px-5 text-gray-400 text-base hidden sm:table-cell">{formatDate(n.created_at)}</td>
                 </tr>
               ))}
             </tbody>
@@ -155,14 +155,14 @@ export default function NoticesContent() {
   // 상세
   if (view === 'detail' && selected) return (
     <div className="space-y-4">
-      <button onClick={() => setView('list')} className="text-sm text-blue-600 hover:text-blue-700 flex items-center gap-1">
+      <button onClick={() => setView('list')} className="text-base text-blue-600 hover:text-blue-700 flex items-center gap-1">
         ← 목록으로
       </button>
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
         <div className="flex items-start justify-between mb-4">
           <div className="flex items-center gap-2 flex-wrap">
             {selected.is_pinned && (
-              <span className="bg-red-100 text-red-600 text-xs px-2 py-0.5 rounded-md font-semibold">공지</span>
+              <span className="bg-red-100 text-red-600 text-sm px-2 py-0.5 rounded-md font-semibold">공지</span>
             )}
             <h2 className="text-xl font-bold text-gray-800">{selected.title}</h2>
           </div>
@@ -170,20 +170,20 @@ export default function NoticesContent() {
             <div className="flex gap-2 flex-shrink-0 ml-4">
               <button
                 onClick={() => openWrite(selected)}
-                className="px-3 py-1.5 text-sm text-blue-600 border border-blue-200 rounded-lg hover:bg-blue-50 transition-colors"
+                className="px-3 py-1.5 text-base text-blue-600 border border-blue-200 rounded-lg hover:bg-blue-50 transition-colors"
               >
                 수정
               </button>
               <button
                 onClick={() => handleDelete(selected.id)}
-                className="px-3 py-1.5 text-sm text-red-500 border border-red-200 rounded-lg hover:bg-red-50 transition-colors"
+                className="px-3 py-1.5 text-base text-red-500 border border-red-200 rounded-lg hover:bg-red-50 transition-colors"
               >
                 삭제
               </button>
             </div>
           )}
         </div>
-        <div className="text-sm text-gray-400 mb-5">
+        <div className="text-base text-gray-400 mb-5">
           {selected.author_name} · {formatDate(selected.created_at)}
         </div>
         <div className="text-gray-700 leading-relaxed whitespace-pre-wrap border-t border-gray-100 pt-5">
@@ -196,14 +196,14 @@ export default function NoticesContent() {
   // 작성/수정
   return (
     <div className="space-y-4">
-      <button onClick={() => { setView('list'); setEditId(null); }} className="text-sm text-blue-600 hover:text-blue-700">
+      <button onClick={() => { setView('list'); setEditId(null); }} className="text-base text-blue-600 hover:text-blue-700">
         ← 목록으로
       </button>
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
         <h2 className="text-lg font-bold text-gray-800 mb-5">{editId ? '공지 수정' : '공지 작성'}</h2>
         <div className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">제목</label>
+            <label className="block text-base font-medium text-gray-700 mb-1.5">제목</label>
             <input
               value={form.title}
               onChange={(e) => setForm({ ...form, title: e.target.value })}
@@ -212,7 +212,7 @@ export default function NoticesContent() {
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">내용</label>
+            <label className="block text-base font-medium text-gray-700 mb-1.5">내용</label>
             <textarea
               value={form.content}
               onChange={(e) => setForm({ ...form, content: e.target.value })}
@@ -228,19 +228,19 @@ export default function NoticesContent() {
               onChange={(e) => setForm({ ...form, is_pinned: e.target.checked })}
               className="w-4 h-4 accent-blue-600"
             />
-            <span className="text-sm text-gray-700">상단 고정 (중요 공지)</span>
+            <span className="text-base text-gray-700">상단 고정 (중요 공지)</span>
           </label>
           <div className="flex gap-3 pt-2">
             <button
               onClick={handleSave}
               disabled={saving || !form.title.trim() || !form.content.trim()}
-              className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white rounded-xl font-medium text-sm transition-colors"
+              className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white rounded-xl font-medium text-base transition-colors"
             >
               {saving ? '저장 중...' : editId ? '수정 완료' : '작성 완료'}
             </button>
             <button
               onClick={() => { setView('list'); setEditId(null); }}
-              className="px-6 py-2.5 bg-white border border-gray-200 text-gray-600 rounded-xl font-medium text-sm hover:bg-gray-50 transition-colors"
+              className="px-6 py-2.5 bg-white border border-gray-200 text-gray-600 rounded-xl font-medium text-base hover:bg-gray-50 transition-colors"
             >
               취소
             </button>

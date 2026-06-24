@@ -363,7 +363,7 @@ export default function AttendanceContent() {
       <div className="flex gap-1 bg-gray-100 rounded-xl p-1 w-fit">
         {([['checkin', '내 출퇴근'], ['list', '전체 내역']] as const).map(([t, label]) => (
           <button key={t} onClick={() => setTab(t)}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${tab === t ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
+            className={`px-4 py-2 rounded-lg text-base font-medium transition-colors ${tab === t ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
             {label}
           </button>
         ))}
@@ -374,9 +374,9 @@ export default function AttendanceContent() {
         <div className="max-w-sm mx-auto space-y-4">
           {/* 날짜 + 이름 */}
           <div className="text-center">
-            <div className="text-sm text-gray-400">{new Date().toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' })}</div>
+            <div className="text-base text-gray-400">{new Date().toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' })}</div>
             <div className="text-2xl font-bold text-gray-800 mt-1">{me?.name}</div>
-            <div className="text-sm text-gray-400">{me?.company}</div>
+            <div className="text-base text-gray-400">{me?.company}</div>
           </div>
 
           {/* 실시간 시계 */}
@@ -388,13 +388,13 @@ export default function AttendanceContent() {
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
             <div className="grid grid-cols-2 gap-4 mb-4">
               <div className="text-center bg-blue-50 rounded-xl py-3">
-                <div className="text-xs text-blue-400 mb-1">출근</div>
+                <div className="text-sm text-blue-400 mb-1">출근</div>
                 <div className={`text-xl font-bold ${checkedIn ? 'text-blue-600' : 'text-gray-300'}`}>
                   {checkedIn ? formatTime(todayRecord?.check_in) : '--:--'}
                 </div>
               </div>
               <div className="text-center bg-orange-50 rounded-xl py-3">
-                <div className="text-xs text-orange-400 mb-1">퇴근</div>
+                <div className="text-sm text-orange-400 mb-1">퇴근</div>
                 <div className={`text-xl font-bold ${checkedOut ? 'text-orange-500' : 'text-gray-300'}`}>
                   {checkedOut ? formatTime(todayRecord?.check_out) : '--:--'}
                 </div>
@@ -403,36 +403,36 @@ export default function AttendanceContent() {
 
             {todayRecord && (
               <div className="text-center mb-4 space-y-1">
-                <span className={`text-xs px-2 py-1 rounded-md font-medium ${STATUS_LABELS[todayRecord.status]?.color || 'bg-gray-100 text-gray-600'}`}>
+                <span className={`text-sm px-2 py-1 rounded-md font-medium ${STATUS_LABELS[todayRecord.status]?.color || 'bg-gray-100 text-gray-600'}`}>
                   {STATUS_LABELS[todayRecord.status]?.label || todayRecord.status}
                 </span>
                 {NO_LATE_STATUSES.has(todayRecord.status) && (
-                  <div className="text-xs text-purple-500">휴가/반차 적용 — 지각 처리 제외</div>
+                  <div className="text-sm text-purple-500">휴가/반차 적용 — 지각 처리 제외</div>
                 )}
               </div>
             )}
 
             {/* 위치 상태 */}
-            {locStatus === 'checking' && <div className="text-center text-sm text-blue-500 mb-3">위치 확인 중...</div>}
+            {locStatus === 'checking' && <div className="text-center text-base text-blue-500 mb-3">위치 확인 중...</div>}
             {locStatus === 'far' && distance !== null && (
-              <div className="text-center text-sm text-red-500 mb-3 bg-red-50 rounded-xl py-2">
+              <div className="text-center text-base text-red-500 mb-3 bg-red-50 rounded-xl py-2">
                 회사에서 {distance}m 떨어져 있습니다.<br />
-                <span className="text-xs text-red-400">
+                <span className="text-sm text-red-400">
                   {ALLOWED_RADIUS_M}m 이내에서만 가능합니다
                   {accuracy !== null && accuracy > 100 && ` · GPS 오차 약 ${accuracy}m`}
                 </span>
               </div>
             )}
             {locStatus === 'denied' && (
-              <div className="text-center text-sm text-red-500 mb-3 bg-red-50 rounded-xl py-2">
+              <div className="text-center text-base text-red-500 mb-3 bg-red-50 rounded-xl py-2">
                 위치 권한을 허용해주세요<br />
-                <span className="text-xs text-red-400">브라우저 설정에서 이 사이트의 위치 권한을 허용으로 바꿔주세요</span>
+                <span className="text-sm text-red-400">브라우저 설정에서 이 사이트의 위치 권한을 허용으로 바꿔주세요</span>
               </div>
             )}
             {locStatus === 'unavailable' && (
-              <div className="text-center text-sm text-red-500 mb-3 bg-red-50 rounded-xl py-2">
+              <div className="text-center text-base text-red-500 mb-3 bg-red-50 rounded-xl py-2">
                 위치를 잡지 못했습니다<br />
-                <span className="text-xs text-red-400">실내에서는 신호가 약할 수 있어요. 창가나 실외에서 다시 눌러주세요</span>
+                <span className="text-sm text-red-400">실내에서는 신호가 약할 수 있어요. 창가나 실외에서 다시 눌러주세요</span>
               </div>
             )}
 
@@ -454,7 +454,7 @@ export default function AttendanceContent() {
           </div>
 
           {isMobile && (
-            <p className="text-center text-xs text-gray-400">아이테코 {ALLOWED_RADIUS_M}m 이내에서만 가능합니다</p>
+            <p className="text-center text-sm text-gray-400">아이테코 {ALLOWED_RADIUS_M}m 이내에서만 가능합니다</p>
           )}
         </div>
       )}
@@ -467,10 +467,10 @@ export default function AttendanceContent() {
             <div className="flex items-center gap-2 flex-wrap">
               <div className="flex items-center gap-1.5 bg-white border border-gray-200 rounded-xl px-3 py-2">
                 <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)}
-                  className="text-sm text-gray-700 focus:outline-none bg-transparent" />
-                <span className="text-gray-400 text-sm">~</span>
+                  className="text-base text-gray-700 focus:outline-none bg-transparent" />
+                <span className="text-gray-400 text-base">~</span>
                 <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)}
-                  className="text-sm text-gray-700 focus:outline-none bg-transparent" />
+                  className="text-base text-gray-700 focus:outline-none bg-transparent" />
               </div>
               {[
                 { label: '오늘', from: today, to: today },
@@ -478,28 +478,28 @@ export default function AttendanceContent() {
                 { label: '이번달', from: firstOfMonth, to: today },
               ].map((p) => (
                 <button key={p.label} onClick={() => { setDateFrom(p.from); setDateTo(p.to); }}
-                  className="px-3 py-2 rounded-xl text-sm font-medium bg-white border border-gray-200 text-gray-600 hover:bg-gray-50">
+                  className="px-3 py-2 rounded-xl text-base font-medium bg-white border border-gray-200 text-gray-600 hover:bg-gray-50">
                   {p.label}
                 </button>
               ))}
               {COMPANIES.map((c) => (
                 <button key={c} onClick={() => setFilterCompany(c)}
-                  className={`px-3 py-2 rounded-xl text-sm font-medium transition-colors ${filterCompany === c ? 'bg-slate-700 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
+                  className={`px-3 py-2 rounded-xl text-base font-medium transition-colors ${filterCompany === c ? 'bg-slate-700 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
                   {c}
                 </button>
               ))}
               <input value={filterName} onChange={(e) => setFilterName(e.target.value)}
                 placeholder="이름 검색"
-                className="px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white w-28" />
+                className="px-3 py-2 border border-gray-200 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white w-28" />
             </div>
             <div className="flex gap-2">
               <button onClick={exportExcel}
-                className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-xl text-sm font-medium">
+                className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-xl text-base font-medium">
                 엑셀 다운로드
               </button>
               {canManageAtt && (
                 <button onClick={() => { setManualForm({ ...EMPTY_MANUAL }); setEditId(null); setShowManual(true); }}
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-medium">
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-base font-medium">
                   + 수동 입력
                 </button>
               )}
@@ -509,24 +509,24 @@ export default function AttendanceContent() {
           {/* 일괄 변경 바 */}
           {canManageAtt && checkedIds.size > 0 && (
             <div className="flex items-center gap-3 bg-blue-600 text-white px-5 py-3 rounded-xl flex-wrap">
-              <span className="text-sm font-medium flex-shrink-0">{checkedIds.size}건 선택됨</span>
+              <span className="text-base font-medium flex-shrink-0">{checkedIds.size}건 선택됨</span>
               <div className="flex items-center gap-2 ml-auto flex-wrap">
-                <span className="text-sm text-blue-200 flex-shrink-0">상태 변경:</span>
+                <span className="text-base text-blue-200 flex-shrink-0">상태 변경:</span>
                 <select value={bulkStatus} onChange={(e) => setBulkStatus(e.target.value)}
-                  className="px-3 py-1.5 rounded-lg text-sm text-gray-800 bg-white border-0 focus:outline-none">
+                  className="px-3 py-1.5 rounded-lg text-base text-gray-800 bg-white border-0 focus:outline-none">
                   <option value="">선택</option>
                   {Object.entries(STATUS_LABELS).map(([v, { label }]) => <option key={v} value={v}>{label}</option>)}
                 </select>
                 <button onClick={handleBulkStatus} disabled={!bulkStatus || bulkSaving}
-                  className="px-4 py-1.5 bg-white text-blue-600 rounded-lg text-sm font-medium disabled:opacity-50 hover:bg-blue-50 transition-colors">
+                  className="px-4 py-1.5 bg-white text-blue-600 rounded-lg text-base font-medium disabled:opacity-50 hover:bg-blue-50 transition-colors">
                   {bulkSaving ? '처리 중...' : '적용'}
                 </button>
                 <button onClick={handleBulkDelete} disabled={bulkSaving}
-                  className="px-4 py-1.5 bg-red-500 text-white rounded-lg text-sm font-medium disabled:opacity-50 hover:bg-red-600 transition-colors">
+                  className="px-4 py-1.5 bg-red-500 text-white rounded-lg text-base font-medium disabled:opacity-50 hover:bg-red-600 transition-colors">
                   삭제
                 </button>
                 <button onClick={() => { setCheckedIds(new Set()); setBulkStatus(''); }}
-                  className="px-3 py-1.5 bg-blue-500 rounded-lg text-sm hover:bg-blue-400 transition-colors">
+                  className="px-3 py-1.5 bg-blue-500 rounded-lg text-base hover:bg-blue-400 transition-colors">
                   취소
                 </button>
               </div>
@@ -543,7 +543,7 @@ export default function AttendanceContent() {
               <>
                 {/* 데스크탑: 표 */}
                 <div className="overflow-x-auto hidden sm:block">
-                  <table className="w-full text-sm">
+                  <table className="w-full text-base">
                     <thead className="bg-gray-50 border-b border-gray-100">
                       <tr>
                         {canManageAtt && (
@@ -555,7 +555,7 @@ export default function AttendanceContent() {
                           </th>
                         )}
                         {['날짜', '이름', '사업자', '출근', '퇴근', '근무시간', '상태', ...(canManageAtt ? [''] : [])].map((h, i) => (
-                          <th key={i} className="px-4 py-3 text-left text-xs font-medium text-gray-500">{h}</th>
+                          <th key={i} className="px-4 py-3 text-left text-sm font-medium text-gray-500">{h}</th>
                         ))}
                       </tr>
                     </thead>
@@ -583,13 +583,13 @@ export default function AttendanceContent() {
                             <td className="px-4 py-3 text-orange-500 font-medium">{formatTime(r.check_out)}</td>
                             <td className="px-4 py-3 text-gray-600">{workHour}</td>
                             <td className="px-4 py-3">
-                              <span className={`text-xs px-2 py-0.5 rounded-md font-medium ${st.color}`}>{st.label}</span>
+                              <span className={`text-sm px-2 py-0.5 rounded-md font-medium ${st.color}`}>{st.label}</span>
                             </td>
                             {canManageAtt && (
                               <td className="px-4 py-3">
                                 <div className="flex gap-2">
-                                  <button onClick={() => openEdit(r)} className="text-xs text-blue-400 hover:text-blue-600 hover:underline">수정</button>
-                                  <button onClick={() => handleDelete(r.id)} className="text-xs text-red-400 hover:text-red-600 hover:underline">삭제</button>
+                                  <button onClick={() => openEdit(r)} className="text-sm text-blue-400 hover:text-blue-600 hover:underline">수정</button>
+                                  <button onClick={() => handleDelete(r.id)} className="text-sm text-red-400 hover:text-red-600 hover:underline">삭제</button>
                                 </div>
                               </td>
                             )}
@@ -620,20 +620,20 @@ export default function AttendanceContent() {
                         <div className="flex items-center justify-between gap-2 mb-1.5">
                           <div className="flex items-center gap-2 min-w-0">
                             <span className="font-bold text-gray-800 text-[15px]">{r.employee_name}</span>
-                            <span className="text-xs text-gray-400 truncate">{r.company}</span>
+                            <span className="text-sm text-gray-400 truncate">{r.company}</span>
                           </div>
-                          <span className={`text-xs px-2 py-0.5 rounded-md font-medium flex-shrink-0 ${st.color}`}>{st.label}</span>
+                          <span className={`text-sm px-2 py-0.5 rounded-md font-medium flex-shrink-0 ${st.color}`}>{st.label}</span>
                         </div>
-                        <div className="text-xs text-gray-400 mb-1">{r.work_date}</div>
-                        <div className="flex items-center gap-4 text-sm">
+                        <div className="text-sm text-gray-400 mb-1">{r.work_date}</div>
+                        <div className="flex items-center gap-4 text-base">
                           <span className="text-blue-600 font-medium">출근 {formatTime(r.check_in)}</span>
                           <span className="text-orange-500 font-medium">퇴근 {formatTime(r.check_out)}</span>
                           <span className="text-gray-500">{workHour}</span>
                         </div>
                         {canManageAtt && (
                           <div className="flex gap-3 mt-2">
-                            <button onClick={() => openEdit(r)} className="text-xs text-blue-500 font-medium">수정</button>
-                            <button onClick={() => handleDelete(r.id)} className="text-xs text-red-500 font-medium">삭제</button>
+                            <button onClick={() => openEdit(r)} className="text-sm text-blue-500 font-medium">수정</button>
+                            <button onClick={() => handleDelete(r.id)} className="text-sm text-red-500 font-medium">삭제</button>
                           </div>
                         )}
                         </div>
@@ -655,57 +655,57 @@ export default function AttendanceContent() {
             <div className="space-y-3">
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">이름 *</label>
+                  <label className="block text-sm font-medium text-gray-600 mb-1">이름 *</label>
                   <input value={manualForm.employee_name} onChange={(e) => setManualForm({ ...manualForm, employee_name: e.target.value })}
                     placeholder="직원 이름"
-                    className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                    className="w-full px-3 py-2 border border-gray-200 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-blue-500" />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">사업자</label>
+                  <label className="block text-sm font-medium text-gray-600 mb-1">사업자</label>
                   <select value={manualForm.company} onChange={(e) => setManualForm({ ...manualForm, company: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    className="w-full px-3 py-2 border border-gray-200 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-blue-500">
                     {COMPANIES.filter(c => c !== '전체').map(c => <option key={c}>{c}</option>)}
                   </select>
                 </div>
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">날짜 *</label>
+                <label className="block text-sm font-medium text-gray-600 mb-1">날짜 *</label>
                 <input type="date" value={manualForm.work_date} onChange={(e) => setManualForm({ ...manualForm, work_date: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  className="w-full px-3 py-2 border border-gray-200 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-blue-500" />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">출근 시간</label>
+                  <label className="block text-sm font-medium text-gray-600 mb-1">출근 시간</label>
                   <input type="time" value={manualForm.check_in} onChange={(e) => setManualForm({ ...manualForm, check_in: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                    className="w-full px-3 py-2 border border-gray-200 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-blue-500" />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">퇴근 시간</label>
+                  <label className="block text-sm font-medium text-gray-600 mb-1">퇴근 시간</label>
                   <input type="time" value={manualForm.check_out} onChange={(e) => setManualForm({ ...manualForm, check_out: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                    className="w-full px-3 py-2 border border-gray-200 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-blue-500" />
                 </div>
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">상태</label>
+                <label className="block text-sm font-medium text-gray-600 mb-1">상태</label>
                 <select value={manualForm.status} onChange={(e) => setManualForm({ ...manualForm, status: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                  className="w-full px-3 py-2 border border-gray-200 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-blue-500">
                   {Object.entries(STATUS_LABELS).map(([v, { label }]) => <option key={v} value={v}>{label}</option>)}
                 </select>
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">메모</label>
+                <label className="block text-sm font-medium text-gray-600 mb-1">메모</label>
                 <input value={manualForm.memo} onChange={(e) => setManualForm({ ...manualForm, memo: e.target.value })}
                   placeholder="비고"
-                  className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  className="w-full px-3 py-2 border border-gray-200 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-blue-500" />
               </div>
             </div>
             <div className="flex gap-3 mt-5">
               <button onClick={handleManualSave} disabled={manualSaving || !manualForm.employee_name.trim()}
-                className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white rounded-xl text-sm font-medium">
+                className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white rounded-xl text-base font-medium">
                 {manualSaving ? '저장 중...' : '저장'}
               </button>
               <button onClick={() => { setShowManual(false); setEditId(null); }}
-                className="px-5 py-2.5 bg-white border border-gray-200 text-gray-600 rounded-xl text-sm hover:bg-gray-50">
+                className="px-5 py-2.5 bg-white border border-gray-200 text-gray-600 rounded-xl text-base hover:bg-gray-50">
                 취소
               </button>
             </div>
