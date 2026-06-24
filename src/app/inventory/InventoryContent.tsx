@@ -20,6 +20,23 @@ interface InventoryItem {
   updated_at: string;
 }
 
+interface InventorySnapshot {
+  id: string;
+  snapshot_date: string;
+  product_name: string;
+  category?: string;
+  brand?: string;
+  company: string;
+  quantity: number;
+  cost_price: number;
+}
+
+// 로컬 기준 오늘 YYYY-MM-DD
+function todayDate() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 interface InventoryLog {
   id: string;
   inventory_id: string;
@@ -70,11 +87,16 @@ export default function InventoryContent() {
   const [form, setForm] = useState({ ...EMPTY_FORM });
   const [editId, setEditId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [activeTab, setActiveTab] = useState<'stock' | 'log'>('stock');
+  const [activeTab, setActiveTab] = useState<'stock' | 'log' | 'snapshot'>('stock');
   const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set());
   const [bulkField, setBulkField] = useState<'company' | 'category' | 'brand' | 'quantity'>('company');
   const [bulkValue, setBulkValue] = useState('');
   const [bulkSaving, setBulkSaving] = useState(false);
+
+  // 일자별 재고 (스냅샷)
+  const [snapDate, setSnapDate] = useState(todayDate());
+  const [snapshots, setSnapshots] = useState<InventorySnapshot[]>([]);
+  const [snapLoading, setSnapLoading] = useState(false);
 
   // 입출고 폼
   const [moveForm, setMoveForm] = useState({ type: '입고', quantity: 0, reason: '' });
@@ -98,6 +120,16 @@ export default function InventoryContent() {
     const res = await supabaseFetch(query);
     const data = await res.json();
     setLogs(Array.isArray(data) ? data : []);
+  }
+
+  async function loadSnapshots(date: string) {
+    setSnapLoading(true);
+    try {
+      const res = await supabaseFetch(`/inventory_snapshots?snapshot_date=eq.${date}&order=category.asc,product_name.asc`);
+      const data = await res.json();
+      setSnapshots(Array.isArray(data) ? data : []);
+    } catch { setSnapshots([]); }
+    finally { setSnapLoading(false); }
   }
 
   async function handleSave() {
@@ -299,15 +331,44 @@ export default function InventoryContent() {
   const totalQty = filtered.reduce((s, p) => s + p.quantity, 0);
   const totalCost = filtered.reduce((s, p) => s + p.quantity * (p.cost_price || 0), 0);
 
+  // 일자별 재고 (스냅샷) — 회사/검색 필터 공유
+  const filteredSnap = snapshots.filter((s) =>
+    (filterCompany === '전체' || s.company === filterCompany) &&
+    (!search || s.product_name.includes(search) || (s.brand || '').includes(search))
+  );
+  const snapTotalQty = filteredSnap.reduce((a, s) => a + s.quantity, 0);
+  const snapTotalCost = filteredSnap.reduce((a, s) => a + s.quantity * (s.cost_price || 0), 0);
+
+  function exportSnapshotExcel() {
+    const data = filteredSnap.map((s) => ({
+      날짜: s.snapshot_date,
+      상품명: s.product_name,
+      카테고리: s.category || '',
+      브랜드: s.brand || '',
+      사업자: s.company,
+      재고수량: s.quantity,
+      개당원가: s.cost_price || 0,
+      원가총합: s.quantity * (s.cost_price || 0),
+    }));
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, '일자별재고');
+    XLSX.writeFile(wb, `일자별재고_${snapDate}.xlsx`);
+  }
+
   // 목록
   if (view === 'list') return (
     <div className="space-y-4">
       {/* 탭 */}
       <div className="flex gap-1 bg-gray-100 rounded-xl p-1 w-fit">
-        {(['stock', 'log'] as const).map((t) => (
-          <button key={t} onClick={() => { setActiveTab(t); if (t === 'log') loadLogs(); }}
+        {(['stock', 'log', 'snapshot'] as const).map((t) => (
+          <button key={t} onClick={() => {
+              setActiveTab(t);
+              if (t === 'log') loadLogs();
+              if (t === 'snapshot') loadSnapshots(snapDate);
+            }}
             className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === t ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
-            {t === 'stock' ? '재고 현황' : '입출고 내역'}
+            {t === 'stock' ? '재고 현황' : t === 'log' ? '입출고 내역' : '일자별 재고'}
           </button>
         ))}
       </div>
@@ -509,7 +570,7 @@ export default function InventoryContent() {
             )}
           </div>
         </>
-      ) : (
+      ) : activeTab === 'log' ? (
         /* 입출고 내역 탭 */
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
           {logs.length === 0 ? (
@@ -553,6 +614,86 @@ export default function InventoryContent() {
             </div>
           )}
         </div>
+      ) : (
+        /* 일자별 재고 탭 */
+        <>
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-xs text-gray-400">조회 날짜</span>
+              <input type="date" value={snapDate} max={todayDate()}
+                onChange={(e) => { setSnapDate(e.target.value); loadSnapshots(e.target.value); }}
+                className="px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" />
+              {COMPANIES.map((c) => (
+                <button key={c} onClick={() => setFilterCompany(c)}
+                  className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${filterCompany === c ? 'bg-slate-700 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
+                  {c}
+                </button>
+              ))}
+            </div>
+            <button onClick={exportSnapshotExcel} disabled={filteredSnap.length === 0}
+              className="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:opacity-40 text-white rounded-xl text-sm font-medium transition-colors">
+              엑셀 다운로드
+            </button>
+          </div>
+
+          <div className="relative">
+            <svg className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+            <input value={search} onChange={(e) => setSearch(e.target.value)}
+              placeholder="상품명, 브랜드 검색"
+              className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" />
+          </div>
+
+          <div className="grid grid-cols-3 gap-3">
+            {[
+              { label: `${snapDate} 품목`, value: `${filteredSnap.length}개` },
+              { label: '총 재고수량', value: `${snapTotalQty.toLocaleString()}개` },
+              { label: '재고 원가총합', value: `${snapTotalCost.toLocaleString()}원` },
+            ].map((s) => (
+              <div key={s.label} className="bg-white rounded-xl border border-gray-100 px-4 py-3">
+                <div className="text-xs text-gray-400">{s.label}</div>
+                <div className="text-lg font-bold mt-0.5 text-gray-800">{s.value}</div>
+              </div>
+            ))}
+          </div>
+
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+            {snapLoading ? (
+              <div className="text-center py-12 text-gray-400">불러오는 중...</div>
+            ) : filteredSnap.length === 0 ? (
+              <div className="text-center py-12 text-gray-400">
+                {snapDate} 재고 기록이 없습니다
+                <div className="text-xs text-gray-300 mt-1">일자별 재고는 매일 자동 저장되며, 저장이 시작된 날부터 조회할 수 있습니다</div>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50 border-b border-gray-100">
+                    <tr>
+                      {['상품명', '카테고리', '브랜드', '사업자', '재고수량', '개당원가', '원가총합'].map((h) => (
+                        <th key={h} className="px-4 py-3 text-left text-xs font-medium text-gray-500">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {filteredSnap.map((s) => (
+                      <tr key={s.id} className="hover:bg-gray-50">
+                        <td className="px-4 py-3 font-medium text-gray-800">{s.product_name}</td>
+                        <td className="px-4 py-3 text-gray-500">{s.category || '-'}</td>
+                        <td className="px-4 py-3 text-gray-500">{s.brand || '-'}</td>
+                        <td className="px-4 py-3 text-gray-500">{s.company}</td>
+                        <td className="px-4 py-3 font-bold text-gray-800">{s.quantity.toLocaleString()}</td>
+                        <td className="px-4 py-3 text-gray-600">{(s.cost_price || 0).toLocaleString()}원</td>
+                        <td className="px-4 py-3 font-medium text-gray-800">{(s.quantity * (s.cost_price || 0)).toLocaleString()}원</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </>
       )}
     </div>
   );
