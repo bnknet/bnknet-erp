@@ -2,6 +2,27 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { supabaseFetch, supabaseUpload } from '@/lib/supabase';
+import { getUser } from '@/lib/auth';
+
+interface PartnerLog {
+  id: string;
+  action: string;
+  target: string;
+  detail: string;
+  actor: string;
+  created_at: string;
+}
+
+// 거래처 변경 이력 기록 (등록/수정/삭제) — 전 직원 조회용
+async function logPartnerChange(action: string, target: string, detail: string, actor: string) {
+  try {
+    await supabaseFetch('/partner_logs', {
+      method: 'POST',
+      headers: { Prefer: 'return=minimal' },
+      body: JSON.stringify({ action, target, detail, actor }),
+    });
+  } catch { /* 로그 실패는 무시 */ }
+}
 
 interface Partner {
   id: string;
@@ -42,7 +63,13 @@ interface ManagerGroup {
 }
 
 export default function PartnersContent() {
+  const me = getUser();
+  // 거래처 삭제 = 대표·실장만 (등록·수정은 전 직원 가능)
+  const canDelete = me?.role === 'ceo' || me?.role === 'admin';
+
   const [view, setView] = useState<View>('list');
+  const [tab, setTab] = useState<'list' | 'log'>('list');
+  const [logs, setLogs] = useState<PartnerLog[]>([]);
   const [partners, setPartners] = useState<Partner[]>([]);
   const [selected, setSelected] = useState<Partner | null>(null);
   const [selectedGroup, setSelectedGroup] = useState<ManagerGroup | null>(null);
@@ -68,6 +95,14 @@ export default function PartnersContent() {
     finally { setLoading(false); }
   }
 
+  async function loadLogs() {
+    try {
+      const res = await supabaseFetch('/partner_logs?order=created_at.desc&limit=200');
+      const data = await res.json();
+      setLogs(Array.isArray(data) ? data : []);
+    } catch { setLogs([]); }
+  }
+
   async function handleSave() {
     if (!form.name.trim()) return;
     setSaving(true);
@@ -79,17 +114,20 @@ export default function PartnersContent() {
         contractUrl = await supabaseUpload('contracts', path, contractFile);
       }
       const payload = { ...form, contract_url: contractUrl };
+      const detail = `${form.type} · ${form.company}${form.brand ? ` · ${form.brand}` : ''}`;
       if (editId) {
         await supabaseFetch(`/partners?id=eq.${editId}`, {
           method: 'PATCH',
           body: JSON.stringify({ ...payload, updated_at: new Date().toISOString() }),
         });
+        await logPartnerChange('거래처수정', form.name, detail, me?.name || '');
       } else {
         await supabaseFetch('/partners', {
           method: 'POST',
           headers: { Prefer: 'return=minimal' },
           body: JSON.stringify(payload),
         });
+        await logPartnerChange('거래처등록', form.name, detail, me?.name || '');
       }
       setView('list');
       setEditId(null);
@@ -99,9 +137,11 @@ export default function PartnersContent() {
     } finally { setSaving(false); }
   }
 
-  async function handleDelete(id: string) {
+  async function handleDelete(p: Partner) {
+    if (!canDelete) { alert('거래처 삭제는 대표·실장만 가능합니다.'); return; }
     if (!confirm('거래처를 삭제하시겠습니까?')) return;
-    await supabaseFetch(`/partners?id=eq.${id}`, { method: 'DELETE' });
+    await supabaseFetch(`/partners?id=eq.${p.id}`, { method: 'DELETE' });
+    await logPartnerChange('거래처삭제', p.name, `${p.type} · ${p.company}`, me?.name || '');
     setView('list');
     setSelected(null);
     await loadPartners();
@@ -151,6 +191,52 @@ export default function PartnersContent() {
   // 목록
   if (view === 'list') return (
     <div className="space-y-4">
+      {/* 탭 */}
+      <div className="flex gap-1 bg-gray-100 rounded-xl p-1 w-fit">
+        {(['list', 'log'] as const).map((t) => (
+          <button key={t} onClick={() => { setTab(t); if (t === 'log') loadLogs(); }}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${tab === t ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
+            {t === 'list' ? '거래처 목록' : '변경 이력'}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'log' ? (
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+          {logs.length === 0 ? (
+            <div className="text-center py-12 text-gray-400">변경 이력이 없습니다</div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50 border-b border-gray-100">
+                  <tr>
+                    {['일시', '처리자', '구분', '거래처', '내용'].map((h) => (
+                      <th key={h} className="px-4 py-3 text-left text-xs font-medium text-gray-500">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {logs.map((log) => {
+                    const color = log.action === '거래처삭제' ? 'bg-red-100 text-red-600'
+                      : log.action === '거래처수정' ? 'bg-amber-100 text-amber-700'
+                      : 'bg-blue-100 text-blue-700';
+                    return (
+                      <tr key={log.id}>
+                        <td className="px-4 py-3 text-gray-400 text-xs whitespace-nowrap">{new Date(log.created_at).toLocaleString('ko-KR')}</td>
+                        <td className="px-4 py-3 font-medium text-gray-800">{log.actor || '-'}</td>
+                        <td className="px-4 py-3"><span className={`text-xs px-2 py-0.5 rounded-md font-medium ${color}`}>{log.action}</span></td>
+                        <td className="px-4 py-3 text-gray-700">{log.target}</td>
+                        <td className="px-4 py-3 text-gray-500">{log.detail || '-'}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      ) : (
+      <>
       {/* 필터 */}
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div className="space-y-2 flex-1">
@@ -230,6 +316,8 @@ export default function PartnersContent() {
           </div>
         )}
       </div>
+      </>
+      )}
     </div>
   );
 
@@ -282,7 +370,9 @@ export default function PartnersContent() {
                     </div>
                     <div className="flex gap-2 ml-3 flex-shrink-0">
                       <button onClick={() => openForm(p)} className="px-2.5 py-1 text-xs text-blue-600 border border-blue-200 rounded-lg hover:bg-blue-50">수정</button>
-                      <button onClick={() => handleDelete(p.id)} className="px-2.5 py-1 text-xs text-red-500 border border-red-200 rounded-lg hover:bg-red-50">삭제</button>
+                      {canDelete && (
+                        <button onClick={() => handleDelete(p)} className="px-2.5 py-1 text-xs text-red-500 border border-red-200 rounded-lg hover:bg-red-50">삭제</button>
+                      )}
                     </div>
                   </div>
                 </div>
