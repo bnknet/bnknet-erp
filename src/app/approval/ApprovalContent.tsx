@@ -213,8 +213,8 @@ export default function ApprovalContent() {
   const loadApprovals = useCallback(async () => {
     setLoading(true);
     try {
+      // 전체 로드 후 화면에서 필터링 (상태 필터 + 내 결재 대기 필터)
       let query = '/approvals?order=created_at.desc';
-      if (filterStatus !== 'all') query += `&status=eq.${filterStatus}`;
       // 대표·실장은 전체, 일반 직원은 본인이 작성한 문서만
       if (!isCeo && !isAdmin && me?.name) {
         query += `&submitter_name=eq.${encodeURIComponent(me.name)}`;
@@ -224,7 +224,7 @@ export default function ApprovalContent() {
       setApprovals(Array.isArray(data) ? data : []);
     } catch { setApprovals([]); }
     finally { setLoading(false); }
-  }, [filterStatus, isCeo, isAdmin, me?.name]);
+  }, [isCeo, isAdmin, me?.name]);
 
   useEffect(() => { loadApprovals(); }, [loadApprovals]);
 
@@ -1182,6 +1182,12 @@ export default function ApprovalContent() {
   }
 
   // ─── 목록 ───
+  const myTurnCount = approvals.filter(isMyTurn).length;
+  const shown = filterStatus === 'myturn'
+    ? approvals.filter(isMyTurn)
+    : filterStatus === 'all'
+      ? approvals
+      : approvals.filter((a) => a.status === filterStatus);
   return (
     <div className="space-y-4">
       {/* 상단 탭 */}
@@ -1203,6 +1209,12 @@ export default function ApprovalContent() {
 
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="flex gap-2 flex-wrap">
+          {(isCeo || isAdmin) && (
+            <button onClick={() => setFilterStatus('myturn')}
+              className={`px-3 py-2 rounded-xl text-base font-medium transition-colors border ${filterStatus === 'myturn' ? 'bg-yellow-500 text-white border-yellow-500' : 'bg-yellow-50 border-yellow-200 text-yellow-700 hover:bg-yellow-100'}`}>
+              ⏳ 내 결재 대기{myTurnCount > 0 ? ` (${myTurnCount})` : ''}
+            </button>
+          )}
           {[['all','전체'], ['draft','임시저장'], ['pending','결재중'], ['approved','승인완료'], ['rejected','반려']].map(([v, l]) => (
             <button key={v} onClick={() => setFilterStatus(v)}
               className={`px-3 py-2 rounded-xl text-base font-medium transition-colors ${filterStatus === v ? 'bg-slate-700 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
@@ -1219,8 +1231,10 @@ export default function ApprovalContent() {
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
         {loading ? (
           <div className="text-center py-12 text-gray-400">불러오는 중...</div>
-        ) : approvals.length === 0 ? (
-          <div className="text-center py-12 text-gray-400">결재 문서가 없습니다</div>
+        ) : shown.length === 0 ? (
+          <div className="text-center py-12 text-gray-400">
+            {filterStatus === 'myturn' ? '내가 결재할 문서가 없습니다' : '결재 문서가 없습니다'}
+          </div>
         ) : (
           <>
             {/* 데스크탑: 표 */}
@@ -1234,7 +1248,7 @@ export default function ApprovalContent() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
-                  {approvals.map(a => (
+                  {shown.map(a => (
                     <tr key={a.id} onClick={() => loadDetail(a.id)} className="hover:bg-blue-50/40 cursor-pointer">
                       <td className="px-4 py-3 font-medium text-gray-800">{a.doc_type}</td>
                       <td className="px-4 py-3 text-gray-500">{a.company}</td>
@@ -1263,7 +1277,7 @@ export default function ApprovalContent() {
 
             {/* 모바일: 카드형 */}
             <div className="sm:hidden divide-y divide-gray-100">
-              {approvals.map(a => (
+              {shown.map(a => (
                 <div key={a.id} onClick={() => loadDetail(a.id)} className="px-4 py-3.5 active:bg-blue-50/40">
                   <div className="flex items-center justify-between gap-2 mb-1.5">
                     <div className="flex items-center gap-2 min-w-0">
