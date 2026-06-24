@@ -31,6 +31,13 @@ const EMPTY_FORM = {
   unit: '개', memo: '', is_active: true,
 };
 
+// ISO 문자열 → 로컬 기준 YYYY-MM-DD
+function localDate(iso?: string) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 type View = 'list' | 'detail' | 'form';
 
 export default function ProductsContent() {
@@ -44,6 +51,8 @@ export default function ProductsContent() {
   const [loading, setLoading] = useState(true);
   const [filterCompany, setFilterCompany] = useState('전체');
   const [filterCategory, setFilterCategory] = useState('전체');
+  const [regFrom, setRegFrom] = useState('');
+  const [regTo, setRegTo] = useState('');
   const [search, setSearch] = useState('');
   const [form, setForm] = useState({ ...EMPTY_FORM });
   const [editId, setEditId] = useState<string | null>(null);
@@ -170,6 +179,7 @@ export default function ProductsContent() {
       바코드: p.barcode || '',
       원가: p.cost_price,
       단위: p.unit,
+      등록일: localDate(p.created_at),
       상태: p.is_active ? '판매중' : '중단',
       메모: p.memo || '',
     }));
@@ -182,11 +192,13 @@ export default function ProductsContent() {
   const filtered = products.filter((p) => {
     const matchCompany = filterCompany === '전체' || p.company === filterCompany;
     const matchCategory = filterCategory === '전체' || p.category === filterCategory;
+    const regDate = localDate(p.created_at);
+    const matchDate = (!regFrom || regDate >= regFrom) && (!regTo || regDate <= regTo);
     const matchSearch = !search ||
       p.name.includes(search) ||
       (p.brand || '').includes(search) ||
       (p.sku || '').includes(search);
-    return matchCompany && matchCategory && matchSearch;
+    return matchCompany && matchCategory && matchDate && matchSearch;
   });
 
   // 목록
@@ -212,6 +224,20 @@ export default function ProductsContent() {
                 {c}
               </button>
             ))}
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-xs text-gray-400 w-14">등록일</span>
+            <div className="flex items-center gap-1.5 bg-white border border-gray-200 rounded-lg px-3 py-1.5">
+              <input type="date" value={regFrom} onChange={(e) => setRegFrom(e.target.value)}
+                className="text-sm text-gray-700 focus:outline-none bg-transparent" />
+              <span className="text-gray-400 text-sm">~</span>
+              <input type="date" value={regTo} onChange={(e) => setRegTo(e.target.value)}
+                className="text-sm text-gray-700 focus:outline-none bg-transparent" />
+            </div>
+            {(regFrom || regTo) && (
+              <button onClick={() => { setRegFrom(''); setRegTo(''); }}
+                className="text-xs text-gray-400 hover:text-gray-600">초기화</button>
+            )}
           </div>
         </div>
         <div className="flex gap-2 flex-shrink-0">
@@ -264,7 +290,7 @@ export default function ProductsContent() {
             <table className="w-full text-sm">
               <thead className="bg-gray-50 border-b border-gray-100">
                 <tr>
-                  {['상품명', '카테고리', '브랜드', '사업자', '원가', '상태'].map((h) => (
+                  {['상품명', '카테고리', '브랜드', '사업자', '원가', '등록일', '상태'].map((h) => (
                     <th key={h} className="px-4 py-3 text-left text-xs font-medium text-gray-500">{h}</th>
                   ))}
                 </tr>
@@ -278,6 +304,7 @@ export default function ProductsContent() {
                     <td className="px-4 py-3 text-gray-500">{p.brand || '-'}</td>
                     <td className="px-4 py-3 text-gray-500">{p.company}</td>
                     <td className="px-4 py-3 text-gray-600">{p.cost_price ? p.cost_price.toLocaleString() + '원' : '-'}</td>
+                    <td className="px-4 py-3 text-gray-400 text-xs">{localDate(p.created_at) || '-'}</td>
                     <td className="px-4 py-3">
                       <span className={`text-xs px-2 py-0.5 rounded-md ${p.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
                         {p.is_active ? '판매중' : '중단'}
@@ -322,6 +349,7 @@ export default function ProductsContent() {
           {[
             { label: '원가', value: selected.cost_price ? selected.cost_price.toLocaleString() + '원' : '-' },
             { label: '단위', value: selected.unit || '-' },
+            { label: '등록일', value: localDate(selected.created_at) || '-' },
             { label: 'SKU', value: selected.sku || '-' },
             { label: '바코드', value: selected.barcode || '-' },
           ].map((item) => (

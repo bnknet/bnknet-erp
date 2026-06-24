@@ -594,6 +594,9 @@ export default function InventoryContent() {
             <div className="text-sm text-blue-400 mt-0.5">{selected.unit}</div>
           </div>
           {[
+            { label: '개당원가', value: `${(selected.cost_price || 0).toLocaleString()}원` },
+            { label: '원가총합', value: `${(selected.quantity * (selected.cost_price || 0)).toLocaleString()}원` },
+            { label: '브랜드', value: selected.brand || '-' },
             { label: '보관위치', value: selected.location || '-' },
             { label: '최종수정', value: new Date(selected.updated_at).toLocaleDateString('ko-KR') },
           ].map((item) => (
