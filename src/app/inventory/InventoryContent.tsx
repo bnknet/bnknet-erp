@@ -65,6 +65,7 @@ export default function InventoryContent() {
   const [loading, setLoading] = useState(true);
   const [filterCompany, setFilterCompany] = useState('전체');
   const [filterCategory, setFilterCategory] = useState('전체');
+  const [filterBrand, setFilterBrand] = useState('전체');
   const [search, setSearch] = useState('');
   const [form, setForm] = useState({ ...EMPTY_FORM });
   const [editId, setEditId] = useState<string | null>(null);
@@ -282,16 +283,21 @@ export default function InventoryContent() {
     XLSX.writeFile(wb, `재고현황_${new Date().toISOString().slice(0, 10)}.xlsx`);
   }
 
+  // 브랜드 필터 옵션: 전체 + 기타1(부진재고) + 데이터에 존재하는 나머지 브랜드
+  const brandOptions = ['전체', '기타1', ...Array.from(
+    new Set(items.map((i) => i.brand).filter((b): b is string => !!b))
+  ).filter((b) => b !== '기타1').sort((a, b) => a.localeCompare(b, 'ko'))];
+
   const filtered = items.filter((p) => {
     const matchCompany = filterCompany === '전체' || p.company === filterCompany;
     const matchCategory = filterCategory === '전체' || p.category === filterCategory;
+    const matchBrand = filterBrand === '전체' || (p.brand || '') === filterBrand;
     const matchSearch = !search || p.product_name.includes(search) || (p.brand || '').includes(search);
-    return matchCompany && matchCategory && matchSearch;
+    return matchCompany && matchCategory && matchBrand && matchSearch;
   });
 
   const totalQty = filtered.reduce((s, p) => s + p.quantity, 0);
   const totalCost = filtered.reduce((s, p) => s + p.quantity * (p.cost_price || 0), 0);
-  const lowStock = filtered.filter(p => p.quantity <= 10).length;
 
   // 목록
   if (view === 'list') return (
@@ -329,6 +335,15 @@ export default function InventoryContent() {
                   </button>
                 ))}
               </div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs text-gray-400 w-14">브랜드</span>
+                <select value={filterBrand} onChange={(e) => setFilterBrand(e.target.value)}
+                  className="px-3 py-1.5 rounded-lg text-sm font-medium bg-white border border-gray-200 text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                  {brandOptions.map((b) => (
+                    <option key={b} value={b}>{b === '기타1' ? '기타1 (부진재고)' : b}</option>
+                  ))}
+                </select>
+              </div>
             </div>
             <div className="flex gap-2 flex-shrink-0">
               <button onClick={exportExcel}
@@ -355,16 +370,15 @@ export default function InventoryContent() {
           </div>
 
           {/* 통계 */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div className="grid grid-cols-3 gap-3">
             {[
               { label: '전체 품목', value: `${filtered.length}개` },
               { label: '총 재고수량', value: `${totalQty.toLocaleString()}개` },
               { label: '재고 원가총합', value: `${totalCost.toLocaleString()}원` },
-              { label: '재고 부족 (10개 이하)', value: `${lowStock}개`, alert: lowStock > 0 },
             ].map((s) => (
-              <div key={s.label} className={`bg-white rounded-xl border px-4 py-3 ${s.alert ? 'border-red-200' : 'border-gray-100'}`}>
-                <div className={`text-xs ${s.alert ? 'text-red-400' : 'text-gray-400'}`}>{s.label}</div>
-                <div className={`text-lg font-bold mt-0.5 ${s.alert ? 'text-red-600' : 'text-gray-800'}`}>{s.value}</div>
+              <div key={s.label} className="bg-white rounded-xl border border-gray-100 px-4 py-3">
+                <div className="text-xs text-gray-400">{s.label}</div>
+                <div className="text-lg font-bold mt-0.5 text-gray-800">{s.value}</div>
               </div>
             ))}
           </div>
@@ -738,7 +752,11 @@ export default function InventoryContent() {
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1.5">브랜드</label>
             <input value={form.brand} onChange={(e) => setForm({ ...form, brand: e.target.value })}
-              placeholder="브랜드명" className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              placeholder="브랜드명 (부진재고는 기타1)" list="inv-brand-list"
+              className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            <datalist id="inv-brand-list">
+              {brandOptions.filter((b) => b !== '전체').map((b) => <option key={b} value={b} />)}
+            </datalist>
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1.5">단위</label>
