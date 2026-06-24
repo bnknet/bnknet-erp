@@ -6,8 +6,9 @@ import { getUser } from '@/lib/auth';
 import * as XLSX from 'xlsx';
 
 // 아이테코 좌표 (경기도 하남시 조정대로 150)
-const OFFICE_LAT = 37.5443;
-const OFFICE_LNG = 127.2066;
+// 2026-06-24 사무실 현장 GPS 실측으로 보정 (방기현 대표 단말, 오차 11m)
+const OFFICE_LAT = 37.554137;
+const OFFICE_LNG = 127.195859;
 const ALLOWED_RADIUS_M = 300; // 300m 이내
 
 interface AttendanceRecord {
