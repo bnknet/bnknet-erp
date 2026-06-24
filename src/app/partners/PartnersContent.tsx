@@ -79,11 +79,12 @@ export default function PartnersContent() {
   const [search, setSearch] = useState('');
   const [form, setForm] = useState({ ...EMPTY_FORM });
   const [editId, setEditId] = useState<string | null>(null);
+  const [editingName, setEditingName] = useState('');
   const [saving, setSaving] = useState(false);
   const [contractFile, setContractFile] = useState<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => { loadPartners(); }, []);
+  useEffect(() => { loadPartners(); loadLogs(); }, []);
 
   async function loadPartners() {
     setLoading(true);
@@ -134,6 +135,7 @@ export default function PartnersContent() {
       setForm({ ...EMPTY_FORM });
       setContractFile(null);
       await loadPartners();
+      await loadLogs();
     } finally { setSaving(false); }
   }
 
@@ -156,9 +158,11 @@ export default function PartnersContent() {
         memo: p.memo || '',
       });
       setEditId(p.id);
+      setEditingName(p.name);
     } else {
       setForm({ ...EMPTY_FORM });
       setEditId(null);
+      setEditingName('');
     }
     setView('form');
   }
@@ -482,6 +486,35 @@ export default function PartnersContent() {
             취소
           </button>
         </div>
+
+        {/* 이 거래처의 변경 이력 (수정 시에만) */}
+        {editId && (() => {
+          const myLogs = logs.filter((l) => l.target === editingName);
+          return (
+            <div className="mt-6 pt-5 border-t border-gray-100">
+              <div className="text-sm font-medium text-gray-700 mb-3">변경 이력</div>
+              {myLogs.length === 0 ? (
+                <div className="text-center py-6 text-sm text-gray-400 bg-gray-50 rounded-xl">변경 이력이 없습니다</div>
+              ) : (
+                <div className="space-y-2">
+                  {myLogs.map((log) => {
+                    const color = log.action === '거래처삭제' ? 'bg-red-100 text-red-600'
+                      : log.action === '거래처수정' ? 'bg-amber-100 text-amber-700'
+                      : 'bg-blue-100 text-blue-700';
+                    return (
+                      <div key={log.id} className="flex items-center gap-3 text-sm bg-gray-50 rounded-xl px-4 py-2.5 flex-wrap">
+                        <span className={`text-xs px-2 py-0.5 rounded-md font-medium ${color}`}>{log.action}</span>
+                        <span className="font-medium text-gray-700">{log.actor || '-'}</span>
+                        <span className="text-gray-500">{log.detail || ''}</span>
+                        <span className="text-xs text-gray-400 ml-auto">{new Date(log.created_at).toLocaleString('ko-KR')}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        })()}
       </div>
     </div>
   );
