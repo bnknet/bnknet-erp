@@ -1000,7 +1000,8 @@ export default function ApprovalContent() {
                       className="w-full px-2 py-2 focus:outline-none focus:bg-blue-50 text-sm" />
                   </div>
                   <div className="w-32 border-r border-gray-400">
-                    <input type="number" value={item.amount || ''} onChange={(e) => updateItem(i, 'amount', Number(e.target.value))}
+                    <input type="text" inputMode="numeric" value={item.amount ? item.amount.toLocaleString() : ''}
+                      onChange={(e) => updateItem(i, 'amount', Number(e.target.value.replace(/[^\d]/g, '')) || 0)}
                       className="w-full px-2 py-2 text-right focus:outline-none focus:bg-blue-50 text-sm" />
                   </div>
                   <div className="w-36">
