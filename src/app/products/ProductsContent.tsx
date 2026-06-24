@@ -79,9 +79,10 @@ export default function ProductsContent() {
           body: JSON.stringify(payload),
         });
       } else {
+        // 신규 등록은 생성된 행(id 포함)을 돌려받아 재고 자동 등록에 사용
         res = await supabaseFetch('/products', {
           method: 'POST',
-          headers: { Prefer: 'return=minimal' },
+          headers: { Prefer: 'return=representation' },
           body: JSON.stringify(payload),
         });
       }
@@ -90,11 +91,48 @@ export default function ProductsContent() {
         alert(`저장 실패: ${(err as any).message || res.status}`);
         return;
       }
+
+      // 신규 상품이면 재고관리에도 같은 품목을 수량 0으로 자동 등록 (중복 시 건너뜀)
+      if (!editId) {
+        const created = await res.json().catch(() => null);
+        const newProduct = Array.isArray(created) ? created[0] : created;
+        if (newProduct?.id) await ensureInventory(newProduct as Product);
+      }
+
       setView('list');
       setEditId(null);
       setForm({ ...EMPTY_FORM });
       await loadProducts();
     } finally { setSaving(false); }
+  }
+
+  // 신규 상품을 재고관리에 자동 등록 (같은 상품명+사업자가 이미 있으면 건너뜀)
+  async function ensureInventory(p: Product) {
+    try {
+      const check = await supabaseFetch(
+        `/inventory?select=id&product_name=eq.${encodeURIComponent(p.name)}&company=eq.${encodeURIComponent(p.company)}&limit=1`,
+      );
+      const existing = await check.json();
+      if (Array.isArray(existing) && existing.length > 0) return; // 이미 재고 존재 → 중복 생성 안 함
+
+      await supabaseFetch('/inventory', {
+        method: 'POST',
+        headers: { Prefer: 'return=minimal' },
+        body: JSON.stringify({
+          product_id: p.id,
+          product_name: p.name,
+          category: p.category || null,
+          brand: p.brand || null,
+          company: p.company,
+          quantity: 0,
+          unit: p.unit || '개',
+          cost_price: Number(p.cost_price) || 0,
+          updated_at: new Date().toISOString(),
+        }),
+      });
+    } catch {
+      // 재고 자동 등록 실패는 상품 등록 자체를 막지 않음 (담당자가 재고에서 직접 추가 가능)
+    }
   }
 
   async function handleDelete(id: string) {
@@ -309,7 +347,11 @@ export default function ProductsContent() {
     <div className="space-y-4">
       <button onClick={() => { setView('list'); setEditId(null); }} className="text-sm text-blue-600 hover:text-blue-700">← 목록으로</button>
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-        <h2 className="text-lg font-bold text-gray-800 mb-5">{editId ? '상품 수정' : '상품 추가'}</h2>
+        <h2 className="text-lg font-bold text-gray-800 mb-1">{editId ? '상품 수정' : '상품 추가'}</h2>
+        {!editId && (
+          <p className="text-xs text-blue-500 mb-4">💡 신규 상품을 등록하면 재고관리에도 자동으로 같은 품목이 수량 0으로 등록됩니다. (수량·입고는 재고관리에서 입력)</p>
+        )}
+        {editId && <div className="mb-4" />}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="sm:col-span-2">
             <label className="block text-sm font-medium text-gray-700 mb-1.5">상품명 *</label>
