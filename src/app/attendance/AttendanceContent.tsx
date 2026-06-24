@@ -9,7 +9,7 @@ import * as XLSX from 'xlsx';
 // 2026-06-24 사무실 현장 GPS 실측으로 보정 (방기현 대표 단말, 오차 11m)
 const OFFICE_LAT = 37.554137;
 const OFFICE_LNG = 127.195859;
-const ALLOWED_RADIUS_M = 300; // 300m 이내
+const ALLOWED_RADIUS_M = 500; // 500m 이내 (정확한 중심점 + GPS 오차 보정으로 전 직원 안정 통과)
 
 interface AttendanceRecord {
   id: string;
@@ -79,7 +79,6 @@ export default function AttendanceContent() {
   const [locStatus, setLocStatus] = useState<'idle' | 'checking' | 'ok' | 'far' | 'denied' | 'unavailable'>('idle');
   const [distance, setDistance] = useState<number | null>(null);
   const [accuracy, setAccuracy] = useState<number | null>(null);
-  const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
 
   // 목록 필터
@@ -159,7 +158,6 @@ export default function AttendanceContent() {
     const acc = pos.coords.accuracy || 0;
     setDistance(Math.round(dist));
     setAccuracy(Math.round(acc));
-    setCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude });
     // GPS 오차(accuracy)를 허용 반경에 더해 실내 오차를 보정 (오차 보정은 최대 200m로 제한)
     const tolerance = ALLOWED_RADIUS_M + Math.min(acc, 200);
     if (dist <= tolerance) { setLocStatus('ok'); return pos; }
@@ -405,14 +403,6 @@ export default function AttendanceContent() {
 
           {isMobile && (
             <p className="text-center text-xs text-gray-400">아이테코 {ALLOWED_RADIUS_M}m 이내에서만 가능합니다</p>
-          )}
-
-          {/* [임시] 회사 좌표 보정용 — 현재 GPS 좌표 표시 (보정 후 제거 예정) */}
-          {coords && (
-            <div className="text-center text-xs text-gray-400 bg-gray-50 rounded-xl py-2 px-3 select-all">
-              현재 좌표: {coords.lat.toFixed(6)}, {coords.lng.toFixed(6)}
-              {accuracy !== null && ` (오차 약 ${accuracy}m)`}
-            </div>
           )}
         </div>
       )}
