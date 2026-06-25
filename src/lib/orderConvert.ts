@@ -777,6 +777,16 @@ export function applyProductMap(name: string): string {
   return PRODUCT_MAP[name] || name;
 }
 
+// 수집상품명을 매칭데이터(PRODUCT_MAP) 기준 대표상품명으로 변환 + 매칭 여부 반환
+// 일자별 출고현황 집계용 — 매칭 안 된 상품은 별도 알림 처리
+export function matchProduct(collectName: string): { name: string; matched: boolean } {
+  const raw = String(collectName || '').trim();
+  if (!raw) return { name: '(상품명 없음)', matched: false };
+  const [, cleanName] = extractQtyAndName(raw);
+  const mapped = PRODUCT_MAP[cleanName] || PRODUCT_MAP[raw];
+  return { name: mapped || cleanName || raw, matched: !!mapped };
+}
+
 export interface RawOrderRow {
   [key: string]: string | number | undefined;
 }

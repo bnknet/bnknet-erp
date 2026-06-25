@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { supabaseFetch } from '@/lib/supabase';
 import { getUser } from '@/lib/auth';
+import { matchProduct } from '@/lib/orderConvert';
 import * as XLSX from 'xlsx';
 
 // 큰 금액 축약 (모바일 통계용): 6.9억 / 688만 등
@@ -109,24 +110,30 @@ export default function InventoryContent() {
   const [outFrom, setOutFrom] = useState(outToday);
   const [outTo, setOutTo] = useState(outToday);
   const [outRows, setOutRows] = useState<{ product: string; qty: number; count: number }[]>([]);
+  const [outUnmatched, setOutUnmatched] = useState<{ product: string; qty: number; count: number }[]>([]);
   const [outLoading, setOutLoading] = useState(false);
 
   async function loadOutbound(from: string, to: string) {
     setOutLoading(true);
     try {
-      const res = await supabaseFetch(`/orders?upload_date=gte.${from}&upload_date=lte.${to}&select=product_name,quantity,canceled&limit=5000`);
-      const data: { product_name?: string; quantity?: number; canceled?: boolean }[] = await res.json();
-      const map: Record<string, { qty: number; count: number }> = {};
+      const res = await supabaseFetch(`/orders?upload_date=gte.${from}&upload_date=lte.${to}&select=product_name,collect_product,quantity,canceled&limit=5000`);
+      const data: { product_name?: string; collect_product?: string; quantity?: number; canceled?: boolean }[] = await res.json();
+      const map: Record<string, { qty: number; count: number }> = {};          // 매칭된 상품
+      const unmap: Record<string, { qty: number; count: number }> = {};         // 매칭 안 된 상품(알림용)
       (Array.isArray(data) ? data : []).forEach((r) => {
         if (r.canceled) return;
-        const name = r.product_name || '(상품명 없음)';
         const q = Number(r.quantity) || 0;
         if (q < 1) return;
-        if (!map[name]) map[name] = { qty: 0, count: 0 };
-        map[name].qty += q; map[name].count += 1;
+        // 현재 매칭데이터 기준으로 대표상품명 결정 (수집상품명 우선)
+        const { name, matched } = matchProduct(r.collect_product || r.product_name || '');
+        const target = matched ? map : unmap;
+        const key = matched ? name : (r.collect_product || r.product_name || '(상품명 없음)');
+        if (!target[key]) target[key] = { qty: 0, count: 0 };
+        target[key].qty += q; target[key].count += 1;
       });
-      setOutRows(Object.entries(map).map(([product, v]) => ({ product, qty: v.qty, count: v.count })).filter(r => r.qty >= 1).sort((a, b) => b.qty - a.qty));
-    } catch { setOutRows([]); }
+      setOutRows(Object.entries(map).map(([product, v]) => ({ product, qty: v.qty, count: v.count })).sort((a, b) => b.qty - a.qty));
+      setOutUnmatched(Object.entries(unmap).map(([product, v]) => ({ product, qty: v.qty, count: v.count })).sort((a, b) => b.count - a.count));
+    } catch { setOutRows([]); setOutUnmatched([]); }
     finally { setOutLoading(false); }
   }
 
@@ -876,7 +883,7 @@ export default function InventoryContent() {
                 <button onClick={() => outQuick('month')} className="px-2.5 py-1.5 text-sm border border-gray-200 rounded-lg text-gray-500 hover:bg-gray-50">이번달</button>
               </div>
             </div>
-            <p className="text-sm text-gray-400 mt-2">주문(출고)된 상품만 · 취소건 제외 · 출고수량 많은 순</p>
+            <p className="text-sm text-gray-400 mt-2">매칭데이터 기준 대표상품명으로 합산 · 취소건 제외 · 출고수량 많은 순</p>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
@@ -889,6 +896,27 @@ export default function InventoryContent() {
               <div className="text-xl font-bold text-blue-600 mt-0.5">{outRows.reduce((s, r) => s + r.qty, 0).toLocaleString()}개</div>
             </div>
           </div>
+
+          {/* ⚠️ 매칭 안 된 상품 알림 (매칭데이터 추가 필요) */}
+          {!outLoading && outUnmatched.length > 0 && (
+            <div className="bg-red-50 border border-red-200 rounded-2xl p-4">
+              <div className="flex items-start gap-2">
+                <span className="text-lg">⚠️</span>
+                <div className="flex-1 min-w-0">
+                  <div className="font-bold text-red-700">매칭데이터에 없는 상품 {outUnmatched.length}종 ({outUnmatched.reduce((s, r) => s + r.count, 0)}건)</div>
+                  <div className="text-sm text-red-500 mt-0.5">아래 상품들은 매칭이 안 돼 위 출고 집계에서 <b>제외</b>됐습니다 (수량이 부정확할 수 있음). 클로드에게 전달해 매칭데이터에 추가하세요.</div>
+                  <div className="mt-2 space-y-1">
+                    {outUnmatched.map((u, i) => (
+                      <div key={i} className="text-sm bg-white border border-red-100 rounded-lg px-3 py-1.5 flex items-center justify-between gap-2">
+                        <span className="text-gray-700 truncate">{u.product}</span>
+                        <span className="text-red-500 font-medium flex-shrink-0">{u.count}건</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
 
           <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
             {outLoading ? (
