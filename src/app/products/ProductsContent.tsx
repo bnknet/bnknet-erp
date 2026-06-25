@@ -286,35 +286,56 @@ export default function ProductsContent() {
         ) : filtered.length === 0 ? (
           <div className="text-center py-12 text-gray-400">등록된 상품이 없습니다</div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-base">
-              <thead className="bg-gray-50 border-b border-gray-100">
-                <tr>
-                  {['상품명', '카테고리', '브랜드', '사업자', '원가', '등록일', '상태'].map((h) => (
-                    <th key={h} className="px-4 py-3 text-left text-sm font-medium text-gray-500">{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-50">
-                {filtered.map((p) => (
-                  <tr key={p.id} onClick={() => { setSelected(p); setView('detail'); }}
-                    className="hover:bg-blue-50/40 cursor-pointer transition-colors">
-                    <td className="px-4 py-3 font-medium text-gray-800">{p.name}</td>
-                    <td className="px-4 py-3 text-gray-500">{p.category || '-'}</td>
-                    <td className="px-4 py-3 text-gray-500">{p.brand || '-'}</td>
-                    <td className="px-4 py-3 text-gray-500">{p.company}</td>
-                    <td className="px-4 py-3 text-gray-600">{p.cost_price ? p.cost_price.toLocaleString() + '원' : '-'}</td>
-                    <td className="px-4 py-3 text-gray-400 text-sm">{localDate(p.created_at) || '-'}</td>
-                    <td className="px-4 py-3">
-                      <span className={`text-sm px-2 py-0.5 rounded-md ${p.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
-                        {p.is_active ? '판매중' : '중단'}
-                      </span>
-                    </td>
+          <>
+            {/* 데스크탑: 표 */}
+            <div className="overflow-x-auto hidden sm:block">
+              <table className="w-full text-base">
+                <thead className="bg-gray-50 border-b border-gray-100">
+                  <tr>
+                    {['상품명', '카테고리', '브랜드', '사업자', '원가', '등록일', '상태'].map((h) => (
+                      <th key={h} className="px-4 py-3 text-left text-sm font-medium text-gray-500">{h}</th>
+                    ))}
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {filtered.map((p) => (
+                    <tr key={p.id} onClick={() => { setSelected(p); setView('detail'); }}
+                      className="hover:bg-blue-50/40 cursor-pointer transition-colors">
+                      <td className="px-4 py-3 font-medium text-gray-800">{p.name}</td>
+                      <td className="px-4 py-3 text-gray-500">{p.category || '-'}</td>
+                      <td className="px-4 py-3 text-gray-500">{p.brand || '-'}</td>
+                      <td className="px-4 py-3 text-gray-500">{p.company}</td>
+                      <td className="px-4 py-3 text-gray-600">{p.cost_price ? p.cost_price.toLocaleString() + '원' : '-'}</td>
+                      <td className="px-4 py-3 text-gray-400 text-sm">{localDate(p.created_at) || '-'}</td>
+                      <td className="px-4 py-3">
+                        <span className={`text-sm px-2 py-0.5 rounded-md ${p.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                          {p.is_active ? '판매중' : '중단'}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* 모바일: 카드형 */}
+            <div className="sm:hidden divide-y divide-gray-100">
+              {filtered.map((p) => (
+                <div key={p.id} onClick={() => { setSelected(p); setView('detail'); }} className="px-4 py-3.5 active:bg-blue-50/40">
+                  <div className="flex items-center justify-between gap-2 mb-1">
+                    <span className="font-bold text-gray-800 text-[15px] truncate">{p.name}</span>
+                    <span className={`text-xs px-2 py-0.5 rounded-md flex-shrink-0 ${p.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                      {p.is_active ? '판매중' : '중단'}
+                    </span>
+                  </div>
+                  <div className="text-xs text-gray-400">
+                    {p.company}{p.brand ? ` · ${p.brand}` : ''}{p.category ? ` · ${p.category}` : ''}
+                  </div>
+                  <div className="text-sm text-gray-600 mt-1">원가 {p.cost_price ? p.cost_price.toLocaleString() + '원' : '-'}</div>
+                </div>
+              ))}
+            </div>
+          </>
         )}
       </div>
     </div>

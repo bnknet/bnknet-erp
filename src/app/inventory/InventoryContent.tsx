@@ -5,6 +5,13 @@ import { supabaseFetch } from '@/lib/supabase';
 import { getUser } from '@/lib/auth';
 import * as XLSX from 'xlsx';
 
+// 큰 금액 축약 (모바일 통계용): 6.9억 / 688만 등
+function shortWon(n: number): string {
+  if (n >= 100000000) return (n / 100000000).toFixed(1).replace(/\.0$/, '') + '억';
+  if (n >= 10000) return Math.round(n / 10000).toLocaleString() + '만';
+  return n.toLocaleString();
+}
+
 interface InventoryItem {
   id: string;
   product_id?: string;
@@ -480,15 +487,15 @@ export default function InventoryContent() {
           </div>
 
           {/* 통계 */}
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-3 gap-2 sm:gap-3">
             {[
-              { label: '전체 품목', value: `${filtered.length}개` },
-              { label: '총 재고수량', value: `${totalQty.toLocaleString()}개` },
-              { label: '재고 원가총합', value: `${totalCost.toLocaleString()}원` },
+              { label: '전체 품목', value: `${filtered.length}개`, full: '' },
+              { label: '총 재고수량', value: `${totalQty.toLocaleString()}개`, full: '' },
+              { label: '원가총합', value: `${shortWon(totalCost)}원`, full: `${totalCost.toLocaleString()}원` },
             ].map((s) => (
-              <div key={s.label} className="bg-white rounded-xl border border-gray-100 px-4 py-3">
-                <div className="text-sm text-gray-400">{s.label}</div>
-                <div className="text-lg font-bold mt-0.5 text-gray-800">{s.value}</div>
+              <div key={s.label} className="bg-white rounded-xl border border-gray-100 px-3 py-3" title={s.full}>
+                <div className="text-xs sm:text-sm text-gray-400">{s.label}</div>
+                <div className="text-base sm:text-lg font-bold mt-0.5 text-gray-800 whitespace-nowrap">{s.value}</div>
               </div>
             ))}
           </div>
@@ -706,15 +713,15 @@ export default function InventoryContent() {
               className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" />
           </div>
 
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-3 gap-2 sm:gap-3">
             {[
-              { label: `${snapDate} 품목`, value: `${filteredSnap.length}개` },
-              { label: '총 재고수량', value: `${snapTotalQty.toLocaleString()}개` },
-              { label: '재고 원가총합', value: `${snapTotalCost.toLocaleString()}원` },
+              { label: `${snapDate} 품목`, value: `${filteredSnap.length}개`, full: '' },
+              { label: '총 재고수량', value: `${snapTotalQty.toLocaleString()}개`, full: '' },
+              { label: '원가총합', value: `${shortWon(snapTotalCost)}원`, full: `${snapTotalCost.toLocaleString()}원` },
             ].map((s) => (
-              <div key={s.label} className="bg-white rounded-xl border border-gray-100 px-4 py-3">
-                <div className="text-sm text-gray-400">{s.label}</div>
-                <div className="text-lg font-bold mt-0.5 text-gray-800">{s.value}</div>
+              <div key={s.label} className="bg-white rounded-xl border border-gray-100 px-3 py-3" title={s.full}>
+                <div className="text-xs sm:text-sm text-gray-400">{s.label}</div>
+                <div className="text-base sm:text-lg font-bold mt-0.5 text-gray-800 whitespace-nowrap">{s.value}</div>
               </div>
             ))}
           </div>
