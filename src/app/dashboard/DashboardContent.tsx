@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { getUser } from '@/lib/auth';
 import { supabaseFetch } from '@/lib/supabase';
 
-const companies = ['더블아이', 'BNKNET', 'SJ글로벌', 'IX글로벌'];
+const companies = ['BNKNET', 'SJ글로벌', '더블아이', 'IX글로벌'];
 
 function yesterdayStr() {
   const d = new Date();
