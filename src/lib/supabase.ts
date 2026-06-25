@@ -12,7 +12,11 @@ export async function supabaseUpload(bucket: string, path: string, file: File): 
     },
     body: file,
   });
-  if (!res.ok) throw new Error('파일 업로드 실패');
+  if (!res.ok) {
+    let detail = '';
+    try { detail = await res.text(); } catch { /* ignore */ }
+    throw new Error(`업로드 실패 (${res.status}) ${detail}`);
+  }
   return `${SUPABASE_URL}/storage/v1/object/public/${bucket}/${path}`;
 }
 

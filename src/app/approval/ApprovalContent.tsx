@@ -257,8 +257,8 @@ export default function ApprovalContent() {
         uploaded.push({ name: file.name, url });
       }
       setAttachments(prev => [...prev, ...uploaded]);
-    } catch {
-      alert('파일 업로드에 실패했습니다. 다시 시도해주세요.');
+    } catch (e) {
+      alert(e instanceof Error ? e.message : '파일 업로드에 실패했습니다.');
     } finally { setUploading(false); }
   }
 
