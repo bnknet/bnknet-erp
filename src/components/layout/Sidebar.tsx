@@ -131,8 +131,7 @@ export default function Sidebar({ mobileOpen, onClose }: SidebarProps) {
               </svg>
             </div>
             <div>
-              <div className="font-bold text-base leading-tight">비앤케이넷 ERP</div>
-              <div className="text-sm text-slate-400 leading-tight">BNKNET</div>
+              <div className="font-bold text-base leading-tight">ERP</div>
             </div>
           </Link>
         </div>
