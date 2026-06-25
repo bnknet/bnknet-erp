@@ -20,7 +20,7 @@ export interface Card {
 
 export const CARD_TYPES = [
   '법인카드', '개인사업자카드', '방기현카드', '방성훈카드',
-  '강웅구카드', '박정진카드', '손사빈카드', '조현상카드',
+  '조현상카드', '강웅구카드', '손사빈카드', '박정진카드',
 ] as const;
 
 export const CARD_TYPE_COLORS: Record<string, string> = {

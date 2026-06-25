@@ -191,8 +191,8 @@ export default function CardsContent() {
   }
 
   const cardTypeOf = (id: string) => cards.find(c => c.id === id)?.card_type || '';
-  // 사업자(카드종류)별로 사용되는 종류 목록
-  const usedTypes = Array.from(new Set(cards.map(c => c.card_type)));
+  // 사업자(카드종류)별로 사용되는 종류 목록 (CARD_TYPES 지정 순서대로)
+  const usedTypes = CARD_TYPES.filter(t => cards.some(c => c.card_type === t));
   const filteredEvents = typeFilter === 'all' ? events : events.filter(e => cardTypeOf(e.cardId) === typeFilter);
   // 기간 조회 결과
   const rangeEvents = (rangeFrom && rangeTo)
