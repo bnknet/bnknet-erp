@@ -13,6 +13,8 @@ interface ApprovalItem {
   amount: number;
   note: string;
   sort_order: number;
+  canceled?: boolean;
+  refund_due_date?: string;
 }
 
 interface Approval {
@@ -197,6 +199,7 @@ export default function ApprovalContent() {
   // 취소(환불) 모달
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [refundDate, setRefundDate] = useState(today());
+  const [cancelItemIds, setCancelItemIds] = useState<Set<string>>(new Set());
 
   // 휴가신청서 폼
   const [vacationType, setVacationType] = useState('annual');
@@ -527,41 +530,57 @@ export default function ApprovalContent() {
     await loadApprovals();
   }
 
-  // 카드 매입 취소 → 환불(-) 처리
+  // 카드 매입 취소 → 환불(-) 처리 (항목별 부분취소 지원)
   function openCancelModal(approval: Approval) {
     const card = cards.find(c => c.id === approval.card_id);
-    // 환불 예정일: 취소 시점(오늘) 기준 다음 결제일 자동 계산, 없으면 오늘
     const def = card ? computePaymentDate(toISO(new Date()), card.billing_day, card.close_day) : today();
     setRefundDate(def);
+    // 기본: 아직 취소 안 된 항목 전체 체크
+    const ids = (approval.items || []).filter(i => !i.canceled && i.id).map(i => i.id as string);
+    setCancelItemIds(new Set(ids));
     setShowCancelModal(true);
   }
 
   async function handleCancelPurchase(approval: Approval) {
+    const items = approval.items || [];
+    if (cancelItemIds.size === 0) { alert('취소할 항목을 선택하세요.'); return; }
+    const nowIso = new Date().toISOString();
+    for (const id of Array.from(cancelItemIds)) {
+      await supabaseFetch(`/approval_items?id=eq.${id}`, {
+        method: 'PATCH', headers: { Prefer: 'return=minimal' },
+        body: JSON.stringify({ canceled: true, refund_due_date: refundDate, canceled_at: nowIso }),
+      });
+    }
+    const canceledCnt = items.filter(i => i.canceled || cancelItemIds.has(i.id || '')).length;
+    const status = canceledCnt >= items.length ? 'canceled' : 'partial';
     await supabaseFetch(`/approvals?id=eq.${approval.id}`, {
       method: 'PATCH', headers: { Prefer: 'return=minimal' },
-      body: JSON.stringify({
-        purchase_status: 'canceled',
-        canceled_at: new Date().toISOString(),
-        refund_due_date: refundDate,
-      }),
+      body: JSON.stringify({ purchase_status: status, canceled_at: nowIso, refund_due_date: refundDate }),
     });
+    const amt = items.filter(i => cancelItemIds.has(i.id || '')).reduce((s, i) => s + (i.amount || 0), 0);
     const cardName = cards.find(c => c.id === approval.card_id)?.card_name || '';
-    await logCardChange('매입취소', `${approval.company} ${approval.total_amount.toLocaleString()}원${cardName ? ` · ${cardName}` : ''}`,
-      `환불예정일 ${refundDate}`, me?.name || '');
+    await logCardChange('매입취소', `${approval.company} ${cardName}`,
+      `${canceledCnt >= items.length ? '전체' : '부분'}취소 ${cancelItemIds.size}건 -${amt.toLocaleString()}원 · 환불예정 ${refundDate}`, me?.name || '');
     setShowCancelModal(false);
     await loadDetail(approval.id);
     await loadApprovals();
   }
 
   async function handleUncancelPurchase(approval: Approval) {
-    if (!confirm('취소를 철회하고 정상 매입으로 되돌리시겠습니까?')) return;
+    if (!confirm('취소를 철회하고 정상 매입으로 되돌리시겠습니까? (취소된 항목 전체 복원)')) return;
+    const nowIso = new Date().toISOString();
+    for (const it of (approval.items || []).filter(i => i.canceled && i.id)) {
+      await supabaseFetch(`/approval_items?id=eq.${it.id}`, {
+        method: 'PATCH', headers: { Prefer: 'return=minimal' },
+        body: JSON.stringify({ canceled: false, refund_due_date: null, canceled_at: null }),
+      });
+    }
     await supabaseFetch(`/approvals?id=eq.${approval.id}`, {
       method: 'PATCH', headers: { Prefer: 'return=minimal' },
       body: JSON.stringify({ purchase_status: 'normal', canceled_at: null, refund_due_date: null }),
     });
     const cardName = cards.find(c => c.id === approval.card_id)?.card_name || '';
-    await logCardChange('취소철회', `${approval.company} ${approval.total_amount.toLocaleString()}원${cardName ? ` · ${cardName}` : ''}`,
-      '정상 매입으로 복원', me?.name || '');
+    await logCardChange('취소철회', `${approval.company} ${cardName}`, '정상 매입으로 복원', me?.name || '');
     await loadDetail(approval.id);
     await loadApprovals();
   }
@@ -718,9 +737,9 @@ export default function ApprovalContent() {
                   <div className="w-36 px-2 py-2">비 고</div>
                 </div>
                 {[...(selected.items || []), ...Array(Math.max(0, 5 - (selected.items?.length || 0))).fill(null)].map((item, i) => (
-                  <div key={i} className="flex border-t border-gray-200 text-base min-h-[36px]">
+                  <div key={i} className={`flex border-t border-gray-200 text-base min-h-[36px] ${item?.canceled ? 'bg-red-50/50' : ''}`}>
                     <div className="w-20 px-2 py-2 border-r border-gray-400 text-center">{item?.item_date || ''}</div>
-                    <div className="flex-1 px-2 py-2 border-r border-gray-400">{item?.description || ''}</div>
+                    <div className={`flex-1 px-2 py-2 border-r border-gray-400 ${item?.canceled ? 'line-through text-red-400' : ''}`}>{item?.description || ''}{item?.canceled ? ' (취소)' : ''}</div>
                     {selected.doc_type === '카드구매' && <div className="w-24 px-2 py-2 border-r border-gray-400 text-right">{item?.quantity ? item.quantity.toLocaleString() : ''}</div>}
                     <div className="w-32 px-2 py-2 border-r border-gray-400 text-right">{item?.amount ? item.amount.toLocaleString() : ''}</div>
                     <div className="w-36 px-2 py-2">{item?.note || ''}</div>
@@ -748,9 +767,10 @@ export default function ApprovalContent() {
                       <div className="text-base text-blue-700">결제예정일 <span className="font-bold">{selected.payment_due_date}</span></div>
                     )}
                   </div>
-                  {selected.purchase_status === 'canceled' && (
+                  {(selected.purchase_status === 'canceled' || selected.purchase_status === 'partial') && (
                     <div className="mt-2 text-base text-red-600 font-medium">
-                      ⚠️ 구매 취소됨 · 환불예정일 {selected.refund_due_date} (-{selected.total_amount.toLocaleString()}원)
+                      ⚠️ {selected.purchase_status === 'canceled' ? '전체 취소됨' : '일부 항목 취소됨'} · 환불예정일 {selected.refund_due_date}
+                      {' '}(-{(selected.items || []).filter(i => i.canceled).reduce((s, i) => s + (i.amount || 0), 0).toLocaleString()}원)
                     </div>
                   )}
                 </div>
@@ -798,16 +818,19 @@ export default function ApprovalContent() {
               <button onClick={() => openResubmit(selected)}
                 className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-base font-medium">수정 후 재상신</button>
             )}
-            {/* 카드 매입 취소/철회 (승인된 카드 결제건) */}
+            {/* 카드 매입 취소/철회 (승인된 카드 결제건, 항목별 부분취소) */}
             {selected.doc_type !== '휴가신청서' && selected.card_id && selected.status === 'approved' &&
               (isCeo || isAdmin || selected.submitter_name === me?.name) && (
-                selected.purchase_status === 'canceled' ? (
-                  <button onClick={() => handleUncancelPurchase(selected)}
-                    className="px-5 py-2 border border-gray-200 text-gray-600 rounded-xl text-base hover:bg-gray-50">취소 철회</button>
-                ) : (
-                  <button onClick={() => openCancelModal(selected)}
-                    className="px-5 py-2 border border-orange-200 text-orange-600 rounded-xl text-base hover:bg-orange-50">구매 취소(환불)</button>
-                )
+                <>
+                  {selected.purchase_status !== 'canceled' && (
+                    <button onClick={() => openCancelModal(selected)}
+                      className="px-5 py-2 border border-orange-200 text-orange-600 rounded-xl text-base hover:bg-orange-50">구매 취소(환불)</button>
+                  )}
+                  {(selected.purchase_status === 'canceled' || selected.purchase_status === 'partial') && (
+                    <button onClick={() => handleUncancelPurchase(selected)}
+                      className="px-5 py-2 border border-gray-200 text-gray-600 rounded-xl text-base hover:bg-gray-50">취소 철회</button>
+                  )}
+                </>
               )}
             {canDelete && (
               <button onClick={() => handleDelete(selected.id)}
@@ -816,18 +839,49 @@ export default function ApprovalContent() {
           </div>
         </div>
 
-        {/* 카드 매입 취소 모달 */}
+        {/* 카드 매입 취소 모달 (항목별 부분취소) */}
         {showCancelModal && (
-          <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6">
-              <h3 className="text-lg font-bold text-gray-800 mb-2">구매 취소 (환불 처리)</h3>
-              <p className="text-base text-gray-500 mb-4">
-                재고품절·판매자 사정 등으로 취소된 건입니다. 카드 캘린더에 <span className="text-red-500 font-medium">−{selected.total_amount.toLocaleString()}원</span>(환불)이 반영됩니다.
-              </p>
+          <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4 overflow-y-auto">
+            <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 my-8">
+              <h3 className="text-lg font-bold text-gray-800 mb-1">구매 취소 (환불 처리)</h3>
+              <p className="text-sm text-gray-500 mb-4">취소할 항목을 선택하세요. 일부만 선택하면 부분취소됩니다.</p>
+
+              <div className="border border-gray-200 rounded-xl overflow-hidden mb-4">
+                <div className="flex bg-gray-50 border-b border-gray-200 text-xs font-medium text-gray-500">
+                  <div className="w-8 px-2 py-2" />
+                  <div className="flex-1 px-2 py-2">구매상품</div>
+                  <div className="w-16 px-2 py-2 text-right">수량</div>
+                  <div className="w-24 px-2 py-2 text-right">금액</div>
+                </div>
+                {(selected.items || []).map((it, i) => {
+                  const disabled = it.canceled;
+                  const checked = cancelItemIds.has(it.id || '');
+                  return (
+                    <div key={i} className={`flex border-t border-gray-100 text-sm ${disabled ? 'bg-red-50/50' : ''}`}>
+                      <div className="w-8 px-2 py-2 flex items-center justify-center">
+                        {disabled ? <span className="text-[10px] text-red-500">취소됨</span> : (
+                          <input type="checkbox" checked={checked}
+                            onChange={() => setCancelItemIds(prev => { const n = new Set(prev); const k = it.id || ''; n.has(k) ? n.delete(k) : n.add(k); return n; })}
+                            className="w-4 h-4 rounded border-gray-300 text-orange-600 cursor-pointer" />
+                        )}
+                      </div>
+                      <div className={`flex-1 px-2 py-2 ${disabled ? 'line-through text-red-400' : 'text-gray-700'}`}>{it.description || '-'}</div>
+                      <div className="w-16 px-2 py-2 text-right text-gray-600">{it.quantity ? it.quantity.toLocaleString() : '-'}</div>
+                      <div className="w-24 px-2 py-2 text-right text-gray-700">{it.amount ? it.amount.toLocaleString() : '-'}</div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="bg-orange-50 rounded-lg px-3 py-2 mb-3 text-sm text-orange-700">
+                선택 취소 금액: <span className="font-bold">−{(selected.items || []).filter(i => cancelItemIds.has(i.id || '')).reduce((s, i) => s + (i.amount || 0), 0).toLocaleString()}원</span>
+              </div>
+
               <label className="block text-sm font-medium text-gray-500 mb-1">환불 예정일</label>
               <input type="date" value={refundDate} onChange={e => setRefundDate(e.target.value)}
                 className="w-full px-3 py-2 border border-gray-200 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-orange-400" />
               <p className="text-sm text-gray-400 mt-1.5">보통 다음 카드 명세서에 반영됩니다. (자동 계산됨, 수정 가능)</p>
+
               <div className="flex gap-3 mt-5">
                 <button onClick={() => handleCancelPurchase(selected)}
                   className="flex-1 px-5 py-2.5 bg-orange-500 hover:bg-orange-600 text-white rounded-xl text-base font-medium">취소 확정</button>

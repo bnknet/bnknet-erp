@@ -32,11 +32,15 @@ interface CardPurchase {
 }
 
 interface PurchaseItem {
+  id?: string;
+  approval_id?: string;
   item_date?: string;
   description?: string;
   quantity?: number;
   amount?: number;
   note?: string;
+  canceled?: boolean;
+  refund_due_date?: string;
 }
 
 // 캘린더에 표시할 이벤트 (매입 + / 환불 -)
@@ -61,7 +65,7 @@ const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
 function ymd(d: Date) { return toISO(d); }
 function won(n: number) { return n.toLocaleString(); }
 
-type Tab = 'calendar' | 'cards' | 'log';
+type Tab = 'calendar' | 'limit' | 'cards' | 'log';
 
 export default function CardsContent() {
   const me = getUser();
@@ -87,6 +91,9 @@ export default function CardsContent() {
   const [typeFilter, setTypeFilter] = useState<string>('all'); // 사업자(카드종류)별 필터
   const [detailEvent, setDetailEvent] = useState<PayEvent | null>(null);
   const [detailItems, setDetailItems] = useState<PurchaseItem[]>([]);
+  const [cancelChecked, setCancelChecked] = useState<Set<string>>(new Set());
+  const [cancelRefundDate, setCancelRefundDate] = useState('');
+  const [canceledItems, setCanceledItems] = useState<PurchaseItem[]>([]); // 취소된 항목(환불 이벤트용)
   const [rangeFrom, setRangeFrom] = useState('');
   const [rangeTo, setRangeTo] = useState('');
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
@@ -104,6 +111,10 @@ export default function CardsContent() {
     );
     const data = await res.json();
     setPurchases(Array.isArray(data) ? data : []);
+    // 취소된 항목(부분취소 포함) — 환불 이벤트/한도 계산용
+    const cRes = await supabaseFetch('/approval_items?canceled=eq.true&select=id,approval_id,amount,refund_due_date,description');
+    const cData = await cRes.json();
+    setCanceledItems(Array.isArray(cData) ? cData : []);
   }, []);
 
   const loadLogs = useCallback(async () => {
@@ -172,22 +183,63 @@ export default function CardsContent() {
     await Promise.all([loadCards(), loadLogs()]);
   }
 
+  const purchaseById = (id: string) => purchases.find(p => p.id === id);
+  // 매입별 취소금액 합 (부분취소 포함)
+  const canceledAmtByPurchase: Record<string, number> = {};
+  for (const ci of canceledItems) {
+    if (ci.approval_id) canceledAmtByPurchase[ci.approval_id] = (canceledAmtByPurchase[ci.approval_id] || 0) + (ci.amount || 0);
+  }
+
   // ── 캘린더 이벤트 생성 ──
   const events: PayEvent[] = [];
   for (const p of purchases) {
     if (p.payment_due_date) {
       events.push({ date: p.payment_due_date, cardId: p.card_id, amount: p.total_amount, type: 'charge', purchase: p });
     }
-    if (p.purchase_status === 'canceled' && p.refund_due_date) {
-      events.push({ date: p.refund_due_date, cardId: p.card_id, amount: -p.total_amount, type: 'refund', purchase: p });
+  }
+  // 환불 이벤트 = 취소된 항목별 (부분취소 지원)
+  for (const ci of canceledItems) {
+    const p = ci.approval_id ? purchaseById(ci.approval_id) : null;
+    if (p && ci.refund_due_date && ci.amount) {
+      events.push({ date: ci.refund_due_date, cardId: p.card_id, amount: -(ci.amount || 0), type: 'refund', purchase: p });
     }
   }
+
   async function openPurchaseDetail(e: PayEvent) {
     setDetailEvent(e);
     setDetailItems([]);
+    setCancelChecked(new Set());
+    setCancelRefundDate(todayStr);
     const res = await supabaseFetch(`/approval_items?approval_id=eq.${e.purchase.id}&order=sort_order.asc`);
     const d = await res.json();
     setDetailItems(Array.isArray(d) ? d : []);
+  }
+
+  // 선택 항목 부분 취소
+  async function cancelSelectedItems() {
+    if (!detailEvent || cancelChecked.size === 0) { alert('취소할 항목을 선택하세요.'); return; }
+    if (!cancelRefundDate) { alert('환불 예정일을 입력하세요.'); return; }
+    const ids = Array.from(cancelChecked);
+    const nowIso = new Date().toISOString();
+    for (const id of ids) {
+      await supabaseFetch(`/approval_items?id=eq.${id}`, {
+        method: 'PATCH', headers: { Prefer: 'return=minimal' },
+        body: JSON.stringify({ canceled: true, refund_due_date: cancelRefundDate, canceled_at: nowIso }),
+      });
+    }
+    // 매입 상태 갱신 (전체취소/부분취소/정상)
+    const totalCnt = detailItems.length;
+    const canceledCnt = detailItems.filter(it => it.canceled || cancelChecked.has(it.id || '')).length;
+    const status = canceledCnt === 0 ? 'normal' : canceledCnt >= totalCnt ? 'canceled' : 'partial';
+    await supabaseFetch(`/approvals?id=eq.${detailEvent.purchase.id}`, {
+      method: 'PATCH', headers: { Prefer: 'return=minimal' },
+      body: JSON.stringify({ purchase_status: status, canceled_at: nowIso }),
+    });
+    const amt = detailItems.filter(it => cancelChecked.has(it.id || '')).reduce((s, it) => s + (it.amount || 0), 0);
+    await logCardChange('매입취소', `${detailEvent.purchase.company} ${detailEvent.purchase.purchase_vendor || ''}`,
+      `부분취소 ${cancelChecked.size}건 -${amt.toLocaleString()}원 · 환불예정 ${cancelRefundDate}`, me?.name || '');
+    setDetailEvent(null);
+    await loadPurchases();
   }
 
   const cardTypeOf = (id: string) => cards.find(c => c.id === id)?.card_type || '';
@@ -231,6 +283,34 @@ export default function CardsContent() {
 
   const cardName = (id: string) => cards.find(c => c.id === id)?.card_name || '(삭제된 카드)';
   const todayStr = ymd(new Date());
+
+  // ── 한도 현황 계산 ──
+  // 카드별 미결제(아직 결제일 안 지난 매입 − 취소금액)
+  function cardOutstanding(cardId: string): number {
+    return purchases
+      .filter(p => p.card_id === cardId && p.payment_due_date && p.payment_due_date >= todayStr)
+      .reduce((s, p) => s + (p.total_amount - (canceledAmtByPurchase[p.id] || 0)), 0);
+  }
+  // 한도 그룹 묶기 (limit_group 같으면 한도 공유, 없으면 카드 단독)
+  const limitGroups = (() => {
+    const seen = new Set<string>();
+    const groups: { key: string; limit: number; cards: Card[] }[] = [];
+    for (const c of cards) {
+      const key = c.limit_group || c.id;
+      if (seen.has(key)) {
+        groups.find(g => g.key === key)!.cards.push(c);
+      } else {
+        seen.add(key);
+        groups.push({ key, limit: c.limit_amount, cards: [c] });
+      }
+    }
+    return groups.map(g => {
+      const used = g.cards.reduce((s, c) => s + cardOutstanding(c.id), 0);
+      return { ...g, used, remaining: g.limit - used };
+    });
+  })();
+  const totalLimit = limitGroups.reduce((s, g) => s + g.limit, 0);
+  const totalUsed = limitGroups.reduce((s, g) => s + g.used, 0);
 
   function exportExcel() {
     const rows = filteredEvents
@@ -349,13 +429,17 @@ export default function CardsContent() {
   return (
     <div className="space-y-4">
       {/* 탭 */}
-      <div className="flex items-center gap-2 border-b border-gray-200 pb-3">
+      <div className="flex items-center gap-2 border-b border-gray-200 pb-3 overflow-x-auto">
         <button onClick={() => setTab('calendar')}
-          className={`px-4 py-2 rounded-t-lg text-base font-medium border-b-2 ${tab === 'calendar' ? 'border-blue-600 text-blue-600 bg-white' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
+          className={`px-4 py-2 rounded-t-lg text-base font-medium border-b-2 whitespace-nowrap ${tab === 'calendar' ? 'border-blue-600 text-blue-600 bg-white' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
           결제 캘린더
         </button>
+        <button onClick={() => setTab('limit')}
+          className={`px-4 py-2 rounded-t-lg text-base font-medium border-b-2 whitespace-nowrap ${tab === 'limit' ? 'border-blue-600 text-blue-600 bg-white' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
+          한도 현황
+        </button>
         <button onClick={() => setTab('cards')}
-          className={`px-4 py-2 rounded-t-lg text-base font-medium border-b-2 ${tab === 'cards' ? 'border-blue-600 text-blue-600 bg-white' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
+          className={`px-4 py-2 rounded-t-lg text-base font-medium border-b-2 whitespace-nowrap ${tab === 'cards' ? 'border-blue-600 text-blue-600 bg-white' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
           카드 목록
         </button>
         {canManage && (
@@ -368,6 +452,66 @@ export default function CardsContent() {
 
       {loading ? (
         <div className="text-center py-12 text-gray-400">불러오는 중...</div>
+      ) : tab === 'limit' ? (
+        // ─────────── 한도 현황 ───────────
+        <div className="space-y-4">
+          {/* 전체 요약 */}
+          <div className="bg-gradient-to-r from-slate-800 to-slate-600 rounded-2xl p-5 text-white flex items-center justify-between flex-wrap gap-3">
+            <div>
+              <div className="text-sm text-slate-300">전체 한도 / 사용중 / 잔여</div>
+              <div className="text-2xl font-bold mt-1">
+                잔여 {won(totalLimit - totalUsed)}원
+                <span className="text-base font-normal text-slate-300"> · 사용 {won(totalUsed)} / 한도 {won(totalLimit)}</span>
+              </div>
+            </div>
+            <div className="text-xs text-slate-300 text-right">미결제 = 결제일 안 지난 매입<br />결제일 지나면 자동 회복</div>
+          </div>
+          <p className="text-xs text-gray-400">💡 현재는 ERP에 등록된 카드구매 기준입니다. 6/30 카드사별 실제 잔여한도를 반영하면 정확해집니다.</p>
+
+          {/* 사업자 필터 */}
+          <div className="flex gap-2 flex-wrap">
+            <button onClick={() => setTypeFilter('all')}
+              className={`px-3 py-1.5 rounded-lg text-sm font-medium ${typeFilter === 'all' ? 'bg-slate-700 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}>전체</button>
+            {usedTypes.map(t => (
+              <button key={t} onClick={() => setTypeFilter(t)}
+                className={`px-3 py-1.5 rounded-lg text-sm font-medium ${typeFilter === t ? 'bg-slate-700 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}>{t}</button>
+            ))}
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {limitGroups
+              .filter(g => typeFilter === 'all' || g.cards.some(c => c.card_type === typeFilter))
+              .map(g => {
+                const pct = g.limit > 0 ? Math.min(100, Math.round(g.used / g.limit * 100)) : 0;
+                const shared = g.cards.length > 1;
+                return (
+                  <div key={g.key} className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
+                    <div className="flex items-center gap-2 mb-1 flex-wrap">
+                      <span className={`text-xs px-2 py-0.5 rounded-md font-medium ${CARD_TYPE_COLORS[g.cards[0].card_type] || 'bg-gray-100 text-gray-600'}`}>{g.cards[0].card_type}</span>
+                      {shared && <span className="text-xs text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded">한도공유 {g.cards.length}장</span>}
+                    </div>
+                    <div className="font-bold text-gray-800">{g.cards.map(c => c.card_name).join(' / ')}</div>
+                    <div className="text-xs text-gray-400 mt-0.5">{g.cards[0].holder_name}</div>
+                    <div className="border-t border-gray-100 mt-3 pt-3">
+                      <div className="flex justify-between items-baseline">
+                        <span className="text-xs text-gray-400">잔여한도</span>
+                        <span className={`text-xl font-bold ${g.remaining <= 0 ? 'text-red-500' : pct >= 80 ? 'text-orange-500' : 'text-green-600'}`}>{won(g.remaining)}원</span>
+                      </div>
+                      <div className="flex justify-between text-xs text-gray-400 mt-1">
+                        <span>사용 {won(g.used)}</span>
+                        <span>한도 {g.limit > 0 ? won(g.limit) : '미설정'}</span>
+                      </div>
+                      {g.limit > 0 && (
+                        <div className="h-2 bg-gray-100 rounded-full overflow-hidden mt-2">
+                          <div className={`h-full rounded-full ${pct >= 90 ? 'bg-red-400' : pct >= 80 ? 'bg-orange-400' : 'bg-blue-400'}`} style={{ width: `${pct}%` }} />
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+          </div>
+        </div>
       ) : tab === 'cards' ? (
         // ─────────── 카드 목록 ───────────
         <div className="space-y-4">
@@ -665,6 +809,7 @@ export default function CardsContent() {
 
             <div className="border border-gray-200 rounded-xl overflow-hidden">
               <div className="flex bg-gray-50 border-b border-gray-200 text-xs font-medium text-gray-500">
+                {canManage && detailEvent.type === 'charge' && <div className="w-8 px-2 py-2" />}
                 <div className="flex-1 px-3 py-2">구매상품</div>
                 <div className="w-16 px-2 py-2 text-right">수량</div>
                 <div className="w-28 px-3 py-2 text-right">금액</div>
@@ -672,22 +817,46 @@ export default function CardsContent() {
               {detailItems.length === 0 ? (
                 <div className="text-center py-4 text-sm text-gray-400">상세 품목이 없습니다</div>
               ) : detailItems.map((it, i) => (
-                <div key={i} className="flex border-t border-gray-100 text-sm">
-                  <div className="flex-1 px-3 py-2 text-gray-700">{it.description || '-'}</div>
+                <div key={i} className={`flex border-t border-gray-100 text-sm ${it.canceled ? 'bg-red-50/50' : ''}`}>
+                  {canManage && detailEvent.type === 'charge' && (
+                    <div className="w-8 px-2 py-2 flex items-center justify-center">
+                      {it.canceled ? <span className="text-[10px] text-red-500">취소</span> : (
+                        <input type="checkbox" checked={cancelChecked.has(it.id || '')}
+                          onChange={() => setCancelChecked(prev => { const n = new Set(prev); const k = it.id || ''; n.has(k) ? n.delete(k) : n.add(k); return n; })}
+                          className="w-4 h-4 rounded border-gray-300 text-red-600 cursor-pointer" />
+                      )}
+                    </div>
+                  )}
+                  <div className={`flex-1 px-3 py-2 ${it.canceled ? 'text-red-400 line-through' : 'text-gray-700'}`}>{it.description || '-'}</div>
                   <div className="w-16 px-2 py-2 text-right text-gray-600">{it.quantity ? it.quantity.toLocaleString() : '-'}</div>
                   <div className="w-28 px-3 py-2 text-right text-gray-700">{it.amount ? it.amount.toLocaleString() : '-'}</div>
                 </div>
               ))}
               <div className="flex border-t border-gray-200 bg-gray-50 text-sm font-bold">
+                {canManage && detailEvent.type === 'charge' && <div className="w-8 px-2 py-2" />}
                 <div className="flex-1 px-3 py-2 text-gray-600">합계</div>
                 <div className="w-16 px-2 py-2 text-right text-gray-600">{detailItems.reduce((s, it) => s + (Number(it.quantity) || 0), 0).toLocaleString()}</div>
                 <div className="w-28 px-3 py-2 text-right text-gray-800">{won(detailEvent.purchase.total_amount)}원</div>
               </div>
             </div>
 
-            {detailEvent.purchase.purchase_status === 'canceled' && (
+            {/* 부분 취소 (체크 후 처리) */}
+            {canManage && detailEvent.type === 'charge' && cancelChecked.size > 0 && (
+              <div className="mt-3 bg-orange-50 border border-orange-200 rounded-xl p-3">
+                <div className="text-sm font-medium text-orange-700 mb-2">선택 {cancelChecked.size}건 취소 (환불 −{detailItems.filter(it => cancelChecked.has(it.id || '')).reduce((s, it) => s + (it.amount || 0), 0).toLocaleString()}원)</div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <label className="text-xs text-gray-500">환불 예정일</label>
+                  <input type="date" value={cancelRefundDate} onChange={e => setCancelRefundDate(e.target.value)}
+                    className="px-2 py-1 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-orange-400" />
+                  <button onClick={cancelSelectedItems}
+                    className="px-4 py-1.5 bg-orange-500 hover:bg-orange-600 text-white rounded-lg text-sm font-medium">취소 확정</button>
+                </div>
+              </div>
+            )}
+
+            {(detailEvent.purchase.purchase_status === 'canceled' || detailEvent.purchase.purchase_status === 'partial') && (
               <div className="mt-3 text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">
-                ⚠️ 구매 취소됨 · 환불예정일 {detailEvent.purchase.refund_due_date}
+                ⚠️ {detailEvent.purchase.purchase_status === 'canceled' ? '전체 취소됨' : '일부 항목 취소됨'} (위 취소 표시 항목 참고)
               </div>
             )}
           </div>
