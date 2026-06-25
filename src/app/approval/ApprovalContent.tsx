@@ -132,7 +132,12 @@ function countWeekdays(start: string, end: string): number {
 const EMPTY_ITEM: ApprovalItem = { item_date: '', description: '', amount: 0, note: '', sort_order: 0 };
 
 type View = 'list' | 'form' | 'detail' | 'leave';
-type DocType = '지출결의서' | '휴가신청서';
+type DocType = '지출결의서' | '카드구매' | '휴가신청서';
+const DOC_TYPE_LABELS: Record<DocType, string> = {
+  '지출결의서': '지출결의서',
+  '카드구매': '지출결의서(카드구매)',
+  '휴가신청서': '휴가신청서',
+};
 
 interface LeaveRow {
   id: string;
@@ -362,10 +367,14 @@ export default function ApprovalContent() {
           updated_at: new Date().toISOString(),
         };
       } else {
+        if (docType === '카드구매' && !cardId) {
+          alert('카드구매는 결제 카드를 선택해야 합니다.');
+          setSaving(false); return;
+        }
         const card = cards.find(c => c.id === cardId);
         const paymentDue = card ? computePaymentDate(spendDate, card.billing_day, card.close_day) : null;
         payload = {
-          doc_type: '지출결의서', company,
+          doc_type: docType, company,
           issue_date: issueDate, settle_date: settleDate, spend_date: spendDate,
           organizer, processor, account,
           total_amount: total,
@@ -394,7 +403,7 @@ export default function ApprovalContent() {
           method: 'PATCH', headers: { Prefer: 'return=minimal' },
           body: JSON.stringify(payload),
         });
-        if (docType === '지출결의서') {
+        if (docType !== '휴가신청서') {
           await supabaseFetch(`/approval_items?approval_id=eq.${editId}`, { method: 'DELETE' });
         }
       } else {
@@ -406,7 +415,7 @@ export default function ApprovalContent() {
         approvalId = data[0]?.id;
       }
 
-      if (approvalId && docType === '지출결의서') {
+      if (approvalId && docType !== '휴가신청서') {
         const validItems = items.filter(i => i.description || i.amount);
         if (validItems.length > 0) {
           await supabaseFetch('/approval_items', {
@@ -481,7 +490,7 @@ export default function ApprovalContent() {
       setVacationEnd(approval.vacation_end || today());
       setVacationReason(approval.vacation_reason || '');
     } else {
-      setDocType('지출결의서');
+      setDocType(approval.doc_type === '카드구매' ? '카드구매' : '지출결의서');
       setCompany(approval.company);
       setIssueDate(approval.issue_date || today());
       setSettleDate(approval.settle_date || today());
@@ -604,8 +613,8 @@ export default function ApprovalContent() {
           {/* 헤더 */}
           <div className="flex items-start justify-between gap-3 mb-6 flex-wrap">
             <div>
-              <h2 className="text-2xl font-bold text-gray-800 tracking-widest">
-                〈 {isVacation ? '휴 가 신 청 서' : '지 출 결 의 서'} 〉
+              <h2 className="text-xl sm:text-2xl font-bold text-gray-800 tracking-widest">
+                〈 {isVacation ? '휴 가 신 청 서' : selected.doc_type === '카드구매' ? '지 출 결 의 서 (카드구매)' : '지 출 결 의 서'} 〉
               </h2>
               <div className="mt-2 flex items-center gap-2">
                 <span className={`text-sm px-2 py-1 rounded-md font-medium ${STATUS_MAP[selected.status]?.color}`}>
@@ -776,7 +785,7 @@ export default function ApprovalContent() {
                 className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-base font-medium">수정 후 재상신</button>
             )}
             {/* 카드 매입 취소/철회 (승인된 카드 결제건) */}
-            {selected.doc_type === '지출결의서' && selected.card_id && selected.status === 'approved' &&
+            {selected.doc_type !== '휴가신청서' && selected.card_id && selected.status === 'approved' &&
               (isCeo || isAdmin || selected.submitter_name === me?.name) && (
                 selected.purchase_status === 'canceled' ? (
                   <button onClick={() => handleUncancelPurchase(selected)}
@@ -842,17 +851,17 @@ export default function ApprovalContent() {
 
       {/* 문서 종류 선택 */}
       {!editId && (
-        <div className="flex gap-2">
-          {(['지출결의서', '휴가신청서'] as DocType[]).map(dt => (
+        <div className="flex gap-2 flex-wrap">
+          {(['지출결의서', '카드구매', '휴가신청서'] as DocType[]).map(dt => (
             <button key={dt} onClick={() => setDocType(dt)}
               className={`px-4 py-2 rounded-xl text-base font-medium transition-colors ${docType === dt ? 'bg-slate-700 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
-              {dt}
+              {DOC_TYPE_LABELS[dt]}
             </button>
           ))}
         </div>
       )}
 
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-8 max-w-3xl mx-auto">
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-4 sm:p-8 max-w-3xl mx-auto">
         {/* ── 휴가신청서 폼 ── */}
         {docType === '휴가신청서' ? (
           <>
@@ -947,12 +956,14 @@ export default function ApprovalContent() {
             </div>
 
             {/* 결제 카드 / 구매처 */}
-            <div className="grid sm:grid-cols-2 gap-3 mb-6 bg-blue-50/50 border border-blue-100 rounded-xl p-4">
+            <div className={`grid sm:grid-cols-2 gap-3 mb-6 border rounded-xl p-4 ${docType === '카드구매' ? 'bg-amber-50/60 border-amber-200' : 'bg-blue-50/50 border-blue-100'}`}>
               <div>
-                <label className="block text-sm font-medium text-gray-500 mb-1">결제 카드</label>
+                <label className="block text-sm font-medium text-gray-500 mb-1">
+                  결제 카드{docType === '카드구매' && <span className="text-red-500"> *</span>}
+                </label>
                 <select value={cardId} onChange={e => setCardId(e.target.value)}
                   className="w-full px-3 py-2 border border-gray-200 rounded-lg text-base bg-white focus:outline-none focus:ring-2 focus:ring-blue-400">
-                  <option value="">선택 안 함 (현금/계좌이체 등)</option>
+                  <option value="">{docType === '카드구매' ? '카드를 선택하세요' : '선택 안 함 (현금/계좌이체 등)'}</option>
                   {cards.map(c => (
                     <option key={c.id} value={c.id}>[{c.card_type}] {c.card_name} {c.holder_name ? `· ${c.holder_name}` : ''}</option>
                   ))}
@@ -973,7 +984,7 @@ export default function ApprovalContent() {
             </div>
 
             <div className="flex items-start justify-between mb-6">
-              <h2 className="text-2xl font-bold text-gray-800 tracking-widest">〈 지 출 결 의 서 〉</h2>
+              <h2 className="text-xl sm:text-2xl font-bold text-gray-800 tracking-widest">〈 지 출 결 의 서 {docType === '카드구매' ? '(카드구매)' : ''}〉</h2>
               <div className="border border-gray-400">
                 <div className="flex">
                   {approvalLine.map((role) => (

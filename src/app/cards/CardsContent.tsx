@@ -87,7 +87,7 @@ export default function CardsContent() {
 
   const loadPurchases = useCallback(async () => {
     const res = await supabaseFetch(
-      '/approvals?doc_type=eq.지출결의서&status=eq.approved&card_id=not.is.null' +
+      '/approvals?doc_type=in.(지출결의서,카드구매)&status=eq.approved&card_id=not.is.null' +
       '&select=id,company,organizer,total_amount,card_id,payment_due_date,purchase_status,refund_due_date,spend_date,purchase_vendor'
     );
     const data = await res.json();
