@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { supabaseFetch, supabaseUpload } from '@/lib/supabase';
+import { supabaseFetch, supabaseUpload, safeStorageKey } from '@/lib/supabase';
 import { getUser } from '@/lib/auth';
 
 interface PartnerLog {
@@ -110,8 +110,7 @@ export default function PartnersContent() {
     try {
       let contractUrl = form.contract_url;
       if (contractFile) {
-        const ext = contractFile.name.split('.').pop();
-        const path = `${Date.now()}_${form.name.replace(/\s/g, '_')}.${ext}`;
+        const path = safeStorageKey(contractFile.name);
         contractUrl = await supabaseUpload('contracts', path, contractFile);
       }
       const payload = { ...form, contract_url: contractUrl };
