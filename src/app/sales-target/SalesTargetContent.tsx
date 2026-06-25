@@ -14,7 +14,7 @@ interface TargetRow {
   actual_amount: number;
 }
 
-const COMPANIES = ['더블아이', 'BNKNET', 'SJ글로벌', 'IX글로벌'];
+const COMPANIES = ['BNKNET', 'SJ글로벌', '더블아이', 'IX글로벌'];
 const COMPANY_COLORS: Record<string, string> = {
   '더블아이': '#3b82f6', 'BNKNET': '#8b5cf6', 'SJ글로벌': '#10b981', 'IX글로벌': '#f59e0b',
 };
