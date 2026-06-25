@@ -179,11 +179,14 @@ export default function AttendanceContent() {
     try {
       const pos = await checkLocation();
       if (!pos) { setActionLoading(false); return; }
-      const now = new Date().toISOString();
-      const checkInHour = new Date().getHours();
+      const nowDate = new Date();
+      const now = nowDate.toISOString();
+      // 출근 기준 09:30 — 09:30까지 정상, 09:31부터 지각
+      const minsOfDay = nowDate.getHours() * 60 + nowDate.getMinutes();
+      const isLate = minsOfDay > (9 * 60 + 30);
       // 오늘 반차/연차가 이미 등록된 경우 지각 처리 안 함
       const exempted = todayRecord && NO_LATE_STATUSES.has(todayRecord.status);
-      const status = exempted ? todayRecord!.status : (checkInHour >= 9 ? 'late' : 'normal');
+      const status = exempted ? todayRecord!.status : (isLate ? 'late' : 'normal');
 
       if (todayRecord) {
         // 이미 레코드 있으면 출근 시간 업데이트 (반차/연차 포함, 수정 케이스)
