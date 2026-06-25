@@ -904,7 +904,7 @@ export default function InventoryContent() {
                 <span className="text-lg">⚠️</span>
                 <div className="flex-1 min-w-0">
                   <div className="font-bold text-red-700">매칭데이터에 없는 상품 {outUnmatched.length}종 ({outUnmatched.reduce((s, r) => s + r.count, 0)}건)</div>
-                  <div className="text-sm text-red-500 mt-0.5">아래 상품들은 매칭이 안 돼 위 출고 집계에서 <b>제외</b>됐습니다 (수량이 부정확할 수 있음). 클로드에게 전달해 매칭데이터에 추가하세요.</div>
+                  <div className="text-sm text-red-500 mt-0.5">아래 상품들은 매칭이 안 돼 위 출고 집계에서 <b>제외</b>됐습니다 (수량이 부정확할 수 있음). 실장님에게 전달해 매칭데이터에 추가하세요.</div>
                   <div className="mt-2 space-y-1">
                     {outUnmatched.map((u, i) => (
                       <div key={i} className="text-sm bg-white border border-red-100 rounded-lg px-3 py-1.5 flex items-center justify-between gap-2">
