@@ -122,7 +122,7 @@ export default function NoticesContent() {
           <table className="w-full">
             <thead>
               <tr className="bg-gray-50 border-b border-gray-100">
-                <th className="text-left py-3 px-5 text-sm font-semibold text-gray-400 w-16">구분</th>
+                <th className="text-left py-3 px-5 text-sm font-semibold text-gray-400 w-24 whitespace-nowrap">구분</th>
                 <th className="text-left py-3 px-5 text-sm font-semibold text-gray-400">제목</th>
                 <th className="text-left py-3 px-5 text-sm font-semibold text-gray-400 w-28 hidden sm:table-cell">작성자</th>
                 <th className="text-left py-3 px-5 text-sm font-semibold text-gray-400 w-32 hidden sm:table-cell">날짜</th>
@@ -135,10 +135,10 @@ export default function NoticesContent() {
                   onClick={() => openDetail(n)}
                   className={`border-b border-gray-50 cursor-pointer hover:bg-blue-50/50 transition-colors ${n.is_pinned ? 'bg-yellow-50/50' : ''}`}
                 >
-                  <td className="py-3.5 px-5">
+                  <td className="py-3.5 px-5 whitespace-nowrap">
                     {n.is_pinned
-                      ? <span className="bg-red-100 text-red-600 text-sm px-2 py-0.5 rounded-md font-semibold">공지</span>
-                      : <span className="text-gray-300 text-sm">일반</span>}
+                      ? <span className="bg-red-100 text-red-600 text-sm px-2 py-0.5 rounded-md font-semibold whitespace-nowrap">공지</span>
+                      : <span className="text-gray-300 text-sm whitespace-nowrap">일반</span>}
                   </td>
                   <td className="py-3.5 px-5 text-gray-700 font-medium text-base">{n.title}</td>
                   <td className="py-3.5 px-5 text-gray-400 text-base hidden sm:table-cell">{n.author_name}</td>
