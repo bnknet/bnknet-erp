@@ -123,6 +123,16 @@ export default function CardsContent() {
     setLogs(Array.isArray(data) ? data : []);
   }, []);
 
+  async function deleteLog(l: CardLog) {
+    const isCancelLog = l.action.includes('취소');
+    const msg = isCancelLog
+      ? '이 로그를 삭제하면 기록만 지워집니다.\n⚠️ 실제 매입 취소(환불·한도)는 되돌아가지 않습니다.\n취소를 되돌리려면 결재 문서나 결제 캘린더에서 "취소 철회"를 사용하세요.\n\n그래도 로그를 삭제하시겠습니까?'
+      : '이 변경 로그를 삭제하시겠습니까?';
+    if (!confirm(msg)) return;
+    await supabaseFetch(`/card_logs?id=eq.${l.id}`, { method: 'DELETE' });
+    await loadLogs();
+  }
+
   useEffect(() => {
     (async () => {
       setLoading(true);
@@ -600,6 +610,9 @@ export default function CardsContent() {
                         {l.actor} · {new Date(l.created_at).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                       </div>
                     </div>
+                    {canManage && (
+                      <button onClick={() => deleteLog(l)} className="text-sm text-gray-400 hover:text-red-500 flex-shrink-0">삭제</button>
+                    )}
                   </div>
                 );
               })}
