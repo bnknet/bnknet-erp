@@ -43,7 +43,7 @@ interface PayEvent {
 const CARD_COMPANIES = ['현대', '삼성', '신한', '국민', '롯데', '하나', '우리', 'BC', '농협', '기타'];
 
 const EMPTY_CARD = {
-  card_name: '', card_type: '법인', holder_name: '', card_company: '현대',
+  card_name: '', card_type: '법인카드', holder_name: '', card_company: '현대',
   last4: '', limit_amount: 0, billing_day: 14, close_day: 31,
   benefit_memo: '', is_active: true,
 };
@@ -76,7 +76,9 @@ export default function CardsContent() {
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth()); // 0-11
-  const [cardFilter, setCardFilter] = useState<string>('all');
+  const [typeFilter, setTypeFilter] = useState<string>('all'); // 사업자(카드종류)별 필터
+  const [rangeFrom, setRangeFrom] = useState('');
+  const [rangeTo, setRangeTo] = useState('');
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
 
   const loadCards = useCallback(async () => {
@@ -170,7 +172,15 @@ export default function CardsContent() {
       events.push({ date: p.refund_due_date, cardId: p.card_id, amount: -p.total_amount, type: 'refund', purchase: p });
     }
   }
-  const filteredEvents = cardFilter === 'all' ? events : events.filter(e => e.cardId === cardFilter);
+  const cardTypeOf = (id: string) => cards.find(c => c.id === id)?.card_type || '';
+  // 사업자(카드종류)별로 사용되는 종류 목록
+  const usedTypes = Array.from(new Set(cards.map(c => c.card_type)));
+  const filteredEvents = typeFilter === 'all' ? events : events.filter(e => cardTypeOf(e.cardId) === typeFilter);
+  // 기간 조회 결과
+  const rangeEvents = (rangeFrom && rangeTo)
+    ? filteredEvents.filter(e => e.date >= rangeFrom && e.date <= rangeTo).slice().sort((a, b) => a.date.localeCompare(b.date))
+    : [];
+  const rangeTotal = rangeEvents.reduce((s, e) => s + e.amount, 0);
 
   // 날짜별 합산
   const byDate: Record<string, PayEvent[]> = {};
@@ -344,18 +354,28 @@ export default function CardsContent() {
         // ─────────── 카드 목록 ───────────
         <div className="space-y-4">
           <div className="flex justify-between items-center">
-            <p className="text-base text-gray-500">법인/개인/대표 카드와 결제 주기를 관리합니다.</p>
+            <p className="text-base text-gray-500">사업자(담당자)별 카드와 결제 주기를 관리합니다.</p>
             {canManage && (
               <button onClick={() => { setForm({ ...EMPTY_CARD }); setEditId(null); setShowForm(true); }}
                 className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-base font-medium">+ 카드 등록</button>
             )}
           </div>
 
+          {/* 사업자(카드종류)별 필터 */}
+          <div className="flex gap-2 flex-wrap">
+            <button onClick={() => setTypeFilter('all')}
+              className={`px-3 py-1.5 rounded-lg text-sm font-medium ${typeFilter === 'all' ? 'bg-slate-700 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}>전체</button>
+            {usedTypes.map(t => (
+              <button key={t} onClick={() => setTypeFilter(t)}
+                className={`px-3 py-1.5 rounded-lg text-sm font-medium ${typeFilter === t ? 'bg-slate-700 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}>{t}</button>
+            ))}
+          </div>
+
           {cards.length === 0 ? (
             <div className="text-center py-12 text-gray-400 bg-white rounded-2xl border border-gray-100">등록된 카드가 없습니다</div>
           ) : (
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {cards.map(c => {
+              {cards.filter(c => typeFilter === 'all' || c.card_type === typeFilter).map(c => {
                 const monthTot = cardMonthTotal(c.id);
                 const usePct = c.limit_amount > 0 ? Math.min(100, Math.round(monthTot / c.limit_amount * 100)) : 0;
                 return (
@@ -439,23 +459,75 @@ export default function CardsContent() {
             <button onClick={exportExcel} className="px-3 py-1.5 text-sm border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50">📊 엑셀</button>
           </div>
 
+          {/* 사업자(카드종류)별 필터 */}
           <div className="flex gap-2 flex-wrap">
-            <button onClick={() => setCardFilter('all')}
-              className={`px-3 py-1.5 rounded-lg text-sm font-medium ${cardFilter === 'all' ? 'bg-slate-700 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}>전체</button>
-            {cards.filter(c => c.is_active).map(c => (
-              <button key={c.id} onClick={() => setCardFilter(c.id)}
-                className={`px-3 py-1.5 rounded-lg text-sm font-medium ${cardFilter === c.id ? 'bg-slate-700 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}>{c.card_name}</button>
+            <button onClick={() => setTypeFilter('all')}
+              className={`px-3 py-1.5 rounded-lg text-sm font-medium ${typeFilter === 'all' ? 'bg-slate-700 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}>전체</button>
+            {usedTypes.map(t => (
+              <button key={t} onClick={() => setTypeFilter(t)}
+                className={`px-3 py-1.5 rounded-lg text-sm font-medium ${typeFilter === t ? 'bg-slate-700 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}>{t}</button>
             ))}
+          </div>
+
+          {/* 기간 조회 */}
+          <div className="flex items-center gap-2 flex-wrap bg-white border border-gray-100 rounded-xl px-3 py-2">
+            <span className="text-sm font-medium text-gray-500">📅 기간 조회</span>
+            <input type="date" value={rangeFrom} onChange={e => setRangeFrom(e.target.value)}
+              className="px-2 py-1 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
+            <span className="text-gray-400">~</span>
+            <input type="date" value={rangeTo} onChange={e => setRangeTo(e.target.value)}
+              className="px-2 py-1 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
+            {(rangeFrom || rangeTo) && (
+              <button onClick={() => { setRangeFrom(''); setRangeTo(''); }} className="text-xs text-gray-400 hover:text-gray-600">초기화</button>
+            )}
           </div>
 
           {/* 이번 달 합계 */}
           <div className="bg-gradient-to-r from-slate-700 to-slate-600 rounded-2xl p-5 text-white flex items-center justify-between">
             <div>
-              <div className="text-sm text-slate-300">{year}년 {month + 1}월 결제 예정 합계 {cardFilter !== 'all' && `· ${cardName(cardFilter)}`}</div>
+              <div className="text-sm text-slate-300">{year}년 {month + 1}월 결제 예정 합계 {typeFilter !== 'all' && `· ${typeFilter}`}</div>
               <div className="text-2xl font-bold mt-1">{won(monthTotalAll)}원</div>
             </div>
             <div className="text-sm text-slate-300 text-right">매입 − 취소환불<br />상계 금액</div>
           </div>
+
+          {/* 기간 조회 결과 */}
+          {rangeFrom && rangeTo && (
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="font-bold text-gray-800">{rangeFrom} ~ {rangeTo} 결제 내역 {typeFilter !== 'all' && `· ${typeFilter}`}</h3>
+                <span className="text-sm font-bold text-gray-700">합계 {won(rangeTotal)}원</span>
+              </div>
+              {rangeEvents.length === 0 ? (
+                <div className="text-center py-6 text-sm text-gray-400">해당 기간 결제 내역이 없습니다</div>
+              ) : (
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-xs text-gray-400 border-b border-gray-100">
+                      <th className="py-2 text-left font-medium">결제일</th>
+                      <th className="py-2 text-left font-medium">구분</th>
+                      <th className="py-2 text-left font-medium">카드</th>
+                      <th className="py-2 text-left font-medium">사업자</th>
+                      <th className="py-2 text-right font-medium">금액</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {rangeEvents.map((e, i) => (
+                      <tr key={i}>
+                        <td className="py-2 text-gray-600 whitespace-nowrap">{e.date}</td>
+                        <td className="py-2">
+                          <span className={`text-xs px-2 py-0.5 rounded-md font-medium ${e.type === 'refund' ? 'bg-red-50 text-red-500' : 'bg-blue-50 text-blue-600'}`}>{e.type === 'refund' ? '환불' : '매입'}</span>
+                        </td>
+                        <td className="py-2 text-gray-600">{cardName(e.cardId)}</td>
+                        <td className="py-2 text-gray-500">{e.purchase.company}</td>
+                        <td className={`py-2 text-right font-medium ${e.amount < 0 ? 'text-red-500' : 'text-gray-700'}`}>{won(e.amount)}원</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          )}
 
           {/* 달력 */}
           <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
