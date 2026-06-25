@@ -116,8 +116,21 @@ export default function InventoryContent() {
   async function loadOutbound(from: string, to: string) {
     setOutLoading(true);
     try {
-      const res = await supabaseFetch(`/orders?upload_date=gte.${from}&upload_date=lte.${to}&select=product_name,collect_product,quantity,canceled&limit=5000`);
-      const data: { product_name?: string; collect_product?: string; quantity?: number; canceled?: boolean }[] = await res.json();
+      // PostgREST는 한 번에 최대 1000건만 반환 → 1000건씩 모두 가져오기(페이지네이션)
+      type Row = { product_name?: string; collect_product?: string; quantity?: number; canceled?: boolean };
+      const data: Row[] = [];
+      let start = 0;
+      while (true) {
+        const res = await supabaseFetch(
+          `/orders?upload_date=gte.${from}&upload_date=lte.${to}&select=product_name,collect_product,quantity,canceled`,
+          { headers: { 'Range-Unit': 'items', Range: `${start}-${start + 999}` } },
+        );
+        const chunk: Row[] = await res.json();
+        if (!Array.isArray(chunk) || chunk.length === 0) break;
+        data.push(...chunk);
+        if (chunk.length < 1000) break;
+        start += 1000;
+      }
       const map: Record<string, { qty: number; count: number }> = {};          // 매칭된 상품
       const unmap: Record<string, { qty: number; count: number }> = {};         // 매칭 안 된 상품(알림용)
       (Array.isArray(data) ? data : []).forEach((r) => {
