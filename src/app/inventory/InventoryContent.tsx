@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { supabaseFetch } from '@/lib/supabase';
+import { supabaseFetch, supabaseFetchAll } from '@/lib/supabase';
 import { getUser } from '@/lib/auth';
 import { matchProduct } from '@/lib/orderConvert';
 import * as XLSX from 'xlsx';
@@ -157,6 +157,7 @@ export default function InventoryContent() {
     setOutFrom(from); setOutTo(outToday);
     loadOutbound(from, outToday);
   }
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set());
   const [bulkField, setBulkField] = useState<'company' | 'category' | 'brand' | 'quantity' | 'is_active'>('company');
   const [bulkValue, setBulkValue] = useState('');
@@ -214,10 +215,10 @@ export default function InventoryContent() {
   async function loadItems() {
     setLoading(true);
     try {
-      const res = await supabaseFetch('/inventory?order=category.asc,product_name.asc');
-      const data = await res.json();
-      setItems(Array.isArray(data) ? data : []);
-    } catch { setItems([]); }
+      const data = await supabaseFetchAll<InventoryItem>('/inventory?order=category.asc,product_name.asc');
+      setItems(data);
+      setLoadError(null);
+    } catch (e) { setItems([]); setLoadError('재고 목록을 불러오지 못했습니다. ' + (e instanceof Error ? e.message : '')); }
     finally { setLoading(false); }
   }
 
@@ -233,9 +234,8 @@ export default function InventoryContent() {
   async function loadSnapshots(date: string) {
     setSnapLoading(true);
     try {
-      const res = await supabaseFetch(`/inventory_snapshots?snapshot_date=eq.${date}&order=category.asc,product_name.asc`);
-      const data = await res.json();
-      setSnapshots(Array.isArray(data) ? data : []);
+      const data = await supabaseFetchAll<InventorySnapshot>(`/inventory_snapshots?snapshot_date=eq.${date}&order=category.asc,product_name.asc`);
+      setSnapshots(data);
     } catch { setSnapshots([]); }
     finally { setSnapLoading(false); }
   }
@@ -508,6 +508,12 @@ export default function InventoryContent() {
           </button>
         ))}
       </div>
+
+      {loadError && (
+        <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-base text-red-700 font-medium">
+          ⚠️ {loadError}
+        </div>
+      )}
 
       {/* 자동저장 안전장치 — 자동저장이 하루 이상 누락되면 경고 + 수동 저장 */}
       {canManageStock && lastSnapDate && lastSnapDate < yesterdayDate() && (

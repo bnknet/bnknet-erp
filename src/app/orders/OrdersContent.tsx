@@ -175,12 +175,17 @@ export default function OrdersContent() {
       const rows = buildSupabaseRows(resultData);
       const orderNums = rows.map((r) => r.order_number).filter(Boolean);
 
-      // 중복 체크
-      const checkRes = await supabaseFetch(
-        `/orders?select=order_number&order_number=in.(${orderNums.map((n) => `"${n}"`).join(',')})`,
-      );
-      const existing: { order_number: string }[] = await checkRes.json();
-      const existingSet = new Set(existing.map((r) => r.order_number));
+      // 중복 체크 — 주문번호를 200개씩 나눠 조회 (긴 URL·1000건 제한 회피, 누락 방지)
+      const existingSet = new Set<string>();
+      for (let i = 0; i < orderNums.length; i += 200) {
+        const batch = orderNums.slice(i, i + 200);
+        const checkRes = await supabaseFetch(
+          `/orders?select=order_number&order_number=in.(${batch.map((n) => `"${n}"`).join(',')})`,
+        );
+        if (!checkRes.ok) throw new Error('중복 확인 실패 (' + checkRes.status + ')');
+        const existing: { order_number: string }[] = await checkRes.json();
+        existing.forEach((r) => existingSet.add(r.order_number));
+      }
       const newRows = rows.filter((r) => !existingSet.has(r.order_number));
 
       if (!newRows.length) {

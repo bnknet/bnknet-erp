@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import * as XLSX from 'xlsx';
-import { supabaseFetch } from '@/lib/supabase';
+import { supabaseFetch, supabaseFetchAll } from '@/lib/supabase';
 import { getUser } from '@/lib/auth';
 import {
   Card, CARD_TYPES, CARD_TYPE_COLORS, formatBillingCycle, toISO, logCardChange,
@@ -105,16 +105,15 @@ export default function CardsContent() {
   }, []);
 
   const loadPurchases = useCallback(async () => {
-    const res = await supabaseFetch(
+    // 카드 매입은 계속 누적 → 1000건 넘어도 전부 가져오기
+    const data = await supabaseFetchAll<CardPurchase>(
       '/approvals?doc_type=in.(지출결의서,카드구매)&status=eq.approved&card_id=not.is.null' +
-      '&select=id,company,organizer,total_amount,card_id,payment_due_date,purchase_status,refund_due_date,spend_date,purchase_vendor'
+      '&select=id,company,organizer,total_amount,card_id,payment_due_date,purchase_status,refund_due_date,spend_date,purchase_vendor&order=payment_due_date.asc'
     );
-    const data = await res.json();
-    setPurchases(Array.isArray(data) ? data : []);
+    setPurchases(data);
     // 취소된 항목(부분취소 포함) — 환불 이벤트/한도 계산용
-    const cRes = await supabaseFetch('/approval_items?canceled=eq.true&select=id,approval_id,amount,refund_due_date,description');
-    const cData = await cRes.json();
-    setCanceledItems(Array.isArray(cData) ? cData : []);
+    const cData = await supabaseFetchAll<PurchaseItem & { approval_id?: string }>('/approval_items?canceled=eq.true&select=id,approval_id,amount,refund_due_date,description&order=approval_id.asc');
+    setCanceledItems(cData);
   }, []);
 
   const loadLogs = useCallback(async () => {

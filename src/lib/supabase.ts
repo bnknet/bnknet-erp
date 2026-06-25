@@ -34,6 +34,28 @@ export const supabaseHeaders = (token?: string) => ({
   Authorization: `Bearer ${token || SUPABASE_KEY}`,
 });
 
+// 1000건 초과 데이터도 모두 가져오기 (PostgREST 기본 1000건 제한 우회)
+// 집계/목록처럼 누락되면 안 되는 조회에 사용. 실패 시 throw (호출부에서 알림 처리).
+export async function supabaseFetchAll<T = unknown>(path: string, token?: string): Promise<T[]> {
+  const PAGE = 1000;
+  const all: T[] = [];
+  let start = 0;
+  while (true) {
+    const res = await supabaseFetch(path, { headers: { 'Range-Unit': 'items', Range: `${start}-${start + PAGE - 1}` } }, token);
+    if (!res.ok) {
+      let detail = '';
+      try { detail = await res.text(); } catch { /* ignore */ }
+      throw new Error(`데이터 조회 실패 (${res.status}) ${detail}`);
+    }
+    const chunk = await res.json();
+    if (!Array.isArray(chunk) || chunk.length === 0) break;
+    all.push(...chunk as T[]);
+    if (chunk.length < PAGE) break;
+    start += PAGE;
+  }
+  return all;
+}
+
 export async function supabaseFetch(
   path: string,
   options: RequestInit = {},

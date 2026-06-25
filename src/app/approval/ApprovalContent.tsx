@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { supabaseFetch, supabaseUpload, safeStorageKey } from '@/lib/supabase';
+import { supabaseFetch, supabaseUpload, safeStorageKey, supabaseFetchAll } from '@/lib/supabase';
 import { getUser } from '@/lib/auth';
 import { Card, computePaymentDate, toISO, logCardChange } from '@/lib/cardBilling';
 
@@ -231,9 +231,8 @@ export default function ApprovalContent() {
       if (!isCeo && !isAdmin && me?.name) {
         query += `&submitter_name=eq.${encodeURIComponent(me.name)}`;
       }
-      const res = await supabaseFetch(query);
-      const data = await res.json();
-      setApprovals(Array.isArray(data) ? data : []);
+      const data = await supabaseFetchAll<Approval>(query);
+      setApprovals(data);
     } catch { setApprovals([]); }
     finally { setLoading(false); }
   }, [isCeo, isAdmin, me?.name]);
