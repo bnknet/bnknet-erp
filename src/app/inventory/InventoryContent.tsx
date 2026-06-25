@@ -306,18 +306,35 @@ export default function InventoryContent() {
 
   async function handleDeleteLog(log: InventoryLog) {
     if (!confirm('입출고 내역을 삭제하시겠습니까?\n재고수량이 변경 전으로 되돌아갑니다.')) return;
-    // 재고 수량 원복
-    await supabaseFetch(`/inventory?id=eq.${log.inventory_id}`, {
-      method: 'PATCH',
-      headers: { Prefer: 'return=minimal' },
-      body: JSON.stringify({ quantity: log.before_qty, updated_at: new Date().toISOString() }),
-    });
-    await supabaseFetch(`/inventory_logs?id=eq.${log.id}`, { method: 'DELETE' });
-    if (selected) {
-      setSelected({ ...selected, quantity: log.before_qty });
-      await loadLogs(selected.id);
+    try {
+      // 1) 로그 행 삭제 (먼저 — 실패하면 멈춤)
+      const delRes = await supabaseFetch(`/inventory_logs?id=eq.${log.id}`, {
+        method: 'DELETE', headers: { Prefer: 'return=representation' },
+      });
+      const deleted = await delRes.json().catch(() => []);
+      if (!delRes.ok || !Array.isArray(deleted) || deleted.length === 0) {
+        alert('로그 삭제에 실패했습니다. (권한/정책 문제일 수 있어요)');
+        return;
+      }
+      // 2) 재고 수량 원복 (연결된 재고가 있을 때만)
+      if (log.inventory_id) {
+        await supabaseFetch(`/inventory?id=eq.${log.inventory_id}`, {
+          method: 'PATCH', headers: { Prefer: 'return=minimal' },
+          body: JSON.stringify({ quantity: log.before_qty, updated_at: new Date().toISOString() }),
+        });
+      }
+      if (selected && log.inventory_id === selected.id) {
+        setSelected({ ...selected, quantity: log.before_qty });
+        await loadLogs(selected.id);
+      } else if (selected) {
+        await loadLogs(selected.id);
+      } else {
+        await loadLogs();
+      }
+      await loadItems();
+    } catch (e) {
+      alert('삭제 중 오류: ' + (e instanceof Error ? e.message : '알 수 없음'));
     }
-    await loadItems();
   }
 
   function openDetail(item: InventoryItem) {
