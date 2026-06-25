@@ -2,32 +2,33 @@
 
 import { useState, useRef } from 'react';
 import { convertOrders, buildSupabaseRows, type ConvertedOrderRow, type RawOrderRow } from '@/lib/orderConvert';
-import { supabaseFetch } from '@/lib/supabase';
+import { supabaseFetch, supabaseUpload, safeStorageKey } from '@/lib/supabase';
+import { getUser } from '@/lib/auth';
 
 type Tab = 'convert' | 'history';
 type Status = { type: 'info' | 'success' | 'error'; msg: string } | null;
 
-interface HistoryGroup {
-  date: string;
-  rows: HistoryRow[];
-}
-
-interface HistoryRow {
-  upload_date: string;
-  mall_name: string;
-  product_name: string;
-  quantity: number;
-  amount: number;
-  is_bundle: boolean;
+interface UploadHistory {
+  id: string;
+  uploaded_at: string;
+  uploader?: string;
+  file_name?: string;
+  file_url?: string;
+  row_count?: number;
+  saved_count?: number;
 }
 
 export default function OrdersContent() {
+  const me = getUser();
+  const canDelete = me?.role === 'ceo' || me?.role === 'admin';
+
   const [tab, setTab] = useState<Tab>('convert');
   const [status, setStatus] = useState<Status>(null);
   const [resultData, setResultData] = useState<ConvertedOrderRow[]>([]);
   const [headerOrder, setHeaderOrder] = useState<string[]>([]);
   const [fileName, setFileName] = useState('');
-  const [history, setHistory] = useState<HistoryGroup[]>([]);
+  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+  const [history, setHistory] = useState<UploadHistory[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -37,6 +38,7 @@ export default function OrdersContent() {
       return;
     }
     setFileName(file.name);
+    setUploadedFile(file);
     setStatus({ type: 'info', msg: '⏳ 파일 처리 중...' });
     setResultData([]);
 
@@ -128,9 +130,23 @@ export default function OrdersContent() {
       });
 
       if (!res.ok) throw new Error('저장 실패');
+
+      // 원본 파일을 첨부로 저장 + 업로드 이력 기록
+      let fileUrl = '';
+      try {
+        if (uploadedFile) fileUrl = await supabaseUpload('orders', safeStorageKey(uploadedFile.name), uploadedFile);
+      } catch { /* 파일 업로드 실패해도 저장은 진행 */ }
+      await supabaseFetch('/order_uploads', {
+        method: 'POST', headers: { Prefer: 'return=minimal' },
+        body: JSON.stringify({
+          uploader: me?.name || '', file_name: fileName || uploadedFile?.name || '',
+          file_url: fileUrl || null, row_count: rows.length, saved_count: newRows.length,
+        }),
+      });
+
       setStatus({
         type: 'success',
-        msg: `✅ ${newRows.length}건 저장 완료 (중복 ${rows.length - newRows.length}건 제외)`,
+        msg: `✅ ${newRows.length}건 저장 완료 (중복 ${rows.length - newRows.length}건 제외) · 업로드 이력 기록됨`,
       });
     } catch {
       setStatus({ type: 'error', msg: '❌ DB 저장 중 오류가 발생했습니다' });
@@ -140,25 +156,20 @@ export default function OrdersContent() {
   async function loadHistory() {
     setHistoryLoading(true);
     try {
-      const res = await supabaseFetch(
-        '/orders?select=upload_date,mall_name,product_name,quantity,amount,is_bundle&order=upload_date.desc,product_name.asc&limit=200',
-      );
-      const data: HistoryRow[] = await res.json();
-
-      const grouped: Record<string, HistoryRow[]> = {};
-      data.forEach((row) => {
-        if (!grouped[row.upload_date]) grouped[row.upload_date] = [];
-        grouped[row.upload_date].push(row);
-      });
-
-      setHistory(
-        Object.entries(grouped).map(([date, rows]) => ({ date, rows })),
-      );
+      const res = await supabaseFetch('/order_uploads?order=uploaded_at.desc&limit=300');
+      const data = await res.json();
+      setHistory(Array.isArray(data) ? data : []);
     } catch {
       setHistory([]);
     } finally {
       setHistoryLoading(false);
     }
+  }
+
+  async function deleteUpload(id: string) {
+    if (!confirm('이 업로드 이력을 삭제하시겠습니까? (저장된 주문 데이터는 유지됩니다)')) return;
+    await supabaseFetch(`/order_uploads?id=eq.${id}`, { method: 'DELETE' });
+    await loadHistory();
   }
 
   function handleTabChange(t: Tab) {
@@ -253,7 +264,7 @@ export default function OrdersContent() {
                   💾 DB에 저장
                 </button>
                 <button
-                  onClick={() => { setResultData([]); setHeaderOrder([]); setFileName(''); setStatus(null); }}
+                  onClick={() => { setResultData([]); setHeaderOrder([]); setFileName(''); setUploadedFile(null); setStatus(null); }}
                   className="px-5 py-2.5 bg-white hover:bg-gray-50 text-gray-600 rounded-xl font-medium text-base border border-gray-200 transition-colors"
                 >
                   🔄 초기화
@@ -339,59 +350,64 @@ export default function OrdersContent() {
           {historyLoading ? (
             <div className="text-center py-12 text-gray-400">불러오는 중...</div>
           ) : history.length === 0 ? (
-            <div className="text-center py-12 text-gray-400">아직 저장된 이력이 없습니다</div>
+            <div className="text-center py-12 text-gray-400">아직 업로드 이력이 없습니다</div>
           ) : (
-            <div className="space-y-6">
-              {history.map((group) => {
-                const total = group.rows.reduce((s, r) => s + (r.amount || 0), 0);
-                return (
-                  <div key={group.date}>
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="font-semibold text-gray-700">{group.date}</span>
-                      <span className="text-base text-gray-400">
-                        {group.rows.length}건 · 합계 ₩{total.toLocaleString()}
-                      </span>
+            <>
+              {/* 데스크탑: 표 */}
+              <div className="overflow-x-auto rounded-xl border border-gray-100 hidden sm:block">
+                <table className="w-full text-base">
+                  <thead>
+                    <tr className="bg-gray-50">
+                      <th className="text-left py-2.5 px-3 text-sm font-semibold text-gray-400">업로드 일시</th>
+                      <th className="text-left py-2.5 px-3 text-sm font-semibold text-gray-400">담당자</th>
+                      <th className="text-left py-2.5 px-3 text-sm font-semibold text-gray-400">파일</th>
+                      <th className="text-center py-2.5 px-3 text-sm font-semibold text-gray-400">변환/저장</th>
+                      {canDelete && <th className="py-2.5 px-3" />}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {history.map((h) => (
+                      <tr key={h.id} className="border-t border-gray-50 hover:bg-gray-50">
+                        <td className="py-2.5 px-3 text-gray-600 whitespace-nowrap">{new Date(h.uploaded_at).toLocaleString('ko-KR', { year: '2-digit', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}</td>
+                        <td className="py-2.5 px-3 text-gray-700 font-medium">{h.uploader || '-'}</td>
+                        <td className="py-2.5 px-3">
+                          {h.file_url ? (
+                            <a href={h.file_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">📎 {h.file_name || '파일'}</a>
+                          ) : <span className="text-gray-400">{h.file_name || '-'}</span>}
+                        </td>
+                        <td className="py-2.5 px-3 text-center text-gray-500 text-sm">{h.saved_count}건 저장 / {h.row_count}건</td>
+                        {canDelete && (
+                          <td className="py-2.5 px-3 text-right">
+                            <button onClick={() => deleteUpload(h.id)} className="text-sm text-gray-400 hover:text-red-500">삭제</button>
+                          </td>
+                        )}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* 모바일: 카드형 */}
+              <div className="sm:hidden divide-y divide-gray-100">
+                {history.map((h) => (
+                  <div key={h.id} className="py-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-bold text-gray-800 text-[15px]">{h.uploader || '-'}</span>
+                      <span className="text-xs text-gray-400">{new Date(h.uploaded_at).toLocaleString('ko-KR', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}</span>
                     </div>
-                    <div className="overflow-x-auto rounded-xl border border-gray-100">
-                      <table className="w-full text-base">
-                        <thead>
-                          <tr className="bg-gray-50">
-                            <th className="text-left py-2 px-3 text-sm font-semibold text-gray-400">플랫폼</th>
-                            <th className="text-left py-2 px-3 text-sm font-semibold text-gray-400">상품명</th>
-                            <th className="text-center py-2 px-3 text-sm font-semibold text-gray-400">수량</th>
-                            <th className="text-right py-2 px-3 text-sm font-semibold text-gray-400">금액</th>
-                            <th className="text-center py-2 px-3 text-sm font-semibold text-gray-400">구분</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {group.rows.map((row, i) => (
-                            <tr key={i} className="border-t border-gray-50 hover:bg-gray-50">
-                              <td className="py-2 px-3">
-                                <span className="bg-blue-100 text-blue-700 text-sm px-2 py-0.5 rounded-md">
-                                  {row.mall_name}
-                                </span>
-                              </td>
-                              <td className="py-2 px-3 text-gray-700">{row.product_name}</td>
-                              <td className="py-2 px-3 text-center text-gray-600">{row.quantity}</td>
-                              <td className="py-2 px-3 text-right font-medium text-gray-700">
-                                ₩{(row.amount || 0).toLocaleString()}
-                              </td>
-                              <td className="py-2 px-3 text-center">
-                                {row.is_bundle ? (
-                                  <span className="bg-cyan-100 text-cyan-700 text-sm px-2 py-0.5 rounded-md font-semibold">합구매</span>
-                                ) : (
-                                  <span className="bg-green-100 text-green-700 text-sm px-2 py-0.5 rounded-md">일반</span>
-                                )}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                    <div className="mt-1">
+                      {h.file_url ? (
+                        <a href={h.file_url} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-600 hover:underline">📎 {h.file_name || '파일'}</a>
+                      ) : <span className="text-sm text-gray-400">{h.file_name || '-'}</span>}
+                    </div>
+                    <div className="flex items-center justify-between mt-1">
+                      <span className="text-xs text-gray-500">{h.saved_count}건 저장 / {h.row_count}건</span>
+                      {canDelete && <button onClick={() => deleteUpload(h.id)} className="text-xs text-red-500">삭제</button>}
                     </div>
                   </div>
-                );
-              })}
-            </div>
+                ))}
+              </div>
+            </>
           )}
         </div>
       )}
