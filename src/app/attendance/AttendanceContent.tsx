@@ -10,6 +10,7 @@ import * as XLSX from 'xlsx';
 const OFFICE_LAT = 37.554137;
 const OFFICE_LNG = 127.195859;
 const ALLOWED_RADIUS_M = 500; // 500m 이내 (정확한 중심점 + GPS 오차 보정으로 전 직원 안정 통과)
+const LOW_ACCURACY_M = 500;   // GPS 정확도가 이보다 나쁘면(실내 등) 위치 신뢰 불가 → 차단하지 않음
 
 interface AttendanceRecord {
   id: string;
@@ -76,7 +77,7 @@ export default function AttendanceContent() {
   const [records, setRecords] = useState<AttendanceRecord[]>([]);
   const [todayRecord, setTodayRecord] = useState<AttendanceRecord | null>(null);
   const [loading, setLoading] = useState(false);
-  const [locStatus, setLocStatus] = useState<'idle' | 'checking' | 'ok' | 'far' | 'denied' | 'unavailable'>('idle');
+  const [locStatus, setLocStatus] = useState<'idle' | 'checking' | 'ok' | 'far' | 'lowacc' | 'denied' | 'unavailable'>('idle');
   const [distance, setDistance] = useState<number | null>(null);
   const [accuracy, setAccuracy] = useState<number | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
@@ -163,9 +164,12 @@ export default function AttendanceContent() {
     const acc = pos.coords.accuracy || 0;
     setDistance(Math.round(dist));
     setAccuracy(Math.round(acc));
-    // GPS 오차(accuracy)를 허용 반경에 더해 실내 오차를 보정 (오차 보정은 최대 200m로 제한)
-    const tolerance = ALLOWED_RADIUS_M + Math.min(acc, 200);
-    if (dist <= tolerance) { setLocStatus('ok'); return pos; }
+
+    // ① 반경 안 → 통과
+    if (dist <= ALLOWED_RADIUS_M) { setLocStatus('ok'); return pos; }
+    // ② GPS 정확도가 낮으면(실내 등 기지국/IP 추정) 위치를 신뢰할 수 없음 → 차단하지 않고 통과 (위치는 기록됨)
+    if (acc > LOW_ACCURACY_M) { setLocStatus('lowacc'); return pos; }
+    // ③ 정확도는 좋은데 반경 밖 → 진짜 멀리 있음 → 차단
     setLocStatus('far');
     return null;
   }
@@ -414,6 +418,15 @@ export default function AttendanceContent() {
 
             {/* 위치 상태 */}
             {locStatus === 'checking' && <div className="text-center text-base text-blue-500 mb-3">위치 확인 중...</div>}
+            {locStatus === 'lowacc' && (
+              <div className="text-center text-base text-amber-600 mb-3 bg-amber-50 rounded-xl py-2">
+                GPS 신호가 약해 위치를 정확히 못 잡았어요<br />
+                <span className="text-sm text-amber-500">
+                  실내 추정이라 출퇴근은 진행됩니다 (위치 기록됨)
+                  {accuracy !== null && ` · GPS 오차 약 ${accuracy}m`}
+                </span>
+              </div>
+            )}
             {locStatus === 'far' && distance !== null && (
               <div className="text-center text-base text-red-500 mb-3 bg-red-50 rounded-xl py-2">
                 회사에서 {distance}m 떨어져 있습니다.<br />
