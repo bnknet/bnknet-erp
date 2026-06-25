@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { supabaseFetch } from '@/lib/supabase';
+import { supabaseFetch, supabaseUpload } from '@/lib/supabase';
 import { getUser } from '@/lib/auth';
 import { Card, computePaymentDate, toISO, logCardChange } from '@/lib/cardBilling';
 
@@ -38,6 +38,7 @@ interface Approval {
   final_approver_at?: string;
   rejection_reason?: string;
   created_at: string;
+  attachments?: { name: string; url: string }[];
   // 카드 매입 전용 필드 (지출결의서)
   card_id?: string;
   purchase_vendor?: string;
@@ -181,6 +182,8 @@ export default function ApprovalContent() {
   const [cardId, setCardId] = useState('');
   const [purchaseVendor, setPurchaseVendor] = useState('');
   const [cards, setCards] = useState<Card[]>([]);
+  const [attachments, setAttachments] = useState<{ name: string; url: string }[]>([]);
+  const [uploading, setUploading] = useState(false);
   const [items, setItems] = useState<ApprovalItem[]>(
     [0,1,2,3,4].map(i => ({ ...EMPTY_ITEM, sort_order: i }))
   );
@@ -241,6 +244,23 @@ export default function ApprovalContent() {
   const paymentDuePreview = selectedCard
     ? computePaymentDate(spendDate, selectedCard.billing_day, selectedCard.close_day)
     : '';
+
+  async function handleFileUpload(files: FileList | null) {
+    if (!files || files.length === 0) return;
+    setUploading(true);
+    try {
+      const uploaded: { name: string; url: string }[] = [];
+      for (const file of Array.from(files)) {
+        const safe = file.name.replace(/[^\w.\-가-힣]/g, '_');
+        const path = `${Date.now()}_${Math.random().toString(36).slice(2, 7)}_${safe}`;
+        const url = await supabaseUpload('approvals', path, file);
+        uploaded.push({ name: file.name, url });
+      }
+      setAttachments(prev => [...prev, ...uploaded]);
+    } catch {
+      alert('파일 업로드에 실패했습니다. 다시 시도해주세요.');
+    } finally { setUploading(false); }
+  }
 
   const loadLeaveData = useCallback(async () => {
     if (!isCeo && !isAdmin) return;
@@ -363,6 +383,7 @@ export default function ApprovalContent() {
           payment_due_date: paymentDue,
           purchase_status: 'normal',
           canceled_at: null, refund_due_date: null,
+          attachments,
           vacation_type: null, vacation_start: null, vacation_end: null,
           vacation_days: null, vacation_reason: null,
           updated_at: new Date().toISOString(),
@@ -472,6 +493,7 @@ export default function ApprovalContent() {
       setAccount(approval.account || '');
       setCardId(approval.card_id || '');
       setPurchaseVendor(approval.purchase_vendor || '');
+      setAttachments(approval.attachments || []);
       const loaded = (approval.items || []).map((i, idx) => ({ ...i, sort_order: idx }));
       const padded = [...loaded, ...[0,1,2,3,4].map(i => ({ ...EMPTY_ITEM, sort_order: i }))].slice(0, Math.max(5, loaded.length));
       setItems(padded);
@@ -531,7 +553,7 @@ export default function ApprovalContent() {
     setCompany(me?.company || 'BNKNET');
     setIssueDate(today()); setSettleDate(today()); setSpendDate(today());
     setOrganizer(me?.name || ''); setProcessor(''); setAccount('');
-    setCardId(''); setPurchaseVendor('');
+    setCardId(''); setPurchaseVendor(''); setAttachments([]);
     setItems([0,1,2,3,4].map(i => ({ ...EMPTY_ITEM, sort_order: i })));
     setVacationType('annual');
     setVacationStart(today()); setVacationEnd(today()); setVacationReason('');
@@ -710,6 +732,21 @@ export default function ApprovalContent() {
                       ⚠️ 구매 취소됨 · 환불예정일 {selected.refund_due_date} (-{selected.total_amount.toLocaleString()}원)
                     </div>
                   )}
+                </div>
+              )}
+
+              {/* 첨부파일 */}
+              {selected.attachments && selected.attachments.length > 0 && (
+                <div className="border border-gray-200 rounded-xl p-4 mb-4">
+                  <div className="text-sm font-medium text-gray-600 mb-2">📎 첨부파일</div>
+                  <div className="space-y-1.5">
+                    {selected.attachments.map((f, i) => (
+                      <a key={i} href={f.url} target="_blank" rel="noopener noreferrer"
+                        className="flex items-center gap-2 text-sm text-blue-600 hover:underline">
+                        <span>📄</span>{f.name}
+                      </a>
+                    ))}
+                  </div>
                 </div>
               )}
 
@@ -1019,6 +1056,31 @@ export default function ApprovalContent() {
             </div>
             <button onClick={() => setItems(p => [...p, { ...EMPTY_ITEM, sort_order: p.length }])}
               className="text-sm text-blue-500 hover:underline mb-4 block">+ 항목 추가</button>
+
+            {/* 첨부파일 */}
+            <div className="border border-gray-200 rounded-xl p-4 mb-6 bg-gray-50/50">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm font-medium text-gray-600">📎 첨부파일 <span className="text-xs text-gray-400">(영수증·견적서 등)</span></span>
+                <label className="px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-sm text-blue-600 cursor-pointer hover:bg-blue-50">
+                  {uploading ? '업로드 중...' : '파일 선택'}
+                  <input type="file" multiple className="hidden" disabled={uploading}
+                    onChange={e => { handleFileUpload(e.target.files); e.target.value = ''; }} />
+                </label>
+              </div>
+              {attachments.length === 0 ? (
+                <div className="text-xs text-gray-400 py-2">첨부된 파일이 없습니다</div>
+              ) : (
+                <div className="space-y-1.5">
+                  {attachments.map((f, i) => (
+                    <div key={i} className="flex items-center justify-between bg-white border border-gray-100 rounded-lg px-3 py-2">
+                      <a href={f.url} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-600 hover:underline truncate">{f.name}</a>
+                      <button onClick={() => setAttachments(prev => prev.filter((_, idx) => idx !== i))}
+                        className="text-xs text-gray-400 hover:text-red-500 ml-2 flex-shrink-0">삭제</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
 
             <div className="text-center text-base text-gray-600 border border-gray-400 py-3 mb-6">
               <p>위 금액을 정히 영수(청구) 합니다.</p>
