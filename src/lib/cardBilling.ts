@@ -14,15 +14,24 @@ export interface Card {
   benefit_memo?: string;
   is_active: boolean;
   sort_order?: number;
+  limit_group?: string | null;
   created_at?: string;
 }
 
-export const CARD_TYPES = ['법인', '개인', '대표'] as const;
+export const CARD_TYPES = [
+  '법인카드', '개인사업자카드', '방기현카드', '방성훈카드',
+  '강웅구카드', '박정진카드', '손사빈카드', '조현상카드',
+] as const;
 
 export const CARD_TYPE_COLORS: Record<string, string> = {
-  '법인': 'bg-blue-100 text-blue-700',
-  '개인': 'bg-purple-100 text-purple-700',
-  '대표': 'bg-amber-100 text-amber-700',
+  '법인카드': 'bg-blue-100 text-blue-700',
+  '개인사업자카드': 'bg-teal-100 text-teal-700',
+  '방기현카드': 'bg-amber-100 text-amber-700',
+  '방성훈카드': 'bg-purple-100 text-purple-700',
+  '강웅구카드': 'bg-green-100 text-green-700',
+  '박정진카드': 'bg-sky-100 text-sky-700',
+  '손사빈카드': 'bg-pink-100 text-pink-700',
+  '조현상카드': 'bg-slate-100 text-slate-600',
 };
 
 // 카드·매입 변경 로그 기록 (감사용)
