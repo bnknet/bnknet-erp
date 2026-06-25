@@ -251,10 +251,12 @@ export default function ApprovalContent() {
     try {
       const uploaded: { name: string; url: string }[] = [];
       for (const file of Array.from(files)) {
-        const safe = file.name.replace(/[^\w.\-가-힣]/g, '_');
-        const path = `${Date.now()}_${Math.random().toString(36).slice(2, 7)}_${safe}`;
+        // 저장 경로는 영문/숫자만 (한글 파일명은 Storage가 거부 → InvalidKey)
+        const dot = file.name.lastIndexOf('.');
+        const ext = dot >= 0 ? file.name.slice(dot + 1).replace(/[^a-zA-Z0-9]/g, '') : '';
+        const path = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}${ext ? '.' + ext : ''}`;
         const url = await supabaseUpload('approvals', path, file);
-        uploaded.push({ name: file.name, url });
+        uploaded.push({ name: file.name, url }); // 화면 표시용 이름은 원본(한글) 유지
       }
       setAttachments(prev => [...prev, ...uploaded]);
     } catch (e) {
