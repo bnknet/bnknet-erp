@@ -24,6 +24,7 @@ interface InventoryItem {
   cost_price: number;
   location?: string;
   memo?: string;
+  is_active?: boolean;
   updated_at: string;
 }
 
@@ -77,7 +78,7 @@ type View = 'list' | 'detail' | 'form' | 'move';
 
 const EMPTY_FORM = {
   product_name: '', category: '건강기능식품', brand: '',
-  company: 'BNKNET', quantity: 0, unit: '개', cost_price: 0, location: '', memo: '',
+  company: 'BNKNET', quantity: 0, unit: '개', cost_price: 0, location: '', memo: '', is_active: true,
 };
 
 export default function InventoryContent() {
@@ -137,9 +138,20 @@ export default function InventoryContent() {
     loadOutbound(from, outToday);
   }
   const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set());
-  const [bulkField, setBulkField] = useState<'company' | 'category' | 'brand' | 'quantity'>('company');
+  const [bulkField, setBulkField] = useState<'company' | 'category' | 'brand' | 'quantity' | 'is_active'>('company');
   const [bulkValue, setBulkValue] = useState('');
   const [bulkSaving, setBulkSaving] = useState(false);
+
+  // 재고↔상품마스터 판매상태 동기화 (상품명 기준)
+  async function syncProductActive(productName: string, isActive: boolean) {
+    if (!productName) return;
+    try {
+      await supabaseFetch(`/products?name=eq.${encodeURIComponent(productName)}`, {
+        method: 'PATCH', headers: { Prefer: 'return=minimal' },
+        body: JSON.stringify({ is_active: isActive }),
+      });
+    } catch { /* 매칭 상품 없으면 무시 */ }
+  }
 
   // 일자별 재고 (스냅샷)
   const [snapDate, setSnapDate] = useState(todayDate());
@@ -232,6 +244,8 @@ export default function InventoryContent() {
         alert(`저장 실패: ${(err as any).message || res.status}`);
         return;
       }
+      // 판매상태를 상품마스터에도 동기화 (상품명 기준)
+      await syncProductActive(form.product_name, form.is_active);
       setView('list');
       setEditId(null);
       setForm({ ...EMPTY_FORM });
@@ -319,7 +333,7 @@ export default function InventoryContent() {
         brand: item.brand || '', company: item.company,
         quantity: item.quantity, unit: item.unit || '개',
         cost_price: item.cost_price || 0,
-        location: item.location || '', memo: item.memo || '',
+        location: item.location || '', memo: item.memo || '', is_active: item.is_active !== false,
       });
       setEditId(item.id);
     } else {
@@ -350,6 +364,7 @@ export default function InventoryContent() {
     { value: 'category', label: '카테고리' },
     { value: 'brand', label: '브랜드' },
     { value: 'quantity', label: '재고수량' },
+    { value: 'is_active', label: '판매상태' },
   ] as const;
 
   async function handleBulkEdit() {
@@ -358,7 +373,9 @@ export default function InventoryContent() {
     if (!confirm(`선택한 ${checkedIds.size}개 항목의 ${fieldLabel}을(를) "${bulkValue}"으로 변경할까요?`)) return;
     setBulkSaving(true);
     try {
-      const val = bulkField === 'quantity' ? Number(bulkValue) : bulkValue;
+      const val = bulkField === 'quantity' ? Number(bulkValue)
+        : bulkField === 'is_active' ? (bulkValue === '판매O')
+        : bulkValue;
       await Promise.all([...checkedIds].map(id =>
         supabaseFetch(`/inventory?id=eq.${id}`, {
           method: 'PATCH',
@@ -366,6 +383,11 @@ export default function InventoryContent() {
           body: JSON.stringify({ [bulkField]: val, updated_at: new Date().toISOString() }),
         })
       ));
+      // 판매상태 변경 시 상품마스터에도 동기화
+      if (bulkField === 'is_active') {
+        const names = items.filter(it => checkedIds.has(it.id)).map(it => it.product_name);
+        await Promise.all(names.map(n => syncProductActive(n, val as boolean)));
+      }
       setCheckedIds(new Set());
       setBulkValue('');
       await loadItems();
@@ -567,6 +589,13 @@ export default function InventoryContent() {
                   <input type="number" value={bulkValue} onChange={(e) => setBulkValue(e.target.value)}
                     placeholder="수량 입력" min={0}
                     className="w-24 px-3 py-1.5 rounded-lg text-base text-gray-800 bg-white border-0 focus:outline-none" />
+                ) : bulkField === 'is_active' ? (
+                  <select value={bulkValue} onChange={(e) => setBulkValue(e.target.value)}
+                    className="px-3 py-1.5 rounded-lg text-base text-gray-800 bg-white border-0 focus:outline-none">
+                    <option value="">선택</option>
+                    <option value="판매O">판매O</option>
+                    <option value="판매X">판매X</option>
+                  </select>
                 ) : (
                   <input type="text" value={bulkValue} onChange={(e) => setBulkValue(e.target.value)}
                     placeholder="브랜드명 입력"
@@ -603,7 +632,7 @@ export default function InventoryContent() {
                             onChange={toggleAll}
                             className="w-4 h-4 rounded border-gray-300 text-blue-600 cursor-pointer" />
                         </th>
-                        {['상품명', '카테고리', '브랜드', '사업자', '재고수량', '개당원가', '원가총합', '최종수정'].map((h) => (
+                        {['상품명', '판매상태', '카테고리', '브랜드', '사업자', '재고수량', '개당원가', '원가총합', '최종수정'].map((h) => (
                           <th key={h} className="px-4 py-3 text-left text-sm font-medium text-gray-500">{h}</th>
                         ))}
                       </tr>
@@ -619,6 +648,11 @@ export default function InventoryContent() {
                               className="w-4 h-4 rounded border-gray-300 text-blue-600 cursor-pointer" />
                           </td>
                           <td className="px-4 py-3 font-medium text-gray-800 cursor-pointer" onClick={() => openDetail(p)}>{p.product_name}</td>
+                          <td className="px-4 py-3">
+                            <span className={`text-xs px-2 py-0.5 rounded-md font-medium ${p.is_active === false ? 'bg-gray-100 text-gray-500' : 'bg-green-100 text-green-700'}`}>
+                              {p.is_active === false ? '판매X' : '판매O'}
+                            </span>
+                          </td>
                           <td className="px-4 py-3 text-gray-500 cursor-pointer" onClick={() => openDetail(p)}>{p.category || '-'}</td>
                           <td className="px-4 py-3 text-gray-500 cursor-pointer" onClick={() => openDetail(p)}>{p.brand || '-'}</td>
                           <td className="px-4 py-3 text-gray-500 cursor-pointer" onClick={() => openDetail(p)}>{p.company}</td>
@@ -646,7 +680,12 @@ export default function InventoryContent() {
                         className="w-4 h-4 mt-1 rounded border-gray-300 text-blue-600 cursor-pointer flex-shrink-0" />
                       <div className="flex-1 min-w-0" onClick={() => openDetail(p)}>
                         <div className="flex items-center justify-between gap-2">
-                          <span className="font-bold text-gray-800 text-[15px] truncate">{p.product_name}</span>
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <span className="font-bold text-gray-800 text-[15px] truncate">{p.product_name}</span>
+                            <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium flex-shrink-0 ${p.is_active === false ? 'bg-gray-100 text-gray-500' : 'bg-green-100 text-green-700'}`}>
+                              {p.is_active === false ? '판매X' : '판매O'}
+                            </span>
+                          </div>
                           <span className={`font-bold flex-shrink-0 ${p.quantity === 0 ? 'text-red-500' : p.quantity <= 10 ? 'text-orange-500' : 'text-gray-800'}`}>
                             {p.quantity.toLocaleString()} {p.unit}
                           </span>
@@ -1101,6 +1140,17 @@ export default function InventoryContent() {
             <label className="block text-base font-medium text-gray-700 mb-1.5">보관위치</label>
             <input value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })}
               placeholder="창고 A, 선반 3 등" className="w-full px-4 py-3 border border-gray-200 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-blue-500" />
+          </div>
+          <div>
+            <label className="block text-base font-medium text-gray-700 mb-1.5">판매상태</label>
+            <div className="flex gap-2">
+              {[{ v: true, l: '판매O' }, { v: false, l: '판매X' }].map(o => (
+                <button key={o.l} type="button" onClick={() => setForm({ ...form, is_active: o.v })}
+                  className={`flex-1 px-4 py-3 rounded-xl text-base font-medium border ${form.is_active === o.v ? (o.v ? 'bg-green-600 text-white border-green-600' : 'bg-gray-500 text-white border-gray-500') : 'bg-white text-gray-500 border-gray-200'}`}>
+                  {o.l}
+                </button>
+              ))}
+            </div>
           </div>
           <div className="sm:col-span-2">
             <label className="block text-base font-medium text-gray-700 mb-1.5">메모</label>

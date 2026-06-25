@@ -106,6 +106,14 @@ export default function ProductsContent() {
         const created = await res.json().catch(() => null);
         const newProduct = Array.isArray(created) ? created[0] : created;
         if (newProduct?.id) await ensureInventory(newProduct as Product);
+      } else {
+        // 수정 시 판매상태를 재고관리에도 동기화 (상품명 기준)
+        try {
+          await supabaseFetch(`/inventory?product_name=eq.${encodeURIComponent(form.name)}`, {
+            method: 'PATCH', headers: { Prefer: 'return=minimal' },
+            body: JSON.stringify({ is_active: form.is_active }),
+          });
+        } catch { /* 매칭 재고 없으면 무시 */ }
       }
 
       setView('list');
@@ -136,6 +144,7 @@ export default function ProductsContent() {
           quantity: 0,
           unit: p.unit || '개',
           cost_price: Number(p.cost_price) || 0,
+          is_active: p.is_active,
           updated_at: new Date().toISOString(),
         }),
       });
