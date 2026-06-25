@@ -5,7 +5,7 @@ import { convertOrders, buildSupabaseRows, type ConvertedOrderRow, type RawOrder
 import { supabaseFetch, supabaseUpload, safeStorageKey } from '@/lib/supabase';
 import { getUser } from '@/lib/auth';
 
-type Tab = 'convert' | 'history' | 'manage' | 'outbound';
+type Tab = 'convert' | 'history' | 'manage';
 type Status = { type: 'info' | 'success' | 'error'; msg: string } | null;
 
 interface OrderRow {
@@ -52,48 +52,6 @@ export default function OrdersContent() {
   const [orderList, setOrderList] = useState<OrderRow[]>([]);
   const [orderChecked, setOrderChecked] = useState<Set<string>>(new Set());
   const [orderLoading, setOrderLoading] = useState(false);
-
-  // 일자별 출고현황
-  const todayStr = new Date().toISOString().slice(0, 10);
-  const [outFrom, setOutFrom] = useState(todayStr);
-  const [outTo, setOutTo] = useState(todayStr);
-  const [outRows, setOutRows] = useState<{ product: string; qty: number; count: number }[]>([]);
-  const [outLoading, setOutLoading] = useState(false);
-
-  async function loadOutbound(from: string, to: string) {
-    setOutLoading(true);
-    try {
-      const res = await supabaseFetch(
-        `/orders?upload_date=gte.${from}&upload_date=lte.${to}&select=product_name,quantity,canceled&limit=5000`,
-      );
-      const data: { product_name?: string; quantity?: number; canceled?: boolean }[] = await res.json();
-      const map: Record<string, { qty: number; count: number }> = {};
-      (Array.isArray(data) ? data : []).forEach((r) => {
-        if (r.canceled) return; // 취소건 제외
-        const name = r.product_name || '(상품명 없음)';
-        const q = Number(r.quantity) || 0;
-        if (q < 1) return; // 1개 이상 출고만
-        if (!map[name]) map[name] = { qty: 0, count: 0 };
-        map[name].qty += q;
-        map[name].count += 1;
-      });
-      const rows = Object.entries(map)
-        .map(([product, v]) => ({ product, qty: v.qty, count: v.count }))
-        .filter((r) => r.qty >= 1)
-        .sort((a, b) => b.qty - a.qty);
-      setOutRows(rows);
-    } catch { setOutRows([]); }
-    finally { setOutLoading(false); }
-  }
-
-  function outQuick(kind: 'today' | 'week' | 'month') {
-    const t = new Date();
-    let from = todayStr;
-    if (kind === 'week') { const d = new Date(); d.setDate(d.getDate() - 6); from = d.toISOString().slice(0, 10); }
-    if (kind === 'month') from = `${t.toISOString().slice(0, 7)}-01`;
-    setOutFrom(from); setOutTo(todayStr);
-    loadOutbound(from, todayStr);
-  }
 
   async function searchOrders() {
     setOrderLoading(true);
@@ -282,7 +240,6 @@ export default function OrdersContent() {
   function handleTabChange(t: Tab) {
     setTab(t);
     if (t === 'history') loadHistory();
-    if (t === 'outbound') loadOutbound(outFrom, outTo);
   }
 
   const statusColors = {
@@ -324,16 +281,6 @@ export default function OrdersContent() {
           }`}
         >
           🔍 주문 조회·취소
-        </button>
-        <button
-          onClick={() => handleTabChange('outbound')}
-          className={`px-5 py-2.5 rounded-xl font-medium text-base transition-all ${
-            tab === 'outbound'
-              ? 'bg-blue-600 text-white shadow-md shadow-blue-500/20'
-              : 'bg-white text-gray-600 hover:bg-gray-50 border border-gray-200'
-          }`}
-        >
-          📦 일자별 출고현황
         </button>
       </div>
 
@@ -619,76 +566,6 @@ export default function OrdersContent() {
         </div>
       )}
 
-      {/* 일자별 출고현황 탭 */}
-      {tab === 'outbound' && (
-        <div className="space-y-4">
-          <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
-            <h2 className="text-lg font-bold text-gray-800 mb-3">일자별 출고현황</h2>
-            <div className="flex items-center gap-2 flex-wrap">
-              <input type="date" value={outFrom} onChange={e => setOutFrom(e.target.value)}
-                className="px-3 py-1.5 border border-gray-200 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-blue-400" />
-              <span className="text-gray-400">~</span>
-              <input type="date" value={outTo} onChange={e => setOutTo(e.target.value)}
-                className="px-3 py-1.5 border border-gray-200 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-blue-400" />
-              <button onClick={() => loadOutbound(outFrom, outTo)}
-                className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-base font-medium">조회</button>
-              <div className="flex gap-1.5 ml-1">
-                <button onClick={() => outQuick('today')} className="px-2.5 py-1.5 text-sm border border-gray-200 rounded-lg text-gray-500 hover:bg-gray-50">오늘</button>
-                <button onClick={() => outQuick('week')} className="px-2.5 py-1.5 text-sm border border-gray-200 rounded-lg text-gray-500 hover:bg-gray-50">최근 7일</button>
-                <button onClick={() => outQuick('month')} className="px-2.5 py-1.5 text-sm border border-gray-200 rounded-lg text-gray-500 hover:bg-gray-50">이번달</button>
-              </div>
-            </div>
-            <p className="text-sm text-gray-400 mt-2">선택 기간 출고 합산 · 취소건 제외 · 출고수량 많은 순</p>
-          </div>
-
-          {/* 요약 */}
-          <div className="grid grid-cols-2 gap-3">
-            <div className="bg-white rounded-xl border border-gray-100 px-4 py-3">
-              <div className="text-sm text-gray-400">출고 품목 수</div>
-              <div className="text-xl font-bold text-gray-800 mt-0.5">{outRows.length}종</div>
-            </div>
-            <div className="bg-white rounded-xl border border-gray-100 px-4 py-3">
-              <div className="text-sm text-gray-400">총 출고 수량</div>
-              <div className="text-xl font-bold text-blue-600 mt-0.5">{outRows.reduce((s, r) => s + r.qty, 0).toLocaleString()}개</div>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-            {outLoading ? (
-              <div className="text-center py-12 text-gray-400">불러오는 중...</div>
-            ) : outRows.length === 0 ? (
-              <div className="text-center py-12 text-gray-400">{outFrom} ~ {outTo} 출고 내역이 없습니다</div>
-            ) : (
-              <table className="w-full text-base">
-                <thead className="bg-gray-50 border-b border-gray-100">
-                  <tr>
-                    <th className="px-4 py-3 text-left text-sm font-medium text-gray-500 w-10">#</th>
-                    <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">상품명</th>
-                    <th className="px-4 py-3 text-center text-sm font-medium text-gray-500 w-24">주문건수</th>
-                    <th className="px-4 py-3 text-right text-sm font-medium text-gray-500 w-28">출고수량</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-50">
-                  {outRows.map((r, i) => (
-                    <tr key={i} className="hover:bg-blue-50/40">
-                      <td className="px-4 py-2.5 text-gray-400 text-sm">{i + 1}</td>
-                      <td className="px-4 py-2.5 text-gray-700">{r.product}</td>
-                      <td className="px-4 py-2.5 text-center text-gray-500">{r.count}건</td>
-                      <td className="px-4 py-2.5 text-right font-bold text-gray-800">{r.qty.toLocaleString()}개</td>
-                    </tr>
-                  ))}
-                </tbody>
-                <tfoot>
-                  <tr className="bg-gray-50 border-t border-gray-200 font-bold">
-                    <td className="px-4 py-3" colSpan={3}>합계</td>
-                    <td className="px-4 py-3 text-right text-blue-600">{outRows.reduce((s, r) => s + r.qty, 0).toLocaleString()}개</td>
-                  </tr>
-                </tfoot>
-              </table>
-            )}
-          </div>
-        </div>
-      )}
     </div>
   );
 }
