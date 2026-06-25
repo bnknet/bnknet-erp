@@ -124,8 +124,8 @@ export default function NoticesContent() {
               <tr className="bg-gray-50 border-b border-gray-100">
                 <th className="text-left py-3 px-5 text-sm font-semibold text-gray-400 w-24 whitespace-nowrap">구분</th>
                 <th className="text-left py-3 px-5 text-sm font-semibold text-gray-400">제목</th>
-                <th className="text-left py-3 px-5 text-sm font-semibold text-gray-400 w-28 hidden sm:table-cell">작성자</th>
-                <th className="text-left py-3 px-5 text-sm font-semibold text-gray-400 w-32 hidden sm:table-cell">날짜</th>
+                <th className="text-left py-3 px-5 text-sm font-semibold text-gray-400 w-24 whitespace-nowrap hidden sm:table-cell">작성자</th>
+                <th className="text-left py-3 px-5 text-sm font-semibold text-gray-400 w-36 whitespace-nowrap hidden sm:table-cell">날짜</th>
               </tr>
             </thead>
             <tbody>
@@ -141,8 +141,8 @@ export default function NoticesContent() {
                       : <span className="text-gray-300 text-sm whitespace-nowrap">일반</span>}
                   </td>
                   <td className="py-3.5 px-5 text-gray-700 font-medium text-base">{n.title}</td>
-                  <td className="py-3.5 px-5 text-gray-400 text-base hidden sm:table-cell">{n.author_name}</td>
-                  <td className="py-3.5 px-5 text-gray-400 text-base hidden sm:table-cell">{formatDate(n.created_at)}</td>
+                  <td className="py-3.5 px-5 text-gray-400 text-base whitespace-nowrap hidden sm:table-cell">{n.author_name}</td>
+                  <td className="py-3.5 px-5 text-gray-400 text-base whitespace-nowrap hidden sm:table-cell">{formatDate(n.created_at)}</td>
                 </tr>
               ))}
             </tbody>
