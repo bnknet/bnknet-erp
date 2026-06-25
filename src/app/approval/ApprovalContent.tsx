@@ -9,6 +9,7 @@ interface ApprovalItem {
   id?: string;
   item_date: string;
   description: string;
+  quantity?: number;
   amount: number;
   note: string;
   sort_order: number;
@@ -129,7 +130,7 @@ function countWeekdays(start: string, end: string): number {
   return count;
 }
 
-const EMPTY_ITEM: ApprovalItem = { item_date: '', description: '', amount: 0, note: '', sort_order: 0 };
+const EMPTY_ITEM: ApprovalItem = { item_date: '', description: '', quantity: 0, amount: 0, note: '', sort_order: 0 };
 
 type View = 'list' | 'form' | 'detail' | 'leave';
 type DocType = '지출결의서' | '카드구매' | '휴가신청서';
@@ -246,9 +247,18 @@ export default function ApprovalContent() {
   }, []);
 
   const selectedCard = cards.find(c => c.id === cardId);
+  // 카드구매는 발의일(구매일) 기준으로 결제예정일 계산, 일반 지출결의서는 지출일 기준
+  const purchaseBaseDate = docType === '카드구매' ? issueDate : spendDate;
   const paymentDuePreview = selectedCard
-    ? computePaymentDate(spendDate, selectedCard.billing_day, selectedCard.close_day)
+    ? computePaymentDate(purchaseBaseDate, selectedCard.billing_day, selectedCard.close_day)
     : '';
+
+  // 카드구매 선택 시 지출일을 해당 카드 결제일로 자동 설정
+  useEffect(() => {
+    if (docType === '카드구매' && paymentDuePreview && spendDate !== paymentDuePreview) {
+      setSpendDate(paymentDuePreview);
+    }
+  }, [docType, paymentDuePreview]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function handleFileUpload(files: FileList | null) {
     if (!files || files.length === 0) return;
@@ -372,7 +382,8 @@ export default function ApprovalContent() {
           setSaving(false); return;
         }
         const card = cards.find(c => c.id === cardId);
-        const paymentDue = card ? computePaymentDate(spendDate, card.billing_day, card.close_day) : null;
+        const baseDate = docType === '카드구매' ? issueDate : spendDate;
+        const paymentDue = card ? computePaymentDate(baseDate, card.billing_day, card.close_day) : null;
         payload = {
           doc_type: docType, company,
           issue_date: issueDate, settle_date: settleDate, spend_date: spendDate,
@@ -701,7 +712,8 @@ export default function ApprovalContent() {
                <div className="border border-gray-400 min-w-[480px]">
                 <div className="flex bg-gray-50 border-b border-gray-400 text-base font-medium text-center">
                   <div className="w-20 px-2 py-2 border-r border-gray-400">월/일</div>
-                  <div className="flex-1 px-2 py-2 border-r border-gray-400">적 요</div>
+                  <div className="flex-1 px-2 py-2 border-r border-gray-400">{selected.doc_type === '카드구매' ? '구매상품' : '적 요'}</div>
+                  {selected.doc_type === '카드구매' && <div className="w-24 px-2 py-2 border-r border-gray-400">구매수량</div>}
                   <div className="w-32 px-2 py-2 border-r border-gray-400">금 액</div>
                   <div className="w-36 px-2 py-2">비 고</div>
                 </div>
@@ -709,6 +721,7 @@ export default function ApprovalContent() {
                   <div key={i} className="flex border-t border-gray-200 text-base min-h-[36px]">
                     <div className="w-20 px-2 py-2 border-r border-gray-400 text-center">{item?.item_date || ''}</div>
                     <div className="flex-1 px-2 py-2 border-r border-gray-400">{item?.description || ''}</div>
+                    {selected.doc_type === '카드구매' && <div className="w-24 px-2 py-2 border-r border-gray-400 text-right">{item?.quantity ? item.quantity.toLocaleString() : ''}</div>}
                     <div className="w-32 px-2 py-2 border-r border-gray-400 text-right">{item?.amount ? item.amount.toLocaleString() : ''}</div>
                     <div className="w-36 px-2 py-2">{item?.note || ''}</div>
                   </div>
@@ -716,6 +729,7 @@ export default function ApprovalContent() {
                 <div className="flex border-t border-gray-400 text-base font-bold bg-gray-50">
                   <div className="w-20 px-2 py-2 border-r border-gray-400" />
                   <div className="flex-1 px-2 py-2 border-r border-gray-400 text-center">합 계</div>
+                  {selected.doc_type === '카드구매' && <div className="w-24 px-2 py-2 border-r border-gray-400 text-right">{(selected.items || []).reduce((s, it) => s + (Number(it.quantity) || 0), 0).toLocaleString()}</div>}
                   <div className="w-32 px-2 py-2 border-r border-gray-400 text-right">₩{selected.total_amount.toLocaleString()}</div>
                   <div className="w-36 px-2 py-2" />
                 </div>
@@ -1014,7 +1028,12 @@ export default function ApprovalContent() {
                 <div key={i} className={`flex text-base ${i > 0 ? 'border-t border-gray-400' : ''}`}>
                   <div className="w-12 px-2 py-1 bg-gray-50 border-r border-gray-400 text-center font-medium flex items-center justify-center">{row.label}</div>
                   <div className="px-1 py-1 border-r border-gray-400 w-36">
-                    <input type="date" value={row.date} onChange={(e) => row.setDate(e.target.value)} className="w-full text-base focus:outline-none px-1" />
+                    {row.label === '지출' && docType === '카드구매' ? (
+                      <input type="date" value={row.date} readOnly disabled
+                        className="w-full text-base px-1 bg-amber-50 text-amber-700 font-medium" title="카드 결제일로 자동 설정됨" />
+                    ) : (
+                      <input type="date" value={row.date} onChange={(e) => row.setDate(e.target.value)} className="w-full text-base focus:outline-none px-1" />
+                    )}
                   </div>
                   <div className="px-2 py-2 border-r border-gray-400 w-20 bg-gray-50 text-center text-sm flex items-center justify-center">{row.l2}</div>
                   <div className="px-1 py-1 border-r border-gray-400 flex-1">
@@ -1031,7 +1050,8 @@ export default function ApprovalContent() {
             <div className="border border-gray-400 mb-1">
               <div className="flex bg-gray-50 border-b border-gray-400 text-base font-medium text-center">
                 <div className="w-20 px-2 py-2 border-r border-gray-400">월/일</div>
-                <div className="flex-1 px-2 py-2 border-r border-gray-400">적 요</div>
+                <div className="flex-1 px-2 py-2 border-r border-gray-400">{docType === '카드구매' ? '구매상품' : '적 요'}</div>
+                {docType === '카드구매' && <div className="w-24 px-2 py-2 border-r border-gray-400">구매수량</div>}
                 <div className="w-32 px-2 py-2 border-r border-gray-400">금 액</div>
                 <div className="w-36 px-2 py-2">비 고</div>
               </div>
@@ -1045,6 +1065,13 @@ export default function ApprovalContent() {
                     <input value={item.description} onChange={(e) => updateItem(i, 'description', e.target.value)}
                       className="w-full px-2 py-2 focus:outline-none focus:bg-blue-50 text-base" />
                   </div>
+                  {docType === '카드구매' && (
+                    <div className="w-24 border-r border-gray-400">
+                      <input type="text" inputMode="numeric" value={item.quantity ? item.quantity.toLocaleString() : ''}
+                        onChange={(e) => updateItem(i, 'quantity', Number(e.target.value.replace(/[^\d]/g, '')) || 0)}
+                        className="w-full px-2 py-2 text-right focus:outline-none focus:bg-blue-50 text-base" />
+                    </div>
+                  )}
                   <div className="w-32 border-r border-gray-400">
                     <input type="text" inputMode="numeric" value={item.amount ? item.amount.toLocaleString() : ''}
                       onChange={(e) => updateItem(i, 'amount', Number(e.target.value.replace(/[^\d]/g, '')) || 0)}
@@ -1059,6 +1086,7 @@ export default function ApprovalContent() {
               <div className="flex border-t border-gray-400 text-base font-bold bg-gray-50">
                 <div className="w-20 px-2 py-2 border-r border-gray-400" />
                 <div className="flex-1 px-2 py-2 border-r border-gray-400 text-center">합 계</div>
+                {docType === '카드구매' && <div className="w-24 px-2 py-2 border-r border-gray-400 text-right">{items.reduce((s, it) => s + (Number(it.quantity) || 0), 0).toLocaleString()}</div>}
                 <div className="w-32 px-2 py-2 border-r border-gray-400 text-right">₩{total.toLocaleString()}</div>
                 <div className="w-36 px-2 py-2" />
               </div>
