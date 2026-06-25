@@ -55,15 +55,16 @@ export default function OrdersContent() {
 
   // 일자별 출고현황
   const todayStr = new Date().toISOString().slice(0, 10);
-  const [outDate, setOutDate] = useState(todayStr);
+  const [outFrom, setOutFrom] = useState(todayStr);
+  const [outTo, setOutTo] = useState(todayStr);
   const [outRows, setOutRows] = useState<{ product: string; qty: number; count: number }[]>([]);
   const [outLoading, setOutLoading] = useState(false);
 
-  async function loadOutbound(date: string) {
+  async function loadOutbound(from: string, to: string) {
     setOutLoading(true);
     try {
       const res = await supabaseFetch(
-        `/orders?upload_date=eq.${date}&select=product_name,quantity,canceled&limit=2000`,
+        `/orders?upload_date=gte.${from}&upload_date=lte.${to}&select=product_name,quantity,canceled&limit=5000`,
       );
       const data: { product_name?: string; quantity?: number; canceled?: boolean }[] = await res.json();
       const map: Record<string, { qty: number; count: number }> = {};
@@ -85,12 +86,13 @@ export default function OrdersContent() {
     finally { setOutLoading(false); }
   }
 
-  function shiftOutDate(days: number) {
-    const d = new Date(outDate);
-    d.setDate(d.getDate() + days);
-    const ns = d.toISOString().slice(0, 10);
-    setOutDate(ns);
-    loadOutbound(ns);
+  function outQuick(kind: 'today' | 'week' | 'month') {
+    const t = new Date();
+    let from = todayStr;
+    if (kind === 'week') { const d = new Date(); d.setDate(d.getDate() - 6); from = d.toISOString().slice(0, 10); }
+    if (kind === 'month') from = `${t.toISOString().slice(0, 7)}-01`;
+    setOutFrom(from); setOutTo(todayStr);
+    loadOutbound(from, todayStr);
   }
 
   async function searchOrders() {
@@ -280,7 +282,7 @@ export default function OrdersContent() {
   function handleTabChange(t: Tab) {
     setTab(t);
     if (t === 'history') loadHistory();
-    if (t === 'outbound') loadOutbound(outDate);
+    if (t === 'outbound') loadOutbound(outFrom, outTo);
   }
 
   const statusColors = {
@@ -621,18 +623,22 @@ export default function OrdersContent() {
       {tab === 'outbound' && (
         <div className="space-y-4">
           <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
-            <div className="flex items-center justify-between flex-wrap gap-3">
-              <h2 className="text-lg font-bold text-gray-800">일자별 출고현황</h2>
-              <div className="flex items-center gap-2">
-                <button onClick={() => shiftOutDate(-1)} className="w-8 h-8 rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-500">‹</button>
-                <input type="date" value={outDate} onChange={e => { setOutDate(e.target.value); loadOutbound(e.target.value); }}
-                  className="px-3 py-1.5 border border-gray-200 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-blue-400" />
-                <button onClick={() => shiftOutDate(1)} className="w-8 h-8 rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-500">›</button>
-                <button onClick={() => { setOutDate(todayStr); loadOutbound(todayStr); }}
-                  className="px-2 py-1 text-sm border border-gray-200 rounded-lg text-gray-500 hover:bg-gray-50">오늘</button>
+            <h2 className="text-lg font-bold text-gray-800 mb-3">일자별 출고현황</h2>
+            <div className="flex items-center gap-2 flex-wrap">
+              <input type="date" value={outFrom} onChange={e => setOutFrom(e.target.value)}
+                className="px-3 py-1.5 border border-gray-200 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-blue-400" />
+              <span className="text-gray-400">~</span>
+              <input type="date" value={outTo} onChange={e => setOutTo(e.target.value)}
+                className="px-3 py-1.5 border border-gray-200 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-blue-400" />
+              <button onClick={() => loadOutbound(outFrom, outTo)}
+                className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-base font-medium">조회</button>
+              <div className="flex gap-1.5 ml-1">
+                <button onClick={() => outQuick('today')} className="px-2.5 py-1.5 text-sm border border-gray-200 rounded-lg text-gray-500 hover:bg-gray-50">오늘</button>
+                <button onClick={() => outQuick('week')} className="px-2.5 py-1.5 text-sm border border-gray-200 rounded-lg text-gray-500 hover:bg-gray-50">최근 7일</button>
+                <button onClick={() => outQuick('month')} className="px-2.5 py-1.5 text-sm border border-gray-200 rounded-lg text-gray-500 hover:bg-gray-50">이번달</button>
               </div>
             </div>
-            <p className="text-sm text-gray-400 mt-1">주문(출고)된 상품만 표시됩니다. 취소건 제외 · 출고수량 많은 순</p>
+            <p className="text-sm text-gray-400 mt-2">선택 기간 출고 합산 · 취소건 제외 · 출고수량 많은 순</p>
           </div>
 
           {/* 요약 */}
@@ -651,7 +657,7 @@ export default function OrdersContent() {
             {outLoading ? (
               <div className="text-center py-12 text-gray-400">불러오는 중...</div>
             ) : outRows.length === 0 ? (
-              <div className="text-center py-12 text-gray-400">{outDate} 출고 내역이 없습니다</div>
+              <div className="text-center py-12 text-gray-400">{outFrom} ~ {outTo} 출고 내역이 없습니다</div>
             ) : (
               <table className="w-full text-base">
                 <thead className="bg-gray-50 border-b border-gray-100">
