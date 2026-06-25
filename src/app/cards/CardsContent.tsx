@@ -31,6 +31,14 @@ interface CardPurchase {
   purchase_vendor?: string;
 }
 
+interface PurchaseItem {
+  item_date?: string;
+  description?: string;
+  quantity?: number;
+  amount?: number;
+  note?: string;
+}
+
 // 캘린더에 표시할 이벤트 (매입 + / 환불 -)
 interface PayEvent {
   date: string;
@@ -77,6 +85,8 @@ export default function CardsContent() {
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth()); // 0-11
   const [typeFilter, setTypeFilter] = useState<string>('all'); // 사업자(카드종류)별 필터
+  const [detailEvent, setDetailEvent] = useState<PayEvent | null>(null);
+  const [detailItems, setDetailItems] = useState<PurchaseItem[]>([]);
   const [rangeFrom, setRangeFrom] = useState('');
   const [rangeTo, setRangeTo] = useState('');
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
@@ -172,6 +182,14 @@ export default function CardsContent() {
       events.push({ date: p.refund_due_date, cardId: p.card_id, amount: -p.total_amount, type: 'refund', purchase: p });
     }
   }
+  async function openPurchaseDetail(e: PayEvent) {
+    setDetailEvent(e);
+    setDetailItems([]);
+    const res = await supabaseFetch(`/approval_items?approval_id=eq.${e.purchase.id}&order=sort_order.asc`);
+    const d = await res.json();
+    setDetailItems(Array.isArray(d) ? d : []);
+  }
+
   const cardTypeOf = (id: string) => cards.find(c => c.id === id)?.card_type || '';
   // 사업자(카드종류)별로 사용되는 종류 목록
   const usedTypes = Array.from(new Set(cards.map(c => c.card_type)));
@@ -513,7 +531,7 @@ export default function CardsContent() {
                   </thead>
                   <tbody className="divide-y divide-gray-50">
                     {rangeEvents.map((e, i) => (
-                      <tr key={i}>
+                      <tr key={i} onClick={() => openPurchaseDetail(e)} className="cursor-pointer hover:bg-blue-50/40">
                         <td className="py-2 text-gray-600 whitespace-nowrap">{e.date}</td>
                         <td className="py-2">
                           <span className={`text-xs px-2 py-0.5 rounded-md font-medium ${e.type === 'refund' ? 'bg-red-50 text-red-500' : 'bg-blue-50 text-blue-600'}`}>{e.type === 'refund' ? '환불' : '매입'}</span>
@@ -581,7 +599,7 @@ export default function CardsContent() {
                 </thead>
                 <tbody className="divide-y divide-gray-50">
                   {byDate[selectedDay].map((e, idx) => (
-                    <tr key={idx}>
+                    <tr key={idx} onClick={() => openPurchaseDetail(e)} className="cursor-pointer hover:bg-blue-50/40">
                       <td className="py-2">
                         <span className={`text-sm px-2 py-0.5 rounded-md font-medium ${e.type === 'refund' ? 'bg-red-50 text-red-500' : 'bg-blue-50 text-blue-600'}`}>
                           {e.type === 'refund' ? '환불' : '매입'}
@@ -591,7 +609,7 @@ export default function CardsContent() {
                       <td className="py-2 text-gray-500">{e.purchase.company}</td>
                       <td className="py-2 text-gray-500">{e.purchase.organizer}</td>
                       <td className="py-2 text-gray-500">{e.purchase.purchase_vendor || '-'}</td>
-                      <td className={`py-2 text-right font-medium ${e.amount < 0 ? 'text-red-500' : 'text-gray-700'}`}>{won(e.amount)}원</td>
+                      <td className={`py-2 text-right font-medium ${e.amount < 0 ? 'text-red-500' : 'text-gray-700'}`}>{won(e.amount)}원 ›</td>
                     </tr>
                   ))}
                 </tbody>
@@ -614,6 +632,67 @@ export default function CardsContent() {
       )}
 
       {cardFormModal}
+
+      {/* 결제 내역 상세 모달 */}
+      {detailEvent && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4 overflow-y-auto" onClick={() => setDetailEvent(null)}>
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6 my-8" onClick={e => e.stopPropagation()}>
+            <div className="flex items-start justify-between mb-4">
+              <div>
+                <span className={`text-xs px-2 py-0.5 rounded-md font-medium ${detailEvent.type === 'refund' ? 'bg-red-50 text-red-500' : 'bg-blue-50 text-blue-600'}`}>
+                  {detailEvent.type === 'refund' ? '환불' : '카드 매입'}
+                </span>
+                <h3 className="text-lg font-bold text-gray-800 mt-2">{detailEvent.purchase.purchase_vendor || '구매 내역'}</h3>
+              </div>
+              <button onClick={() => setDetailEvent(null)} className="text-gray-400 text-lg">✕</button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 text-sm mb-4">
+              {[
+                { l: '결제카드', v: cardName(detailEvent.cardId) },
+                { l: '사업자', v: detailEvent.purchase.company },
+                { l: '담당', v: detailEvent.purchase.organizer },
+                { l: '구매처', v: detailEvent.purchase.purchase_vendor || '-' },
+                { l: '구매일', v: detailEvent.purchase.spend_date || '-' },
+                { l: detailEvent.type === 'refund' ? '환불예정일' : '결제예정일', v: detailEvent.date },
+              ].map((row, i) => (
+                <div key={i} className="bg-gray-50 rounded-lg px-3 py-2">
+                  <div className="text-xs text-gray-400">{row.l}</div>
+                  <div className="font-medium text-gray-700">{row.v}</div>
+                </div>
+              ))}
+            </div>
+
+            <div className="border border-gray-200 rounded-xl overflow-hidden">
+              <div className="flex bg-gray-50 border-b border-gray-200 text-xs font-medium text-gray-500">
+                <div className="flex-1 px-3 py-2">구매상품</div>
+                <div className="w-16 px-2 py-2 text-right">수량</div>
+                <div className="w-28 px-3 py-2 text-right">금액</div>
+              </div>
+              {detailItems.length === 0 ? (
+                <div className="text-center py-4 text-sm text-gray-400">상세 품목이 없습니다</div>
+              ) : detailItems.map((it, i) => (
+                <div key={i} className="flex border-t border-gray-100 text-sm">
+                  <div className="flex-1 px-3 py-2 text-gray-700">{it.description || '-'}</div>
+                  <div className="w-16 px-2 py-2 text-right text-gray-600">{it.quantity ? it.quantity.toLocaleString() : '-'}</div>
+                  <div className="w-28 px-3 py-2 text-right text-gray-700">{it.amount ? it.amount.toLocaleString() : '-'}</div>
+                </div>
+              ))}
+              <div className="flex border-t border-gray-200 bg-gray-50 text-sm font-bold">
+                <div className="flex-1 px-3 py-2 text-gray-600">합계</div>
+                <div className="w-16 px-2 py-2 text-right text-gray-600">{detailItems.reduce((s, it) => s + (Number(it.quantity) || 0), 0).toLocaleString()}</div>
+                <div className="w-28 px-3 py-2 text-right text-gray-800">{won(detailEvent.purchase.total_amount)}원</div>
+              </div>
+            </div>
+
+            {detailEvent.purchase.purchase_status === 'canceled' && (
+              <div className="mt-3 text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">
+                ⚠️ 구매 취소됨 · 환불예정일 {detailEvent.purchase.refund_due_date}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
