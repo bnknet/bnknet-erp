@@ -4,8 +4,6 @@ import { useEffect, useState } from 'react';
 import { getUser } from '@/lib/auth';
 import { supabaseFetch } from '@/lib/supabase';
 
-const companies = ['더블아이', 'BNKNET', 'SJ글로벌', 'IX글로벌'];
-
 function yesterdayStr() {
   const d = new Date();
   d.setDate(d.getDate() - 1);
@@ -61,20 +59,6 @@ export default function DashboardContent() {
         <p className="text-blue-200 text-base mt-1">
           {now.toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' })}
         </p>
-      </div>
-
-      {/* 사업자별 현황 카드 */}
-      <div>
-        <h3 className="text-base font-semibold text-gray-500 uppercase tracking-wider mb-3">사업자별 현황</h3>
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          {companies.map((company) => (
-            <div key={company} className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
-              <div className="text-sm text-gray-400 mb-1">{company}</div>
-              <div className="text-lg font-bold text-gray-800">-</div>
-              <div className="text-sm text-gray-400 mt-1">데이터 준비 중</div>
-            </div>
-          ))}
-        </div>
       </div>
 
       {/* 빠른 메뉴 */}
