@@ -432,8 +432,8 @@ export default function InventoryContent() {
       {activeTab === 'stock' ? (
         <>
           {/* 필터 */}
-          <div className="flex items-start justify-between gap-3 flex-wrap">
-            <div className="space-y-2 flex-1 min-w-0 w-full">
+          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+            <div className="space-y-2 flex-1 min-w-0">
               <div className="flex items-center gap-2">
                 <span className="text-sm text-gray-400 w-14 flex-shrink-0">카테고리</span>
                 <div className="flex gap-2 overflow-x-auto pb-1 -mb-1">
@@ -468,12 +468,12 @@ export default function InventoryContent() {
             </div>
             <div className="flex gap-2 flex-shrink-0">
               <button onClick={exportExcel}
-                className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-xl text-base font-medium transition-colors">
+                className="flex-1 sm:flex-none px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-xl text-base font-medium transition-colors whitespace-nowrap">
                 엑셀 다운로드
               </button>
               {canManageStock && (
                 <button onClick={() => openForm()}
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-base font-medium transition-colors">
+                  className="flex-1 sm:flex-none px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-base font-medium transition-colors whitespace-nowrap">
                   + 재고 등록
                 </button>
               )}
