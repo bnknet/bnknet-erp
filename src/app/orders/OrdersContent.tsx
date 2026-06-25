@@ -5,8 +5,21 @@ import { convertOrders, buildSupabaseRows, type ConvertedOrderRow, type RawOrder
 import { supabaseFetch, supabaseUpload, safeStorageKey } from '@/lib/supabase';
 import { getUser } from '@/lib/auth';
 
-type Tab = 'convert' | 'history';
+type Tab = 'convert' | 'history' | 'manage';
 type Status = { type: 'info' | 'success' | 'error'; msg: string } | null;
+
+interface OrderRow {
+  id: string;
+  upload_date: string;
+  order_number: string;
+  recipient_name?: string;
+  mall_name?: string;
+  product_name?: string;
+  quantity?: number;
+  amount?: number;
+  tracking_number?: string;
+  canceled?: boolean;
+}
 
 interface UploadHistory {
   id: string;
@@ -31,6 +44,58 @@ export default function OrdersContent() {
   const [history, setHistory] = useState<UploadHistory[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // 주문 조회/취소
+  const [sOrderNo, setSOrderNo] = useState('');
+  const [sProduct, setSProduct] = useState('');
+  const [sMall, setSMall] = useState('');
+  const [orderList, setOrderList] = useState<OrderRow[]>([]);
+  const [orderChecked, setOrderChecked] = useState<Set<string>>(new Set());
+  const [orderLoading, setOrderLoading] = useState(false);
+
+  async function searchOrders() {
+    setOrderLoading(true);
+    setOrderChecked(new Set());
+    try {
+      let q = '/orders?select=id,upload_date,order_number,recipient_name,mall_name,product_name,quantity,amount,tracking_number,canceled&order=upload_date.desc&limit=300';
+      if (sOrderNo.trim()) q += `&order_number=ilike.*${encodeURIComponent(sOrderNo.trim())}*`;
+      if (sProduct.trim()) q += `&product_name=ilike.*${encodeURIComponent(sProduct.trim())}*`;
+      if (sMall.trim()) q += `&mall_name=ilike.*${encodeURIComponent(sMall.trim())}*`;
+      const res = await supabaseFetch(q);
+      const data = await res.json();
+      setOrderList(Array.isArray(data) ? data : []);
+    } catch { setOrderList([]); }
+    finally { setOrderLoading(false); }
+  }
+
+  async function cancelSelectedOrders() {
+    if (orderChecked.size === 0) { alert('취소할 주문을 선택하세요.'); return; }
+    if (!confirm(`선택한 ${orderChecked.size}건을 취소 처리하시겠습니까?\n(매출·영업이익 집계에서 제외됩니다)`)) return;
+    const ids = Array.from(orderChecked);
+    await supabaseFetch(`/orders?id=in.(${ids.join(',')})`, {
+      method: 'PATCH', headers: { Prefer: 'return=minimal' },
+      body: JSON.stringify({ canceled: true, canceled_at: new Date().toISOString(), canceled_by: me?.name || '' }),
+    });
+    await searchOrders();
+  }
+
+  async function uncancelSelectedOrders() {
+    if (orderChecked.size === 0) return;
+    const ids = Array.from(orderChecked);
+    await supabaseFetch(`/orders?id=in.(${ids.join(',')})`, {
+      method: 'PATCH', headers: { Prefer: 'return=minimal' },
+      body: JSON.stringify({ canceled: false, canceled_at: null, canceled_by: null }),
+    });
+    await searchOrders();
+  }
+
+  async function deleteSelectedOrders() {
+    if (orderChecked.size === 0) { alert('삭제할 주문을 선택하세요.'); return; }
+    if (!confirm(`선택한 ${orderChecked.size}건을 완전히 삭제하시겠습니까? (복구 불가)`)) return;
+    const ids = Array.from(orderChecked);
+    await supabaseFetch(`/orders?id=in.(${ids.join(',')})`, { method: 'DELETE' });
+    await searchOrders();
+  }
 
   async function handleFile(file: File) {
     if (!file || !file.name.endsWith('.xlsx')) {
@@ -206,6 +271,16 @@ export default function OrdersContent() {
           }`}
         >
           📋 업로드 이력
+        </button>
+        <button
+          onClick={() => handleTabChange('manage')}
+          className={`px-5 py-2.5 rounded-xl font-medium text-base transition-all ${
+            tab === 'manage'
+              ? 'bg-blue-600 text-white shadow-md shadow-blue-500/20'
+              : 'bg-white text-gray-600 hover:bg-gray-50 border border-gray-200'
+          }`}
+        >
+          🔍 주문 조회·취소
         </button>
       </div>
 
@@ -409,6 +484,85 @@ export default function OrdersContent() {
               </div>
             </>
           )}
+        </div>
+      )}
+
+      {/* 주문 조회·취소 탭 */}
+      {tab === 'manage' && (
+        <div className="space-y-4">
+          <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+            <h2 className="text-lg font-bold text-gray-800 mb-1">주문 조회 · 취소</h2>
+            <p className="text-base text-gray-400 mb-4">고객 취소 등으로 주문을 취소/삭제합니다. 취소된 주문은 매출·영업이익 집계에서 제외됩니다.</p>
+            <div className="flex gap-2 flex-wrap">
+              <input value={sOrderNo} onChange={e => setSOrderNo(e.target.value)} onKeyDown={e => e.key === 'Enter' && searchOrders()}
+                placeholder="주문번호" className="px-3 py-2 border border-gray-200 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-blue-400 w-40" />
+              <input value={sProduct} onChange={e => setSProduct(e.target.value)} onKeyDown={e => e.key === 'Enter' && searchOrders()}
+                placeholder="상품명" className="px-3 py-2 border border-gray-200 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-blue-400 flex-1 min-w-[140px]" />
+              <input value={sMall} onChange={e => setSMall(e.target.value)} onKeyDown={e => e.key === 'Enter' && searchOrders()}
+                placeholder="몰명" className="px-3 py-2 border border-gray-200 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-blue-400 w-32" />
+              <button onClick={searchOrders} className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-base font-medium">검색</button>
+            </div>
+          </div>
+
+          {orderChecked.size > 0 && (
+            <div className="flex items-center gap-2 bg-slate-700 text-white rounded-xl px-4 py-3 flex-wrap">
+              <span className="text-base font-medium">{orderChecked.size}건 선택</span>
+              <div className="flex gap-2 ml-auto flex-wrap">
+                <button onClick={cancelSelectedOrders} className="px-3 py-1.5 bg-orange-500 hover:bg-orange-400 rounded-lg text-sm font-medium">취소 처리</button>
+                <button onClick={uncancelSelectedOrders} className="px-3 py-1.5 bg-slate-500 hover:bg-slate-400 rounded-lg text-sm font-medium">취소 해제</button>
+                {canDelete && <button onClick={deleteSelectedOrders} className="px-3 py-1.5 bg-red-500 hover:bg-red-400 rounded-lg text-sm font-medium">완전 삭제</button>}
+              </div>
+            </div>
+          )}
+
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+            {orderLoading ? (
+              <div className="text-center py-12 text-gray-400">불러오는 중...</div>
+            ) : orderList.length === 0 ? (
+              <div className="text-center py-12 text-gray-400">검색 결과가 없습니다 (조건 입력 후 검색)</div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-base">
+                  <thead className="bg-gray-50 border-b border-gray-100">
+                    <tr>
+                      <th className="px-3 py-3">
+                        <input type="checkbox"
+                          checked={orderList.length > 0 && orderChecked.size === orderList.length}
+                          onChange={() => setOrderChecked(orderChecked.size === orderList.length ? new Set() : new Set(orderList.map(o => o.id)))}
+                          className="w-4 h-4 rounded border-gray-300 text-blue-600 cursor-pointer" />
+                      </th>
+                      {['주문번호', '몰명', '상품명', '수량', '금액', '수취인', '상태'].map(h => (
+                        <th key={h} className="px-3 py-3 text-left text-sm font-medium text-gray-500 whitespace-nowrap">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {orderList.map(o => (
+                      <tr key={o.id} className={`hover:bg-blue-50/40 ${o.canceled ? 'bg-red-50/40' : ''}`}>
+                        <td className="px-3 py-2.5">
+                          <input type="checkbox" checked={orderChecked.has(o.id)}
+                            onChange={() => setOrderChecked(prev => { const n = new Set(prev); n.has(o.id) ? n.delete(o.id) : n.add(o.id); return n; })}
+                            className="w-4 h-4 rounded border-gray-300 text-blue-600 cursor-pointer" />
+                        </td>
+                        <td className="px-3 py-2.5 text-gray-600 text-sm whitespace-nowrap">{o.order_number}</td>
+                        <td className="px-3 py-2.5"><span className="bg-blue-100 text-blue-700 text-xs px-2 py-0.5 rounded-md whitespace-nowrap">{o.mall_name}</span></td>
+                        <td className={`px-3 py-2.5 text-sm ${o.canceled ? 'line-through text-red-400' : 'text-gray-700'}`}>{o.product_name}</td>
+                        <td className="px-3 py-2.5 text-center text-gray-600">{o.quantity}</td>
+                        <td className="px-3 py-2.5 text-right text-gray-700">₩{(o.amount || 0).toLocaleString()}</td>
+                        <td className="px-3 py-2.5 text-gray-500 text-sm whitespace-nowrap">{o.recipient_name || '-'}</td>
+                        <td className="px-3 py-2.5">
+                          {o.canceled
+                            ? <span className="text-xs px-2 py-0.5 rounded-md bg-red-100 text-red-600 font-medium">취소됨</span>
+                            : <span className="text-xs px-2 py-0.5 rounded-md bg-green-100 text-green-700">정상</span>}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+          <p className="text-xs text-gray-400">💡 재고 자동 복원은 매출 모듈에서 주문↔재고 매핑을 만들 때 이 취소 표시와 연동됩니다. 그전엔 필요 시 재고 관리에서 수동 조정하세요.</p>
         </div>
       )}
     </div>
