@@ -1,0 +1,501 @@
+'use client';
+
+import { useEffect, useMemo, useState } from 'react';
+import { getUser } from '@/lib/auth';
+import { supabaseFetch, supabaseFetchAll } from '@/lib/supabase';
+import { matchProduct } from '@/lib/orderConvert';
+
+// ── 타입 ─────────────────────────────────────────────
+interface OrderRow {
+  upload_date: string;
+  mall_name?: string;
+  product_name?: string;
+  collect_product?: string;
+  quantity?: number;
+  amount?: number;
+  canceled?: boolean;
+}
+interface InvRow {
+  product_name: string;
+  company: string;
+  brand?: string;
+  cost_price?: number;
+}
+type Period = 'day' | 'week' | 'month' | 'all';
+
+const COMPANIES = ['전체', 'BNKNET', 'SJ글로벌', '더블아이', 'IX글로벌', '미분류'];
+
+// 원가 인라인 수정 권한 (재고에 쓰기 가능한 역할)
+const CAN_EDIT_COST = ['ceo', 'admin', 'sales', 'inventory'];
+
+// ── 날짜 헬퍼 ────────────────────────────────────────
+const pad = (n: number) => String(n).padStart(2, '0');
+const ymd = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const parseYmd = (s: string) => { const [y, m, dd] = s.split('-').map(Number); return new Date(y, m - 1, dd); };
+const addDays = (d: Date, n: number) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
+const addMonths = (d: Date, n: number) => { const x = new Date(d); x.setMonth(x.getMonth() + n); return x; };
+const startOfWeekMon = (d: Date) => { const x = new Date(d); const day = (x.getDay() + 6) % 7; x.setDate(x.getDate() - day); return x; };
+const startOfMonth = (d: Date) => new Date(d.getFullYear(), d.getMonth(), 1);
+const endOfMonth = (d: Date) => new Date(d.getFullYear(), d.getMonth() + 1, 0);
+
+const won = (n: number) => `${Math.round(n).toLocaleString('ko-KR')}원`;
+const wonShort = (n: number) => {
+  const v = Math.round(n);
+  if (Math.abs(v) >= 100000000) return `${(v / 100000000).toFixed(1)}억`;
+  if (Math.abs(v) >= 10000) return `${Math.round(v / 10000).toLocaleString('ko-KR')}만`;
+  return v.toLocaleString('ko-KR');
+};
+
+interface Ranges {
+  curStart: string; curEnd: string;
+  prevStart: string | null; prevEnd: string | null;
+  label: string; prevLabel: string;
+}
+function periodRanges(period: Period, today: Date, earliest: string): Ranges {
+  const t = ymd(today);
+  if (period === 'day') {
+    const y = ymd(addDays(today, -1));
+    return { curStart: t, curEnd: t, prevStart: y, prevEnd: y, label: '오늘', prevLabel: '어제' };
+  }
+  if (period === 'week') {
+    const ws = startOfWeekMon(today);
+    return { curStart: ymd(ws), curEnd: t, prevStart: ymd(addDays(ws, -7)), prevEnd: ymd(addDays(today, -7)), label: '이번 주', prevLabel: '지난주 같은 기간' };
+  }
+  if (period === 'month') {
+    const ms = startOfMonth(today); const pm = addMonths(today, -1);
+    return { curStart: ymd(ms), curEnd: t, prevStart: ymd(startOfMonth(pm)), prevEnd: ymd(pm), label: '이번 달', prevLabel: '지난달 같은 기간' };
+  }
+  return { curStart: earliest, curEnd: t, prevStart: null, prevEnd: null, label: '전체 누적', prevLabel: '' };
+}
+
+export default function SalesContent() {
+  const user = getUser();
+  const canEditCost = CAN_EDIT_COST.includes(user?.role || '');
+
+  const [orders, setOrders] = useState<OrderRow[]>([]);
+  const [inventory, setInventory] = useState<InvRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  const [period, setPeriod] = useState<Period>('month');
+  const [companyFilter, setCompanyFilter] = useState('전체');
+
+  // 원가 미입력 경고 패널
+  const [showCostPanel, setShowCostPanel] = useState(false);
+  const [costEdits, setCostEdits] = useState<Record<string, string>>({});
+  const [savingCost, setSavingCost] = useState<string | null>(null);
+
+  async function loadAll() {
+    setLoading(true); setLoadError(null);
+    try {
+      const [ord, inv] = await Promise.all([
+        supabaseFetchAll<OrderRow>('/orders?select=upload_date,mall_name,product_name,collect_product,quantity,amount,canceled&order=upload_date.asc'),
+        supabaseFetchAll<InvRow>('/inventory?select=product_name,company,brand,cost_price'),
+      ]);
+      setOrders(ord);
+      setInventory(inv);
+    } catch (e) {
+      setLoadError(e instanceof Error ? e.message : '데이터를 불러오지 못했습니다.');
+    } finally {
+      setLoading(false);
+    }
+  }
+  useEffect(() => { loadAll(); }, []);
+
+  // ── 집계 (모든 계산을 한 곳에서) ──────────────────────
+  const data = useMemo(() => {
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+
+    // 재고 → 상품명별 {원가, 사업자, 브랜드} 맵 (같은 이름이면 원가>0인 것 우선)
+    const invMap = new Map<string, { cost: number; company: string; brand: string }>();
+    for (const it of inventory) {
+      const key = it.product_name;
+      if (!key) continue;
+      const cost = Number(it.cost_price) || 0;
+      const prev = invMap.get(key);
+      if (!prev || (prev.cost === 0 && cost > 0)) {
+        invMap.set(key, { cost, company: it.company || '미분류', brand: it.brand || '' });
+      }
+    }
+
+    // 주문 → 매출 인식용으로 가공 (취소 제외)
+    type Flt = { date: string; amt: number; qty: number; rep: string; mall: string; company: string; hasCost: boolean; cost: number; registered: boolean; invCompany?: string };
+    const flt: Flt[] = [];
+    let earliest = ymd(today);
+    for (const o of orders) {
+      if (o.canceled) continue;
+      const qty = Number(o.quantity) || 0;
+      const amt = Number(o.amount) || 0;
+      if (qty < 1 && amt === 0) continue;
+      const rep = matchProduct(o.collect_product || o.product_name || '').name;
+      const inv = invMap.get(rep);
+      const hasCost = !!inv && inv.cost > 0;
+      const date = o.upload_date || '';
+      if (date && date < earliest) earliest = date;
+      flt.push({
+        date, amt, qty, rep,
+        mall: o.mall_name || '(몰 미상)',
+        company: inv ? inv.company : '미분류',
+        hasCost, cost: hasCost ? inv!.cost * qty : 0,
+        registered: !!inv, invCompany: inv?.company,
+      });
+    }
+
+    const ranges = periodRanges(period, today, earliest);
+    const cf = (company: string) => companyFilter === '전체' || company === companyFilter;
+
+    // 기간 합계만 (이전 기간/추이용)
+    const sumRange = (start: string, end: string) => {
+      let rev = 0, prof = 0, mrev = 0, cnt = 0;
+      for (const r of flt) {
+        if (!cf(r.company)) continue;
+        if (r.date < start || r.date > end) continue;
+        rev += r.amt; cnt++;
+        if (r.hasCost) { prof += r.amt - r.cost; mrev += r.amt; }
+      }
+      return { rev, prof, mrev, cnt };
+    };
+
+    // 현재 기간 상세 (품목/몰/원가미입력)
+    const productMap = new Map<string, { rev: number; qty: number; prof: number; cnt: number; hasCost: boolean }>();
+    const mallMap = new Map<string, { rev: number; cnt: number; prof: number; mrev: number }>();
+    const missEdit = new Map<string, { qty: number; cnt: number; rev: number; company: string }>();
+    const missUnreg = new Map<string, { qty: number; cnt: number; rev: number }>();
+    let curRev = 0, curProf = 0, curMrev = 0, curCnt = 0, curQty = 0;
+    for (const r of flt) {
+      if (!cf(r.company)) continue;
+      if (r.date < ranges.curStart || r.date > ranges.curEnd) continue;
+      curRev += r.amt; curCnt++; curQty += r.qty;
+      if (r.hasCost) { curProf += r.amt - r.cost; curMrev += r.amt; }
+
+      const p = productMap.get(r.rep) || { rev: 0, qty: 0, prof: 0, cnt: 0, hasCost: r.hasCost };
+      p.rev += r.amt; p.qty += r.qty; p.cnt++; if (r.hasCost) p.prof += r.amt - r.cost;
+      p.hasCost = p.hasCost && r.hasCost;
+      productMap.set(r.rep, p);
+
+      const m = mallMap.get(r.mall) || { rev: 0, cnt: 0, prof: 0, mrev: 0 };
+      m.rev += r.amt; m.cnt++; if (r.hasCost) { m.prof += r.amt - r.cost; m.mrev += r.amt; }
+      mallMap.set(r.mall, m);
+
+      if (!r.hasCost) {
+        if (r.registered) {
+          const e = missEdit.get(r.rep) || { qty: 0, cnt: 0, rev: 0, company: r.invCompany || '미분류' };
+          e.qty += r.qty; e.cnt++; e.rev += r.amt; missEdit.set(r.rep, e);
+        } else {
+          const u = missUnreg.get(r.rep) || { qty: 0, cnt: 0, rev: 0 };
+          u.qty += r.qty; u.cnt++; u.rev += r.amt; missUnreg.set(r.rep, u);
+        }
+      }
+    }
+
+    const prev = ranges.prevStart ? sumRange(ranges.prevStart, ranges.prevEnd!) : null;
+
+    // 추이 그래프 버킷
+    const sumBucket = (start: string, end: string) => {
+      let s = 0;
+      for (const r of flt) { if (!cf(r.company)) continue; if (r.date < start || r.date > end) continue; s += r.amt; }
+      return s;
+    };
+    const trend: { label: string; rev: number; isCurrent: boolean }[] = [];
+    if (period === 'day') {
+      for (let i = 13; i >= 0; i--) { const d = addDays(today, -i); const s = ymd(d); trend.push({ label: `${d.getMonth() + 1}/${d.getDate()}`, rev: sumBucket(s, s), isCurrent: i === 0 }); }
+    } else if (period === 'week') {
+      const ws0 = startOfWeekMon(today);
+      for (let i = 7; i >= 0; i--) { const ws = addDays(ws0, -7 * i); const we = addDays(ws, 6); trend.push({ label: `${ws.getMonth() + 1}/${ws.getDate()}`, rev: sumBucket(ymd(ws), ymd(we)), isCurrent: i === 0 }); }
+    } else if (period === 'month') {
+      for (let i = 5; i >= 0; i--) { const ms = startOfMonth(addMonths(today, -i)); trend.push({ label: `${ms.getMonth() + 1}월`, rev: sumBucket(ymd(ms), ymd(endOfMonth(ms))), isCurrent: i === 0 }); }
+    } else {
+      let ms = startOfMonth(parseYmd(earliest)); const end = startOfMonth(today);
+      while (ms <= end) { trend.push({ label: `${String(ms.getFullYear()).slice(2)}.${pad(ms.getMonth() + 1)}`, rev: sumBucket(ymd(ms), ymd(endOfMonth(ms))), isCurrent: ms.getTime() === end.getTime() }); ms = addMonths(ms, 1); }
+      if (trend.length > 12) trend.splice(0, trend.length - 12);
+    }
+
+    const byProduct = Array.from(productMap.entries()).map(([name, v]) => ({ name, ...v })).sort((a, b) => b.rev - a.rev);
+    const byMall = Array.from(mallMap.entries()).map(([name, v]) => ({ name, ...v })).sort((a, b) => b.rev - a.rev);
+    const missingEditable = Array.from(missEdit.entries()).map(([name, v]) => ({ name, ...v })).sort((a, b) => b.rev - a.rev);
+    const missingUnreg = Array.from(missUnreg.entries()).map(([name, v]) => ({ name, ...v })).sort((a, b) => b.rev - a.rev);
+
+    return {
+      ranges,
+      cur: { rev: curRev, prof: curProf, mrev: curMrev, cnt: curCnt, qty: curQty },
+      prev,
+      trend, byProduct, byMall, missingEditable, missingUnreg,
+      missingCount: missingEditable.length + missingUnreg.length,
+    };
+  }, [orders, inventory, period, companyFilter]);
+
+  const { ranges, cur, prev, trend, byProduct, byMall, missingEditable, missingUnreg, missingCount } = data;
+  const marginPct = cur.mrev > 0 ? Math.round((cur.prof / cur.mrev) * 100) : null;
+  const trendMax = Math.max(1, ...trend.map((t) => t.rev));
+
+  const deltaPct = (c: number, p: number | undefined) => (p && p > 0 ? Math.round(((c - p) / p) * 100) : null);
+  const revDelta = prev ? deltaPct(cur.rev, prev.rev) : null;
+  const profDelta = prev ? deltaPct(cur.prof, prev.prof) : null;
+
+  // 이상 징후: 기간 내 주문은 있는데 매출이 0
+  const anomaly = !loading && cur.cnt > 0 && cur.rev === 0;
+
+  // 원가 인라인 저장 → 재고에 반영
+  async function saveCost(productName: string, company: string) {
+    const raw = costEdits[productName];
+    const value = Number(String(raw).replace(/[^0-9.-]/g, ''));
+    if (!raw || !(value > 0)) { alert('원가(0보다 큰 숫자)를 입력하세요.'); return; }
+    setSavingCost(productName);
+    try {
+      const res = await supabaseFetch(
+        `/inventory?product_name=eq.${encodeURIComponent(productName)}&company=eq.${encodeURIComponent(company)}`,
+        { method: 'PATCH', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ cost_price: value, updated_at: new Date().toISOString() }) },
+      );
+      const updated = await res.json();
+      if (!res.ok) throw new Error('저장 실패');
+      if (!Array.isArray(updated) || updated.length === 0) {
+        alert('재고에서 해당 상품을 찾지 못했습니다. 재고 관리에서 상품명/사업자를 확인해주세요.');
+        return;
+      }
+      // 재고만 다시 불러와 즉시 재계산
+      const inv = await supabaseFetchAll<InvRow>('/inventory?select=product_name,company,brand,cost_price');
+      setInventory(inv);
+      setCostEdits((prev) => { const n = { ...prev }; delete n[productName]; return n; });
+    } catch {
+      alert('저장 중 오류가 발생했습니다. 다시 시도해주세요.');
+    } finally {
+      setSavingCost(null);
+    }
+  }
+
+  const periodBtns: { key: Period; label: string }[] = [
+    { key: 'day', label: '당일' }, { key: 'week', label: '주간' }, { key: 'month', label: '월간' }, { key: 'all', label: '누적' },
+  ];
+
+  return (
+    <div className="space-y-6">
+      {/* 상단: 기간/사업자 필터 */}
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
+          {periodBtns.map((b) => (
+            <button key={b.key} onClick={() => setPeriod(b.key)}
+              className={`px-3 py-1.5 rounded-md text-base font-medium transition-colors ${period === b.key ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
+              {b.label}
+            </button>
+          ))}
+        </div>
+        <select value={companyFilter} onChange={(e) => setCompanyFilter(e.target.value)}
+          className="px-3 py-2 rounded-lg border border-gray-200 text-base bg-white">
+          {COMPANIES.map((c) => <option key={c} value={c}>{c}</option>)}
+        </select>
+        <span className="text-sm text-gray-400">{ranges.curStart} ~ {ranges.curEnd}</span>
+        <button onClick={loadAll} disabled={loading}
+          className="ml-auto px-3 py-2 rounded-lg border border-gray-200 text-base text-gray-600 hover:bg-gray-50 disabled:opacity-50">
+          {loading ? '불러오는 중…' : '새로고침'}
+        </button>
+      </div>
+
+      {loadError && (
+        <div className="bg-red-50 border border-red-200 rounded-xl px-5 py-4 text-base text-red-600">
+          ⚠️ 데이터를 불러오지 못했습니다 — 숫자가 실제보다 적게 나올 수 있습니다. ({loadError})
+          <button onClick={loadAll} className="ml-3 underline">다시 시도</button>
+        </div>
+      )}
+
+      {/* 이상 징후 경고 */}
+      {anomaly && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl px-5 py-4 text-base text-amber-700">
+          ⚠️ 이 기간에 주문은 {cur.cnt}건 있는데 매출이 0원으로 집계됩니다 — 데이터 점검이 필요합니다.
+        </div>
+      )}
+
+      {/* 원가 미입력 경고 배너 (필수) */}
+      {!loading && missingCount > 0 && (
+        <div className="bg-red-50 border border-red-200 rounded-xl overflow-hidden">
+          <button onClick={() => setShowCostPanel((v) => !v)} className="w-full flex items-center justify-between px-5 py-4 hover:bg-red-100/60 transition-colors text-left">
+            <div>
+              <div className="text-base font-semibold text-red-600">⚠️ 원가 미입력 상품 {missingCount}건 — 영업이익에 반영되지 않았습니다</div>
+              <div className="text-sm text-red-400 mt-0.5">팔렸지만 재고에 원가가 없거나 등록 안 된 상품입니다. {showCostPanel ? '접기' : '눌러서 확인·입력하기'}</div>
+            </div>
+            <span className="text-red-400 text-lg">{showCostPanel ? '▲' : '▼'}</span>
+          </button>
+
+          {showCostPanel && (
+            <div className="border-t border-red-200 bg-white px-5 py-4 space-y-5">
+              {/* (A) 재고에 등록됐지만 원가 0 → 그 자리 입력 */}
+              {missingEditable.length > 0 && (
+                <div>
+                  <div className="text-base font-semibold text-gray-700 mb-2">원가만 입력하면 되는 상품 ({missingEditable.length})</div>
+                  <div className="text-sm text-gray-400 mb-2">아래에 개당원가를 입력·저장하면 재고에 반영되고 매출이 즉시 다시 계산됩니다.</div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-base">
+                      <thead>
+                        <tr className="text-left text-sm text-gray-400 border-b">
+                          <th className="py-2 pr-3">상품명</th><th className="py-2 pr-3">사업자</th>
+                          <th className="py-2 pr-3 text-right">판매건수</th><th className="py-2 pr-3 text-right">판매수량</th>
+                          <th className="py-2 pr-3 text-right">판매금액</th><th className="py-2 pr-3">개당원가 입력</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {missingEditable.map((m) => (
+                          <tr key={m.name} className="border-b border-gray-50">
+                            <td className="py-2 pr-3 font-medium text-gray-700">{m.name}</td>
+                            <td className="py-2 pr-3 text-gray-500">{m.company}</td>
+                            <td className="py-2 pr-3 text-right text-gray-500">{m.cnt}</td>
+                            <td className="py-2 pr-3 text-right text-gray-500">{m.qty}</td>
+                            <td className="py-2 pr-3 text-right text-gray-700">{won(m.rev)}</td>
+                            <td className="py-2 pr-3">
+                              {canEditCost ? (
+                                <div className="flex items-center gap-1.5">
+                                  <input type="text" inputMode="numeric" placeholder="0"
+                                    value={costEdits[m.name] ?? ''}
+                                    onChange={(e) => setCostEdits((p) => ({ ...p, [m.name]: e.target.value }))}
+                                    className="w-24 px-2 py-1 border border-gray-200 rounded text-right" />
+                                  <button onClick={() => saveCost(m.name, m.company)} disabled={savingCost === m.name}
+                                    className="px-2.5 py-1 rounded bg-blue-600 text-white text-sm hover:bg-blue-700 disabled:opacity-50">
+                                    {savingCost === m.name ? '저장…' : '저장'}
+                                  </button>
+                                </div>
+                              ) : <span className="text-sm text-gray-400">입력 권한 없음</span>}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* (B) 재고에 아예 없는 상품 → 등록 안내 */}
+              {missingUnreg.length > 0 && (
+                <div>
+                  <div className="text-base font-semibold text-gray-700 mb-2">재고에 등록되지 않은 상품 ({missingUnreg.length})</div>
+                  <div className="text-sm text-gray-400 mb-2">상품명이 재고와 매칭되지 않습니다. <a href="/inventory" className="text-blue-600 underline">재고 관리</a>에서 등록하거나 상품명을 맞춰주세요.</div>
+                  <div className="flex flex-wrap gap-2">
+                    {missingUnreg.map((m) => (
+                      <span key={m.name} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-gray-100 text-sm text-gray-600">
+                        {m.name} <span className="text-gray-400">· {m.cnt}건 · {won(m.rev)}</span>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* KPI 카드 */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <KpiCard title={`매출 (${ranges.label})`} value={won(cur.rev)} delta={revDelta} prevLabel={ranges.prevLabel} accent="blue" loading={loading} />
+        <KpiCard title="영업이익" value={won(cur.prof)} delta={profDelta} prevLabel={ranges.prevLabel} accent="green" loading={loading}
+          sub={missingCount > 0 ? '※ 원가 미입력分 제외' : undefined} />
+        <KpiCard title="영업이익률" value={marginPct === null ? '-' : `${marginPct}%`} accent="violet" loading={loading}
+          sub={cur.mrev > 0 && cur.mrev < cur.rev ? '※ 원가 확인된 매출 기준' : undefined} />
+        <KpiCard title="주문 건수" value={`${cur.cnt.toLocaleString('ko-KR')}건`} accent="gray" loading={loading}
+          sub={`판매수량 ${cur.qty.toLocaleString('ko-KR')}개`} />
+      </div>
+
+      {/* 추이 그래프 */}
+      <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="font-semibold text-gray-700">매출 추이</h3>
+          <span className="text-sm text-gray-400">{companyFilter} · {period === 'day' ? '최근 14일' : period === 'week' ? '최근 8주' : period === 'month' ? '최근 6개월' : '월별'}</span>
+        </div>
+        {trend.length === 0 || trendMax <= 1 ? (
+          <div className="text-base text-gray-400 text-center py-12">표시할 데이터가 없습니다</div>
+        ) : (
+          <div className="flex items-end gap-2 h-48">
+            {trend.map((t, i) => (
+              <div key={i} className="flex-1 flex flex-col items-center justify-end h-full gap-1 group">
+                <div className="text-xs text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">{wonShort(t.rev)}</div>
+                <div className={`w-full rounded-t transition-all ${t.isCurrent ? 'bg-blue-600' : 'bg-blue-200'}`}
+                  style={{ height: `${Math.max(2, (t.rev / trendMax) * 100)}%` }} title={`${t.label} · ${won(t.rev)}`} />
+                <div className={`text-sm whitespace-nowrap ${t.isCurrent ? 'text-blue-600 font-medium' : 'text-gray-400'}`}>{t.label}</div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* 품목별 / 몰별 분석 */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
+          <h3 className="font-semibold text-gray-700 mb-4">품목별 매출 (상위 {Math.min(byProduct.length, 15)})</h3>
+          {byProduct.length === 0 ? <Empty /> : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-base">
+                <thead>
+                  <tr className="text-left text-sm text-gray-400 border-b">
+                    <th className="py-2 pr-3">상품명</th><th className="py-2 pr-3 text-right">매출</th>
+                    <th className="py-2 pr-3 text-right">수량</th><th className="py-2 pr-3 text-right">영업이익</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {byProduct.slice(0, 15).map((p) => (
+                    <tr key={p.name} className="border-b border-gray-50">
+                      <td className="py-2 pr-3 font-medium text-gray-700">{p.name}{!p.hasCost && <span className="ml-1 text-xs text-red-400">원가?</span>}</td>
+                      <td className="py-2 pr-3 text-right text-gray-700">{won(p.rev)}</td>
+                      <td className="py-2 pr-3 text-right text-gray-500">{p.qty}</td>
+                      <td className="py-2 pr-3 text-right text-gray-500">{p.hasCost ? won(p.prof) : '-'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
+          <h3 className="font-semibold text-gray-700 mb-4">판매몰별 매출</h3>
+          {byMall.length === 0 ? <Empty /> : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-base">
+                <thead>
+                  <tr className="text-left text-sm text-gray-400 border-b">
+                    <th className="py-2 pr-3">판매몰</th><th className="py-2 pr-3 text-right">매출</th>
+                    <th className="py-2 pr-3 text-right">건수</th><th className="py-2 pr-3 text-right">평균단가</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {byMall.map((m) => (
+                    <tr key={m.name} className="border-b border-gray-50">
+                      <td className="py-2 pr-3 font-medium text-gray-700">{m.name}</td>
+                      <td className="py-2 pr-3 text-right text-gray-700">{won(m.rev)}</td>
+                      <td className="py-2 pr-3 text-right text-gray-500">{m.cnt}</td>
+                      <td className="py-2 pr-3 text-right text-gray-500">{m.cnt > 0 ? won(m.rev / m.cnt) : '-'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <p className="text-sm text-gray-400">
+        ※ 매출은 주문 변환·저장된 데이터(취소 제외)를 실시간 집계합니다. 영업이익 = 매출 − (재고 개당원가 × 수량).
+        ESM 수수료·배송비·부가세 차감은 2차 단계에서 반영 예정입니다.
+      </p>
+    </div>
+  );
+}
+
+function KpiCard({ title, value, delta, prevLabel, sub, accent, loading }: {
+  title: string; value: string; delta?: number | null; prevLabel?: string; sub?: string;
+  accent: 'blue' | 'green' | 'violet' | 'gray'; loading?: boolean;
+}) {
+  const accentMap = { blue: 'text-blue-600', green: 'text-green-600', violet: 'text-violet-600', gray: 'text-gray-700' };
+  return (
+    <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
+      <div className="text-sm text-gray-400 mb-1">{title}</div>
+      <div className={`text-2xl font-bold ${accentMap[accent]}`}>{loading ? '…' : value}</div>
+      {delta !== undefined && delta !== null && (
+        <div className={`text-sm mt-1 ${delta >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+          {delta >= 0 ? '▲' : '▼'} {Math.abs(delta)}% <span className="text-gray-400">({prevLabel} 대비)</span>
+        </div>
+      )}
+      {delta === null && prevLabel && <div className="text-sm mt-1 text-gray-300">{prevLabel} 대비 -</div>}
+      {sub && <div className="text-xs text-gray-400 mt-1">{sub}</div>}
+    </div>
+  );
+}
+
+function Empty() {
+  return <div className="text-base text-gray-400 text-center py-8">표시할 데이터가 없습니다</div>;
+}
