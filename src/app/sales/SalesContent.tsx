@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { getUser } from '@/lib/auth';
 import { supabaseFetch, supabaseFetchAll } from '@/lib/supabase';
 import { matchProduct } from '@/lib/orderConvert';
+import { buildFeeMap, lookupFee, normalizeMall, type MallFee } from '@/lib/mallFees';
 
 // ── 타입 ─────────────────────────────────────────────
 interface OrderRow {
@@ -14,6 +15,7 @@ interface OrderRow {
   quantity?: number;
   amount?: number;
   canceled?: boolean;
+  company?: string;
 }
 interface InvRow {
   product_name: string;
@@ -74,6 +76,7 @@ export default function SalesContent() {
 
   const [orders, setOrders] = useState<OrderRow[]>([]);
   const [inventory, setInventory] = useState<InvRow[]>([]);
+  const [fees, setFees] = useState<MallFee[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
@@ -88,19 +91,21 @@ export default function SalesContent() {
   async function loadAll() {
     setLoading(true); setLoadError(null);
     try {
-      const [ord, inv] = await Promise.all([
-        supabaseFetchAll<OrderRow>('/orders?select=upload_date,mall_name,product_name,collect_product,quantity,amount,canceled&order=upload_date.asc'),
+      const [ord, inv, fee] = await Promise.all([
+        supabaseFetchAll<OrderRow>('/orders?select=upload_date,mall_name,product_name,collect_product,quantity,amount,canceled,company&order=upload_date.asc'),
         supabaseFetchAll<InvRow>('/inventory?select=product_name,company,brand,cost_price'),
+        supabaseFetchAll<MallFee>('/mall_fees?select=company,mall,rate'),
       ]);
       setOrders(ord);
       setInventory(inv);
+      setFees(fee);
     } catch (e) {
       setLoadError(e instanceof Error ? e.message : '데이터를 불러오지 못했습니다.');
     } finally {
       setLoading(false);
     }
   }
-  useEffect(() => { loadAll(); }, []);
+  useEffect(() => { (async () => { await loadAll(); })(); }, []);
 
   // ── 집계 (모든 계산을 한 곳에서) ──────────────────────
   const data = useMemo(() => {
@@ -118,8 +123,11 @@ export default function SalesContent() {
       }
     }
 
+    // 몰 수수료 맵 (사업자+정규몰명 → %)
+    const feeMap = buildFeeMap(fees);
+
     // 주문 → 매출 인식용으로 가공 (취소 제외)
-    type Flt = { date: string; amt: number; qty: number; rep: string; mall: string; company: string; hasCost: boolean; cost: number; registered: boolean; invCompany?: string };
+    type Flt = { date: string; amt: number; qty: number; rep: string; mall: string; company: string; hasCost: boolean; cost: number; fee: number; feeFound: boolean; registered: boolean; invCompany?: string };
     const flt: Flt[] = [];
     let earliest = ymd(today);
     for (const o of orders) {
@@ -132,11 +140,14 @@ export default function SalesContent() {
       const hasCost = !!inv && inv.cost > 0;
       const date = o.upload_date || '';
       if (date && date < earliest) earliest = date;
+      // 사업자: 주문에 박힌 company 우선, 없으면 재고 매칭으로 추정
+      const company = o.company || (inv ? inv.company : '미분류');
+      const mall = o.mall_name || '(몰 미상)';
+      const ff = lookupFee(feeMap, company, mall, amt);
       flt.push({
-        date, amt, qty, rep,
-        mall: o.mall_name || '(몰 미상)',
-        company: inv ? inv.company : '미분류',
+        date, amt, qty, rep, mall, company,
         hasCost, cost: hasCost ? inv!.cost * qty : 0,
+        fee: ff.fee, feeFound: ff.found,
         registered: !!inv, invCompany: inv?.company,
       });
     }
@@ -151,7 +162,7 @@ export default function SalesContent() {
         if (!cf(r.company)) continue;
         if (r.date < start || r.date > end) continue;
         rev += r.amt; cnt++;
-        if (r.hasCost) { prof += r.amt - r.cost; mrev += r.amt; }
+        if (r.hasCost) { prof += r.amt - r.cost - r.fee; mrev += r.amt; }
       }
       return { rev, prof, mrev, cnt };
     };
@@ -161,21 +172,29 @@ export default function SalesContent() {
     const mallMap = new Map<string, { rev: number; cnt: number; prof: number; mrev: number }>();
     const missEdit = new Map<string, { qty: number; cnt: number; rev: number; company: string }>();
     const missUnreg = new Map<string, { qty: number; cnt: number; rev: number }>();
-    let curRev = 0, curProf = 0, curMrev = 0, curCnt = 0, curQty = 0;
+    const missFee = new Map<string, { company: string; mall: string; rev: number; cnt: number }>();
+    let curRev = 0, curProf = 0, curMrev = 0, curCnt = 0, curQty = 0, curFee = 0;
     for (const r of flt) {
       if (!cf(r.company)) continue;
       if (r.date < ranges.curStart || r.date > ranges.curEnd) continue;
       curRev += r.amt; curCnt++; curQty += r.qty;
-      if (r.hasCost) { curProf += r.amt - r.cost; curMrev += r.amt; }
+      if (r.hasCost) { curProf += r.amt - r.cost - r.fee; curMrev += r.amt; curFee += r.fee; }
 
       const p = productMap.get(r.rep) || { rev: 0, qty: 0, prof: 0, cnt: 0, hasCost: r.hasCost };
-      p.rev += r.amt; p.qty += r.qty; p.cnt++; if (r.hasCost) p.prof += r.amt - r.cost;
+      p.rev += r.amt; p.qty += r.qty; p.cnt++; if (r.hasCost) p.prof += r.amt - r.cost - r.fee;
       p.hasCost = p.hasCost && r.hasCost;
       productMap.set(r.rep, p);
 
       const m = mallMap.get(r.mall) || { rev: 0, cnt: 0, prof: 0, mrev: 0 };
-      m.rev += r.amt; m.cnt++; if (r.hasCost) { m.prof += r.amt - r.cost; m.mrev += r.amt; }
+      m.rev += r.amt; m.cnt++; if (r.hasCost) { m.prof += r.amt - r.cost - r.fee; m.mrev += r.amt; }
       mallMap.set(r.mall, m);
+
+      // 수수료 미설정 몰 추적 (매출은 있는데 요율 없음 → 경고)
+      if (!r.feeFound && r.amt > 0) {
+        const fk = `${r.company}|${normalizeMall(r.mall)}`;
+        const fe = missFee.get(fk) || { company: r.company, mall: r.mall, rev: 0, cnt: 0 };
+        fe.rev += r.amt; fe.cnt++; missFee.set(fk, fe);
+      }
 
       if (!r.hasCost) {
         if (r.registered) {
@@ -214,17 +233,18 @@ export default function SalesContent() {
     const byMall = Array.from(mallMap.entries()).map(([name, v]) => ({ name, ...v })).sort((a, b) => b.rev - a.rev);
     const missingEditable = Array.from(missEdit.entries()).map(([name, v]) => ({ name, ...v })).sort((a, b) => b.rev - a.rev);
     const missingUnreg = Array.from(missUnreg.entries()).map(([name, v]) => ({ name, ...v })).sort((a, b) => b.rev - a.rev);
+    const missingFee = Array.from(missFee.values()).sort((a, b) => b.rev - a.rev);
 
     return {
       ranges,
-      cur: { rev: curRev, prof: curProf, mrev: curMrev, cnt: curCnt, qty: curQty },
+      cur: { rev: curRev, prof: curProf, mrev: curMrev, cnt: curCnt, qty: curQty, fee: curFee },
       prev,
-      trend, byProduct, byMall, missingEditable, missingUnreg,
+      trend, byProduct, byMall, missingEditable, missingUnreg, missingFee,
       missingCount: missingEditable.length + missingUnreg.length,
     };
-  }, [orders, inventory, period, companyFilter]);
+  }, [orders, inventory, fees, period, companyFilter]);
 
-  const { ranges, cur, prev, trend, byProduct, byMall, missingEditable, missingUnreg, missingCount } = data;
+  const { ranges, cur, prev, trend, byProduct, byMall, missingEditable, missingUnreg, missingFee, missingCount } = data;
   const marginPct = cur.mrev > 0 ? Math.round((cur.prof / cur.mrev) * 100) : null;
   const trendMax = Math.max(1, ...trend.map((t) => t.rev));
 
@@ -380,11 +400,26 @@ export default function SalesContent() {
         </div>
       )}
 
+      {/* 수수료 미설정 몰 경고 (영업이익에 수수료 미반영) */}
+      {!loading && missingFee.length > 0 && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl px-5 py-4">
+          <div className="text-base font-semibold text-amber-700">⚠️ 수수료율이 설정 안 된 판매몰 {missingFee.length}건 — 이 몰 매출엔 수수료가 빠져 영업이익이 실제보다 높게 잡힙니다</div>
+          <div className="text-sm text-amber-600 mt-0.5 mb-2">아래 (사업자·몰) 요율을 알려주시면 반영하겠습니다. (또는 Supabase <span className="font-mono">mall_fees</span> 표에 추가)</div>
+          <div className="flex flex-wrap gap-2">
+            {missingFee.map((m, i) => (
+              <span key={i} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white border border-amber-200 text-sm text-gray-700">
+                {m.company} · {m.mall} <span className="text-amber-500">· {won(m.rev)}</span>
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* KPI 카드 */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <KpiCard title={`매출 (${ranges.label})`} value={won(cur.rev)} delta={revDelta} prevLabel={ranges.prevLabel} accent="blue" loading={loading} />
         <KpiCard title="영업이익" value={won(cur.prof)} delta={profDelta} prevLabel={ranges.prevLabel} accent="green" loading={loading}
-          sub={missingCount > 0 ? '※ 원가 미입력分 제외' : undefined} />
+          sub={[cur.fee > 0 ? `몰수수료 ${won(cur.fee)} 차감` : '', missingCount > 0 ? '원가 미입력分 제외' : ''].filter(Boolean).map((s) => `※ ${s}`).join(' · ') || undefined} />
         <KpiCard title="영업이익률" value={marginPct === null ? '-' : `${marginPct}%`} accent="violet" loading={loading}
           sub={cur.mrev > 0 && cur.mrev < cur.rev ? '※ 원가 확인된 매출 기준' : undefined} />
         <KpiCard title="주문 건수" value={`${cur.cnt.toLocaleString('ko-KR')}건`} accent="gray" loading={loading}
@@ -469,8 +504,8 @@ export default function SalesContent() {
       </div>
 
       <p className="text-sm text-gray-400">
-        ※ 매출은 주문 변환·저장된 데이터(취소 제외)를 실시간 집계합니다. 영업이익 = 매출 − (재고 개당원가 × 수량).
-        ESM 수수료·배송비·부가세 차감은 2차 단계에서 반영 예정입니다.
+        ※ 매출은 주문 변환·저장된 데이터(취소 제외)를 실시간 집계합니다. 영업이익 = 매출 − (재고 개당원가 × 수량) − 몰수수료(매출×요율).
+        수수료율은 사업자·판매몰별로 적용되며 mall_fees에서 수정 가능합니다. 배송비·부가세 차감은 2차 단계에서 반영 예정입니다.
       </p>
     </div>
   );
