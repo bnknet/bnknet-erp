@@ -874,10 +874,11 @@ export function convertOrders(raw: RawOrderRow[]): ConvertedOrderRow[] {
   return result;
 }
 
-export function buildSupabaseRows(resultData: ConvertedOrderRow[]) {
+export function buildSupabaseRows(resultData: ConvertedOrderRow[], company = '') {
   const today = new Date().toISOString().slice(0, 10);
   return resultData.map((r) => ({
     upload_date: today,
+    company,
     order_number: String(r['주문번호'] || ''),
     recipient_name: r['수취인명'] || '',
     phone: r['전화번호'] || '',

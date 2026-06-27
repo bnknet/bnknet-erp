@@ -1,12 +1,27 @@
 'use client';
 
 import { useState, useRef } from 'react';
-import { convertOrders, buildSupabaseRows, type ConvertedOrderRow, type RawOrderRow } from '@/lib/orderConvert';
-import { supabaseFetch, supabaseUpload, safeStorageKey } from '@/lib/supabase';
+import { convertOrders, buildSupabaseRows, matchProduct, type ConvertedOrderRow, type RawOrderRow } from '@/lib/orderConvert';
+import { supabaseFetch, supabaseFetchAll, supabaseUpload, safeStorageKey } from '@/lib/supabase';
 import { getUser } from '@/lib/auth';
 
 type Tab = 'convert' | 'history' | 'manage';
 type Status = { type: 'info' | 'success' | 'error'; msg: string } | null;
+
+// 사업자 선택 (값은 재고 테이블의 company 표기와 정확히 일치해야 함)
+const COMPANY_OPTIONS = [
+  { value: 'BNKNET', label: '비앤케이넷 (BNKNET)' },
+  { value: '더블아이', label: '더블아이' },
+  { value: 'SJ글로벌', label: 'SJ글로벌' },
+  { value: 'IX글로벌', label: 'IX글로벌' },
+];
+
+// 재고 자동출고 결과 경고
+interface ShipWarn {
+  unmatched: { name: string; cnt: number; qty: number }[]; // 재고 매칭 실패 (자동출고 안 됨)
+  negative: { product_name: string; company: string; after: number }[]; // 출고 후 재고 마이너스
+  shipped: number;
+}
 
 interface OrderRow {
   id: string;
@@ -45,6 +60,11 @@ export default function OrdersContent() {
   const [historyLoading, setHistoryLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // 사업자 선택 + 재고 자동출고 경고
+  const [company, setCompany] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [shipWarn, setShipWarn] = useState<ShipWarn | null>(null);
+
   // 주문 조회/취소
   const [sOrderNo, setSOrderNo] = useState('');
   const [sProduct, setSProduct] = useState('');
@@ -70,22 +90,39 @@ export default function OrdersContent() {
 
   async function cancelSelectedOrders() {
     if (orderChecked.size === 0) { alert('취소할 주문을 선택하세요.'); return; }
-    if (!confirm(`선택한 ${orderChecked.size}건을 취소 처리하시겠습니까?\n(매출·영업이익 집계에서 제외됩니다)`)) return;
+    if (!confirm(`선택한 ${orderChecked.size}건을 취소 처리하시겠습니까?\n(매출·영업이익에서 제외 + 차감했던 재고는 자동 복구됩니다)`)) return;
+    const reason = (prompt('취소 사유를 입력하세요 (선택)', '고객 취소') || '주문 취소').trim();
     const ids = Array.from(orderChecked);
-    await supabaseFetch(`/orders?id=in.(${ids.join(',')})`, {
-      method: 'PATCH', headers: { Prefer: 'return=minimal' },
-      body: JSON.stringify({ canceled: true, canceled_at: new Date().toISOString(), canceled_by: me?.name || '' }),
-    });
+    try {
+      // 취소 + 재고 복구를 한 트랜잭션(RPC)으로 처리 — 반쪽 반영 방지
+      const res = await supabaseFetch('/rpc/cancel_orders', {
+        method: 'POST', headers: { Prefer: 'return=representation' },
+        body: JSON.stringify({ p_order_ids: ids, p_reason: reason, p_by: me?.name || '' }),
+      });
+      if (!res.ok) throw new Error(String(res.status));
+      const r = await res.json();
+      alert(`✅ ${r?.canceled ?? ids.length}건 취소 처리 완료 (재고 복구 ${r?.restored ?? 0}건)`);
+    } catch {
+      alert('❌ 취소 처리 중 오류가 발생했습니다. (재고 정합성 보호를 위해 변경이 모두 취소되었습니다)\n설정(db/order_inventory_sync.sql)이 적용됐는지 확인해주세요.');
+    }
     await searchOrders();
   }
 
   async function uncancelSelectedOrders() {
     if (orderChecked.size === 0) return;
+    if (!confirm(`선택한 ${orderChecked.size}건의 취소를 해제하시겠습니까?\n(매출에 다시 포함 + 복구했던 재고는 다시 차감됩니다)`)) return;
     const ids = Array.from(orderChecked);
-    await supabaseFetch(`/orders?id=in.(${ids.join(',')})`, {
-      method: 'PATCH', headers: { Prefer: 'return=minimal' },
-      body: JSON.stringify({ canceled: false, canceled_at: null, canceled_by: null }),
-    });
+    try {
+      const res = await supabaseFetch('/rpc/uncancel_orders', {
+        method: 'POST', headers: { Prefer: 'return=representation' },
+        body: JSON.stringify({ p_order_ids: ids, p_by: me?.name || '' }),
+      });
+      if (!res.ok) throw new Error(String(res.status));
+      const r = await res.json();
+      alert(`✅ ${r?.uncanceled ?? ids.length}건 취소 해제 완료 (재고 재차감 ${r?.rededucted ?? 0}건)`);
+    } catch {
+      alert('❌ 취소 해제 중 오류가 발생했습니다. (변경이 모두 취소되었습니다)');
+    }
     await searchOrders();
   }
 
@@ -167,12 +204,20 @@ export default function OrdersContent() {
     XLSX.writeFile(wb, `주문변환_${today}.xlsx`);
   }
 
+  interface SavedOrder { id: string; product_name?: string; collect_product?: string; quantity?: number; company?: string }
+
   async function handleSaveToDB() {
     if (!resultData.length) return;
+    if (!company) { alert('먼저 사업자를 선택하세요. (어느 사업자 재고에서 차감할지 구분이 필요합니다)'); return; }
+    const companyLabel = COMPANY_OPTIONS.find((c) => c.value === company)?.label || company;
+    if (!confirm(`이 주문 파일을 [${companyLabel}] 주문으로 저장하고, 해당 사업자 재고에서 자동 출고합니다.\n사업자가 맞습니까?`)) return;
+
+    setSaving(true);
+    setShipWarn(null);
     setStatus({ type: 'info', msg: '⏳ DB 저장 중...' });
 
     try {
-      const rows = buildSupabaseRows(resultData);
+      const rows = buildSupabaseRows(resultData, company);
       const orderNums = rows.map((r) => r.order_number).filter(Boolean);
 
       // 중복 체크 — 주문번호를 200개씩 나눠 조회 (긴 URL·1000건 제한 회피, 누락 방지)
@@ -193,15 +238,16 @@ export default function OrdersContent() {
         return;
       }
 
+      // 저장 (저장된 행을 돌려받아 재고 자동출고에 사용)
       const res = await supabaseFetch('/orders', {
         method: 'POST',
-        headers: { Prefer: 'return=minimal' },
+        headers: { Prefer: 'return=representation' },
         body: JSON.stringify(newRows),
       });
-
       if (!res.ok) throw new Error('저장 실패');
+      const saved: SavedOrder[] = await res.json();
 
-      // 원본 파일을 첨부로 저장 + 업로드 이력 기록
+      // 업로드 이력 + 원본 파일 첨부
       let fileUrl = '';
       try {
         if (uploadedFile) fileUrl = await supabaseUpload('orders', safeStorageKey(uploadedFile.name), uploadedFile);
@@ -214,12 +260,65 @@ export default function OrdersContent() {
         }),
       });
 
-      setStatus({
-        type: 'success',
-        msg: `✅ ${newRows.length}건 저장 완료 (중복 ${rows.length - newRows.length}건 제외) · 업로드 이력 기록됨`,
-      });
+      // ── 재고 자동출고 ────────────────────────────────────────
+      // 상품명(대표명) + 사업자로 재고 매칭 → 못 찾으면 경고(자동출고 안 함, 안전장치)
+      let warn: ShipWarn = { unmatched: [], negative: [], shipped: 0 };
+      try {
+        const inv = await supabaseFetchAll<{ id: string; product_name: string; company: string; quantity: number }>(
+          '/inventory?select=id,product_name,company,quantity',
+        );
+        const invMap = new Map<string, string>(); // `${상품명}|${사업자}` → inventory_id
+        for (const it of inv) {
+          if (!it.product_name) continue;
+          const key = `${it.product_name}|${it.company || ''}`;
+          if (!invMap.has(key)) invMap.set(key, it.id);
+        }
+
+        const moves: Record<string, string | number>[] = [];
+        const missMap = new Map<string, { cnt: number; qty: number }>();
+        for (const o of saved) {
+          const rep = matchProduct(o.collect_product || o.product_name || '').name;
+          const qty = Number(o.quantity) || 0;
+          const invId = invMap.get(`${rep}|${company}`);
+          if (invId) {
+            moves.push({ order_id: o.id, inventory_id: invId, quantity: qty, product_name: rep, company, created_by: me?.name || '' });
+          } else {
+            const m = missMap.get(rep) || { cnt: 0, qty: 0 };
+            m.cnt++; m.qty += qty; missMap.set(rep, m);
+          }
+        }
+
+        if (moves.length) {
+          const shipRes = await supabaseFetch('/rpc/ship_orders', {
+            method: 'POST', headers: { Prefer: 'return=representation' },
+            body: JSON.stringify({ p_moves: moves }),
+          });
+          if (!shipRes.ok) throw new Error('ship ' + shipRes.status);
+          const shipResult = await shipRes.json();
+          warn.shipped = shipResult?.shipped ?? 0;
+          warn.negative = Array.isArray(shipResult?.negative) ? shipResult.negative : [];
+        }
+        warn.unmatched = Array.from(missMap.entries()).map(([name, v]) => ({ name, ...v })).sort((a, b) => b.qty - a.qty);
+      } catch {
+        // 자동출고 실패 — 주문 저장 자체는 성공. 데이터 유실 없음. 경고로 알림.
+        warn = { unmatched: [], negative: [], shipped: -1 };
+      }
+      setShipWarn(warn);
+
+      const dupMsg = rows.length - newRows.length > 0 ? ` (중복 ${rows.length - newRows.length}건 제외)` : '';
+      if (warn.shipped === -1) {
+        setStatus({ type: 'error', msg: `⚠️ 주문 ${newRows.length}건은 저장됐으나 재고 자동출고에 실패했습니다 — 설정(db/order_inventory_sync.sql) 적용 여부 확인 필요. 재고는 수동 조정하세요.` });
+      } else {
+        setStatus({
+          type: 'success',
+          msg: `✅ [${companyLabel}] ${newRows.length}건 저장${dupMsg} · 재고 자동출고 ${warn.shipped}건` +
+            (warn.unmatched.length ? ` · ⚠️ 미매칭 ${warn.unmatched.length}종(아래 확인)` : ''),
+        });
+      }
     } catch {
       setStatus({ type: 'error', msg: '❌ DB 저장 중 오류가 발생했습니다' });
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -328,6 +427,24 @@ export default function OrdersContent() {
               </div>
             )}
 
+            {/* 사업자 선택 (저장·자동출고 전 필수) */}
+            {resultData.length > 0 && (
+              <div className="mt-4 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
+                <div className="text-base font-semibold text-amber-800 mb-1">📌 이 주문 파일의 사업자를 선택하세요 (필수)</div>
+                <div className="text-sm text-amber-600 mb-2">선택한 사업자 재고에서 자동으로 출고 차감됩니다. 사방넷은 사업자별로 따로 받으므로 한 파일 = 한 사업자입니다.</div>
+                <div className="flex flex-wrap gap-2">
+                  {COMPANY_OPTIONS.map((c) => (
+                    <button key={c.value} onClick={() => setCompany(c.value)}
+                      className={`px-4 py-2 rounded-lg text-base font-medium border transition-colors ${
+                        company === c.value ? 'bg-blue-600 text-white border-blue-600 shadow-sm' : 'bg-white text-gray-600 border-gray-200 hover:border-blue-300'
+                      }`}>
+                      {c.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* 결과 액션 버튼 */}
             {resultData.length > 0 && (
               <div className="flex gap-3 mt-4 flex-wrap">
@@ -339,16 +456,53 @@ export default function OrdersContent() {
                 </button>
                 <button
                   onClick={handleSaveToDB}
-                  className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-medium text-base transition-colors shadow-sm"
+                  disabled={saving || !company}
+                  className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-medium text-base transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                  title={!company ? '먼저 사업자를 선택하세요' : ''}
                 >
-                  💾 DB에 저장
+                  {saving ? '⏳ 저장 중...' : '💾 DB에 저장 + 재고 차감'}
                 </button>
                 <button
-                  onClick={() => { setResultData([]); setHeaderOrder([]); setFileName(''); setUploadedFile(null); setStatus(null); }}
+                  onClick={() => { setResultData([]); setHeaderOrder([]); setFileName(''); setUploadedFile(null); setStatus(null); setCompany(''); setShipWarn(null); }}
                   className="px-5 py-2.5 bg-white hover:bg-gray-50 text-gray-600 rounded-xl font-medium text-base border border-gray-200 transition-colors"
                 >
                   🔄 초기화
                 </button>
+              </div>
+            )}
+
+            {/* 재고 자동출고 경고 (미매칭 / 마이너스) — 안전장치 */}
+            {shipWarn && (shipWarn.unmatched.length > 0 || shipWarn.negative.length > 0) && (
+              <div className="mt-4 bg-red-50 border border-red-200 rounded-xl px-5 py-4 space-y-3">
+                {shipWarn.unmatched.length > 0 && (
+                  <div>
+                    <div className="text-base font-semibold text-red-600">⚠️ 재고 자동출고 안 된 상품 {shipWarn.unmatched.length}종 — 담당자 확인 필요</div>
+                    <div className="text-sm text-red-400 mt-0.5 mb-2">
+                      선택한 사업자 재고에서 이 상품들을 못 찾았습니다(미등록/이름 불일치). 주문·매출은 저장됐지만 <b>재고는 차감 안 됨</b> →
+                      <a href="/inventory" className="underline ml-1">재고 관리</a>에서 등록·이름 확인 후 수동 출고하세요. 해결 후 실장님께 보고.
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {shipWarn.unmatched.map((m) => (
+                        <span key={m.name} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white border border-red-200 text-sm text-gray-700">
+                          {m.name} <span className="text-red-400">· {m.cnt}건 / {m.qty}개</span>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {shipWarn.negative.length > 0 && (
+                  <div>
+                    <div className="text-base font-semibold text-orange-600">⚠️ 출고 후 재고가 마이너스인 상품 {shipWarn.negative.length}종</div>
+                    <div className="text-sm text-orange-400 mt-0.5 mb-2">재고보다 많이 팔렸습니다(재고 입력 누락 가능). 재고 관리에서 실사·보정하세요.</div>
+                    <div className="flex flex-wrap gap-2">
+                      {shipWarn.negative.map((m, i) => (
+                        <span key={i} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white border border-orange-200 text-sm text-gray-700">
+                          {m.product_name} <span className="text-orange-500">· 재고 {m.after}</span>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -405,10 +559,11 @@ export default function OrdersContent() {
           <div className="bg-blue-50 rounded-2xl p-5 border border-blue-100">
             <h3 className="font-semibold text-blue-700 text-base mb-2">📌 사용 방법</h3>
             <ol className="text-base text-blue-600 space-y-1 list-decimal list-inside">
-              <li>사방넷 → 주문관리 → 엑셀 다운로드</li>
-              <li>위 영역에 파일 업로드</li>
-              <li>자동 변환 완료 후 엑셀 다운로드</li>
-              <li>&quot;DB에 저장&quot; 클릭하면 이력에 누적 저장됩니다</li>
+              <li>사방넷 → 주문관리 → 엑셀 다운로드 (사업자별로 따로)</li>
+              <li>위 영역에 파일 업로드 → 자동 변환</li>
+              <li><b>사업자 선택</b> (어느 사업자 재고에서 차감할지)</li>
+              <li>&quot;DB에 저장 + 재고 차감&quot; 클릭 → 매출 집계 + 재고 자동 출고</li>
+              <li>미매칭 경고가 뜨면 담당자가 재고 확인 후 보고</li>
             </ol>
           </div>
         </div>
@@ -567,7 +722,7 @@ export default function OrdersContent() {
               </div>
             )}
           </div>
-          <p className="text-xs text-gray-400">💡 재고 자동 복원은 매출 모듈에서 주문↔재고 매핑을 만들 때 이 취소 표시와 연동됩니다. 그전엔 필요 시 재고 관리에서 수동 조정하세요.</p>
+          <p className="text-xs text-gray-400">💡 취소 처리 시 차감했던 재고가 자동으로 복구되고, 취소 해제 시 다시 차감됩니다(이력에 기록). 매출·영업이익에서도 자동 제외/포함됩니다.</p>
         </div>
       )}
 
