@@ -49,7 +49,8 @@ export function lookupFee(
   const key = `${company}|${normalizeMall(mallName)}`;
   if (feeMap.has(key)) {
     const rate = feeMap.get(key)!;
-    return { fee: Math.round((amount * rate) / 100), rate, found: true };
+    // 반올림하지 않음(집계 정밀도 유지) — 표시 시점에 반올림
+    return { fee: (amount * rate) / 100, rate, found: true };
   }
   return { fee: 0, rate: 0, found: false };
 }
