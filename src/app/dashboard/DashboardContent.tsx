@@ -2,15 +2,23 @@
 
 import { useEffect, useState } from 'react';
 import { getUser } from '@/lib/auth';
-import { supabaseFetch } from '@/lib/supabase';
+import { supabaseFetch, supabaseFetchAll } from '@/lib/supabase';
+import { computeCostGap, type CostGapSummary, type MiniOrder, type MiniInv } from '@/lib/salesStats';
 
 const companies = ['BNKNET', 'SJ글로벌', '더블아이', 'IX글로벌'];
 
+const pad = (n: number) => String(n).padStart(2, '0');
+const dStr = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 function yesterdayStr() {
   const d = new Date();
   d.setDate(d.getDate() - 1);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  return dStr(d);
 }
+function monthStartStr() {
+  const d = new Date();
+  return dStr(new Date(d.getFullYear(), d.getMonth(), 1));
+}
+const won = (n: number) => `${Math.round(n).toLocaleString('ko-KR')}원`;
 
 const quickMenus = [
   { href: '/orders', label: '주문 변환', icon: '📦', desc: '사방넷 파일 업로드·변환' },
@@ -44,6 +52,23 @@ export default function DashboardContent() {
   }, [canSeeSnapAlert]);
   const snapStale = !!lastSnapDate && lastSnapDate < yesterdayStr();
 
+  // 매출/원가 정합성 점검 (이번 달 기준) — 권한자에게만
+  const [costGap, setCostGap] = useState<CostGapSummary | null>(null);
+  useEffect(() => {
+    if (!canSeeSnapAlert) return;
+    (async () => {
+      try {
+        const ms = monthStartStr();
+        const today = dStr(new Date());
+        const [ord, inv] = await Promise.all([
+          supabaseFetchAll<MiniOrder>(`/orders?select=upload_date,product_name,collect_product,quantity,amount,canceled&upload_date=gte.${ms}`),
+          supabaseFetchAll<MiniInv>('/inventory?select=product_name,company,cost_price'),
+        ]);
+        setCostGap(computeCostGap(ord, inv, ms, today));
+      } catch { /* 무시 — 대시보드 경고는 보조 지표 */ }
+    })();
+  }, [canSeeSnapAlert]);
+
   return (
     <div className="space-y-6">
       {/* 재고 자동저장 누락 경고 */}
@@ -51,6 +76,24 @@ export default function DashboardContent() {
         <a href="/inventory" className="block bg-red-50 border border-red-200 rounded-2xl px-5 py-4 hover:bg-red-100 transition-colors">
           <div className="text-base font-medium text-red-600">⚠️ 재고 자동저장이 멈춘 것 같습니다 — 마지막 저장: {lastSnapDate}</div>
           <div className="text-sm text-red-400 mt-0.5">재고 관리 → 일자별 재고에서 &apos;지금 재고 저장&apos;을 눌러 복구하세요. (클릭하면 이동)</div>
+        </a>
+      )}
+
+      {/* 매출 이상 징후 경고 (이번 달 주문은 있는데 매출 0) */}
+      {canSeeSnapAlert && costGap?.anomaly && (
+        <a href="/sales" className="block bg-amber-50 border border-amber-200 rounded-2xl px-5 py-4 hover:bg-amber-100 transition-colors">
+          <div className="text-base font-medium text-amber-700">⚠️ 이번 달 주문은 {costGap.orderCount}건인데 매출이 0원으로 집계됩니다</div>
+          <div className="text-sm text-amber-600 mt-0.5">데이터 점검이 필요합니다. 매출 현황에서 확인하세요. (클릭하면 이동)</div>
+        </a>
+      )}
+
+      {/* 원가 미입력 경고 (이번 달) */}
+      {canSeeSnapAlert && costGap && costGap.missingCount > 0 && (
+        <a href="/sales" className="block bg-red-50 border border-red-200 rounded-2xl px-5 py-4 hover:bg-red-100 transition-colors">
+          <div className="text-base font-medium text-red-600">⚠️ 원가 미입력 상품 {costGap.missingCount}건 — 이번 달 영업이익에 반영되지 않았습니다</div>
+          <div className="text-sm text-red-400 mt-0.5">
+            판매금액 약 {won(costGap.missingRevenue)}분의 이익이 비어 있습니다. 매출 현황에서 원가를 입력하세요. (클릭하면 이동)
+          </div>
         </a>
       )}
 
