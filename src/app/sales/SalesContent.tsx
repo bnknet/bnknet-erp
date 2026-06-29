@@ -18,6 +18,9 @@ interface OrderRow {
   company?: string;
   order_number?: string;
   delivery_fee?: number;
+  source?: string;
+  manual_cost?: number;
+  manual_shipping?: number;
 }
 interface InvRow {
   product_name: string;
@@ -99,7 +102,7 @@ export default function SalesContent() {
     setLoading(true); setLoadError(null);
     try {
       const [ord, inv, fee] = await Promise.all([
-        supabaseFetchAll<OrderRow>('/orders?select=upload_date,mall_name,product_name,collect_product,quantity,amount,canceled,company,order_number,delivery_fee&order=upload_date.asc'),
+        supabaseFetchAll<OrderRow>('/orders?select=upload_date,mall_name,product_name,collect_product,quantity,amount,canceled,company,order_number,delivery_fee,source,manual_cost,manual_shipping&order=upload_date.asc'),
         supabaseFetchAll<InvRow>('/inventory?select=product_name,company,brand,cost_price'),
         supabaseFetchAll<MallFee>('/mall_fees?select=company,mall,rate'),
       ]);
@@ -143,9 +146,14 @@ export default function SalesContent() {
       orderDeliveryMax.set(on, Math.max(orderDeliveryMax.get(on) || 0, df));
     }
 
-    // 주문 → 매출 인식용으로 가공 (취소 제외)
-    // unim/ship: 운임·고객배송비는 합구매(같은 주문번호)는 1회만 → 주문당 첫 원가확인 라인에 배정
-    type Flt = { date: string; amt: number; qty: number; rep: string; mall: string; company: string; hasCost: boolean; cost: number; fee: number; feeFound: boolean; unim: number; ship: number; registered: boolean; invCompany?: string };
+    // 주문 → 매출 인식용 가공 (취소 제외). 영업이익은 라인별로 미리 계산.
+    // · 일반/수기/사방넷: (정산금액 − 원가 − 운임)/1.1 + 고객배송비×0.967  (정산금액 = 매출 − 몰수수료)
+    //   - 매출·원가·운임은 부가세 포함 → ÷1.1로 제거. 고객배송비는 부가세 대상 아님(3.3%만 차감).
+    //   - 운임·고객배송비는 합구매(같은 주문번호) 1회만 (주문당 첫 원가확인 라인).
+    // · 도매(source='도매'): 입력값으로 확정 = 매출 − 원가(개당×수량) − 배송비 (수수료/부가세 재계산 없음).
+    type Flt = { date: string; amt: number; qty: number; rep: string; mall: string; company: string;
+      profit: number; profitKnown: boolean; fee: number; unim: number;
+      missCost: boolean; registered: boolean; feeFound: boolean; invCompany?: string };
     const flt: Flt[] = [];
     const shipAssigned = new Set<string>(); // 운임 배정 완료한 주문번호
     let earliest = ymd(today);
@@ -156,14 +164,28 @@ export default function SalesContent() {
       if (qty < 1 && amt === 0) continue;
       const rep = matchProduct(o.collect_product || o.product_name || '').name;
       const inv = invMap.get(rep);
-      const hasCost = !!inv && inv.cost > 0;
       const date = o.upload_date || '';
       if (date && date < earliest) earliest = date;
-      // 사업자: 주문에 박힌 company 우선, 없으면 재고 매칭으로 추정
       const company = o.company || (inv ? inv.company : '미분류');
       const mall = o.mall_name || '(몰 미상)';
+
+      if (o.source === '도매') {
+        // 도매: 등록 시 입력값으로 마진 확정 (재계산 안 함)
+        const wcost = (Number(o.manual_cost) || 0) * qty;
+        const wship = Number(o.manual_shipping) || 0;
+        flt.push({
+          date, amt, qty, rep, mall, company,
+          profit: amt - wcost - wship, profitKnown: true,
+          fee: 0, unim: 0, missCost: false, registered: true, feeFound: true,
+          invCompany: inv?.company,
+        });
+        continue;
+      }
+
+      // 일반/수기/사방넷
+      const hasCost = !!inv && inv.cost > 0;
+      const cost = hasCost ? inv!.cost * qty : 0;
       const ff = lookupFee(feeMap, company, mall, amt);
-      // 운임·고객배송비 1회 배정 (주문당 첫 원가확인 라인)
       let unim = 0, ship = 0;
       const on = o.order_number || '';
       const key = on || `__noorder_${flt.length}`; // 주문번호 없으면 라인 단위로 취급
@@ -172,21 +194,14 @@ export default function SalesContent() {
         unim = UNIT_SHIPPING;
         ship = on ? (orderDeliveryMax.get(on) || 0) : (Number(o.delivery_fee) || 0);
       }
+      const profit = hasCost ? ((amt - ff.fee) - cost - unim) / VAT_DIV + ship * (1 - CUST_SHIP_ADJ) : 0;
       flt.push({
         date, amt, qty, rep, mall, company,
-        hasCost, cost: hasCost ? inv!.cost * qty : 0,
-        fee: ff.fee, feeFound: ff.found, unim, ship,
-        registered: !!inv, invCompany: inv?.company,
+        profit, profitKnown: hasCost, fee: ff.fee, unim,
+        missCost: !hasCost, registered: !!inv, feeFound: ff.found,
+        invCompany: inv?.company,
       });
     }
-
-    // 정석 영업이익: (정산금액 − 원가 − 운임)/1.1 + 고객배송비×(1−0.033)
-    // · 정산금액 = 매출 − 몰수수료(amt − fee). 매출·원가·운임은 부가세 포함 → ÷1.1로 제거.
-    // · 고객배송비(택배비)는 부가세 대상이 아니라 3.3% 세금만 차감 → ÷1.1 미적용, ×0.967.
-    // · 원가 미입력 라인은 0(원가 미입력 경고로 별도 처리).
-    const lineProfit = (r: Flt) => r.hasCost
-      ? ((r.amt - r.fee) - r.cost - r.unim) / VAT_DIV + r.ship * (1 - CUST_SHIP_ADJ)
-      : 0;
 
     const ranges = periodRanges(period, today, earliest);
     const cf = (company: string) => companyFilter === '전체' || company === companyFilter;
@@ -198,7 +213,7 @@ export default function SalesContent() {
         if (!cf(r.company)) continue;
         if (r.date < start || r.date > end) continue;
         rev += r.amt; cnt++;
-        if (r.hasCost) { prof += lineProfit(r); mrev += r.amt; }
+        if (r.profitKnown) { prof += r.profit; mrev += r.amt; }
       }
       return { rev, prof, mrev, cnt };
     };
@@ -214,15 +229,15 @@ export default function SalesContent() {
       if (!cf(r.company)) continue;
       if (r.date < ranges.curStart || r.date > ranges.curEnd) continue;
       curRev += r.amt; curCnt++; curQty += r.qty;
-      if (r.hasCost) { curProf += lineProfit(r); curMrev += r.amt; curFee += r.fee; curUnim += r.unim; }
+      if (r.profitKnown) { curProf += r.profit; curMrev += r.amt; curFee += r.fee; curUnim += r.unim; }
 
-      const p = productMap.get(r.rep) || { rev: 0, qty: 0, prof: 0, cnt: 0, hasCost: r.hasCost };
-      p.rev += r.amt; p.qty += r.qty; p.cnt++; if (r.hasCost) p.prof += lineProfit(r);
-      p.hasCost = p.hasCost && r.hasCost;
+      const p = productMap.get(r.rep) || { rev: 0, qty: 0, prof: 0, cnt: 0, hasCost: r.profitKnown };
+      p.rev += r.amt; p.qty += r.qty; p.cnt++; if (r.profitKnown) p.prof += r.profit;
+      p.hasCost = p.hasCost && r.profitKnown;
       productMap.set(r.rep, p);
 
       const m = mallMap.get(r.mall) || { rev: 0, cnt: 0, prof: 0, mrev: 0 };
-      m.rev += r.amt; m.cnt++; if (r.hasCost) { m.prof += lineProfit(r); m.mrev += r.amt; }
+      m.rev += r.amt; m.cnt++; if (r.profitKnown) { m.prof += r.profit; m.mrev += r.amt; }
       mallMap.set(r.mall, m);
 
       // 수수료 미설정 몰 추적 (매출은 있는데 요율 없음 → 경고)
@@ -232,7 +247,7 @@ export default function SalesContent() {
         fe.rev += r.amt; fe.cnt++; missFee.set(fk, fe);
       }
 
-      if (!r.hasCost) {
+      if (r.missCost) {
         if (r.registered) {
           const e = missEdit.get(r.rep) || { qty: 0, cnt: 0, rev: 0, company: r.invCompany || '미분류' };
           e.qty += r.qty; e.cnt++; e.rev += r.amt; missEdit.set(r.rep, e);
