@@ -59,6 +59,7 @@ export default function SalesTargetContent() {
   const [rows, setRows] = useState<TargetRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [chartCompany, setChartCompany] = useState('전체');
+  const [chartUnit, setChartUnit] = useState<'month' | 'quarter' | 'year'>('month');
   const [editCompany, setEditCompany] = useState(COMPANIES[0]);
 
   const load = useCallback(async () => {
@@ -95,20 +96,18 @@ export default function SalesTargetContent() {
   const totalActual = COMPANIES.reduce((s, c) => s + companyYearActual(c), 0);
   const totalPct = totalTarget > 0 ? totalActual / totalTarget * 100 : 0;
 
-  // 월별 차트 데이터 (선택 회사 또는 전체)
-  const monthly = Array.from({ length: 12 }, (_, i) => {
-    const m = i + 1;
-    if (chartCompany === '전체') {
-      return {
-        month: m,
-        target: COMPANIES.reduce((s, c) => s + (cell(c, m).target_amount || 0), 0),
-        actual: COMPANIES.reduce((s, c) => s + (cell(c, m).actual_amount || 0), 0),
-      };
-    }
-    const cc = cell(chartCompany, m);
-    return { month: m, target: cc.target_amount || 0, actual: cc.actual_amount || 0 };
-  });
-  const chartMax = Math.max(1, ...monthly.map(d => Math.max(d.target, d.actual)));
+  // 차트 데이터 — 월/분기/연 단위 (선택 회사 또는 전체)
+  const chartCos = chartCompany === '전체' ? COMPANIES : [chartCompany];
+  const sumMonths = (months: number[], field: 'target_amount' | 'actual_amount') =>
+    chartCos.reduce((s, c) => s + months.reduce((a, m) => a + (cell(c, m)[field] || 0), 0), 0);
+  const buckets: { label: string; target: number; actual: number }[] =
+    chartUnit === 'month'
+      ? Array.from({ length: 12 }, (_, i) => ({ label: `${i + 1}월`, target: sumMonths([i + 1], 'target_amount'), actual: sumMonths([i + 1], 'actual_amount') }))
+      : chartUnit === 'quarter'
+        ? [1, 2, 3, 4].map(q => { const ms = [q * 3 - 2, q * 3 - 1, q * 3]; return { label: `${q}분기`, target: sumMonths(ms, 'target_amount'), actual: sumMonths(ms, 'actual_amount') }; })
+        : [{ label: `${year}년`, target: sumMonths([1,2,3,4,5,6,7,8,9,10,11,12], 'target_amount'), actual: sumMonths([1,2,3,4,5,6,7,8,9,10,11,12], 'actual_amount') }];
+  const chartMax = Math.max(1, ...buckets.map(d => Math.max(d.target, d.actual)));
+  const chartMinW = chartUnit === 'month' ? 'min-w-[560px]' : chartUnit === 'quarter' ? 'min-w-[320px]' : 'min-w-[160px]';
 
   // 업서트
   async function saveCell(company: string, month: number, field: 'target_amount' | 'actual_amount' | 'target_margin', value: number) {
@@ -208,12 +207,20 @@ export default function SalesTargetContent() {
           {/* 월별 추이 막대 차트 */}
           <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
             <div className="flex items-center justify-between flex-wrap gap-2 mb-4">
-              <h3 className="font-bold text-gray-800">월별 목표 vs 실적</h3>
-              <div className="flex gap-1.5 flex-wrap">
-                {['전체', ...COMPANIES].map(c => (
-                  <button key={c} onClick={() => setChartCompany(c)}
-                    className={`px-2.5 py-1 rounded-lg text-sm font-medium ${chartCompany === c ? 'bg-slate-700 text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>{c}</button>
-                ))}
+              <h3 className="font-bold text-gray-800">목표 vs 실적</h3>
+              <div className="flex items-center gap-2 flex-wrap">
+                <div className="flex gap-1 bg-gray-100 rounded-lg p-0.5">
+                  {([['month','월별'],['quarter','분기별'],['year','연별']] as const).map(([u, l]) => (
+                    <button key={u} onClick={() => setChartUnit(u)}
+                      className={`px-2.5 py-1 rounded-md text-sm font-medium transition-colors ${chartUnit === u ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>{l}</button>
+                  ))}
+                </div>
+                <div className="flex gap-1.5 flex-wrap">
+                  {['전체', ...COMPANIES].map(c => (
+                    <button key={c} onClick={() => setChartCompany(c)}
+                      className={`px-2.5 py-1 rounded-lg text-sm font-medium ${chartCompany === c ? 'bg-slate-700 text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>{c}</button>
+                  ))}
+                </div>
               </div>
             </div>
             <div className="flex items-center gap-3 text-sm text-gray-500 mb-3">
@@ -221,11 +228,11 @@ export default function SalesTargetContent() {
               <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm bg-blue-500" />실적</span>
             </div>
             <div className="overflow-x-auto">
-              <div className="flex items-end gap-2 min-w-[560px] h-44 border-b border-gray-100 pb-0">
-                {monthly.map(d => {
+              <div className={`flex items-end gap-2 ${chartMinW} h-44 border-b border-gray-100 pb-0`}>
+                {buckets.map(d => {
                   const pct = d.target > 0 ? d.actual / d.target * 100 : 0;
                   return (
-                    <div key={d.month} className="flex-1 flex flex-col items-center justify-end h-full group">
+                    <div key={d.label} className="flex-1 flex flex-col items-center justify-end h-full group">
                       <div className="text-[10px] text-gray-400 mb-1 opacity-0 group-hover:opacity-100">{pct ? `${Math.round(pct)}%` : ''}</div>
                       <div className="flex items-end gap-0.5 w-full justify-center h-full">
                         <div className="w-2.5 bg-gray-300 rounded-t" style={{ height: `${d.target / chartMax * 100}%` }} title={`목표 ${won(d.target)}`} />
@@ -235,8 +242,8 @@ export default function SalesTargetContent() {
                   );
                 })}
               </div>
-              <div className="flex gap-2 min-w-[560px] mt-1">
-                {monthly.map(d => <div key={d.month} className="flex-1 text-center text-[10px] text-gray-400">{d.month}월</div>)}
+              <div className={`flex gap-2 ${chartMinW} mt-1`}>
+                {buckets.map(d => <div key={d.label} className="flex-1 text-center text-[10px] text-gray-400">{d.label}</div>)}
               </div>
             </div>
           </div>
