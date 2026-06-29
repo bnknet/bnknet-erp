@@ -5,7 +5,7 @@ import { convertOrders, buildSupabaseRows, matchProduct, type ConvertedOrderRow,
 import { supabaseFetch, supabaseFetchAll, supabaseUpload, safeStorageKey } from '@/lib/supabase';
 import { getUser } from '@/lib/auth';
 
-type Tab = 'convert' | 'history' | 'manage';
+type Tab = 'convert' | 'history' | 'manage' | 'register';
 type Status = { type: 'info' | 'success' | 'error'; msg: string } | null;
 
 // 사업자 선택 (값은 재고 테이블의 company 표기와 정확히 일치해야 함)
@@ -15,6 +15,13 @@ const COMPANY_OPTIONS = [
   { value: 'SJ글로벌', label: 'SJ글로벌' },
   { value: 'IX글로벌', label: 'IX글로벌' },
 ];
+
+// 직접 등록 시 판매몰 선택지 (정규 몰명 — 수수료표와 일치)
+const MALL_OPTIONS = ['스마트스토어', 'G마켓', '옥션', '11번가', '쿠팡', '토스', '쿠팡로켓그로스', 'SSG', 'Hmall', '롯데온', '인터파크', '카카오스토어', '자사몰Npay', '자사몰직접결제'];
+
+interface InvItem { id: string; product_name: string; company: string; cost_price?: number; quantity?: number }
+interface ManualLine { key: number; invId: string; productName: string; qty: number; amount: number; cost: number; shipping: number }
+const todayStr = () => new Date().toISOString().slice(0, 10);
 
 // 재고 자동출고 결과 경고
 interface ShipWarn {
@@ -64,6 +71,92 @@ export default function OrdersContent() {
   const [company, setCompany] = useState('');
   const [saving, setSaving] = useState(false);
   const [shipWarn, setShipWarn] = useState<ShipWarn | null>(null);
+
+  // 직접 주문 등록
+  const canRegister = me?.role === 'ceo' || me?.role === 'admin' || me?.role === 'inventory';
+  const [mType, setMType] = useState<'normal' | 'wholesale'>('normal');
+  const [mCompany, setMCompany] = useState('');
+  const [mDate, setMDate] = useState(todayStr());
+  const [mMall, setMMall] = useState('');
+  const [mPartner, setMPartner] = useState('');
+  const [mLines, setMLines] = useState<ManualLine[]>([{ key: 1, invId: '', productName: '', qty: 1, amount: 0, cost: 0, shipping: 0 }]);
+  const [inv, setInv] = useState<InvItem[]>([]);
+  const [invLoaded, setInvLoaded] = useState(false);
+  const [mStatus, setMStatus] = useState<Status>(null);
+
+  async function loadInventory() {
+    try {
+      const data = await supabaseFetchAll<InvItem>('/inventory?select=id,product_name,company,cost_price,quantity');
+      setInv(data); setInvLoaded(true);
+    } catch { setInvLoaded(true); }
+  }
+
+  const invForCompany = mCompany ? inv.filter((i) => i.company === mCompany) : [];
+
+  function setLine(key: number, patch: Partial<ManualLine>) {
+    setMLines((ls) => ls.map((l) => (l.key === key ? { ...l, ...patch } : l)));
+  }
+  function pickProduct(key: number, invId: string) {
+    const it = inv.find((i) => i.id === invId);
+    setLine(key, { invId, productName: it?.product_name || '', cost: mType === 'wholesale' ? (Number(it?.cost_price) || 0) : 0 });
+  }
+  function addLine() { setMLines((ls) => [...ls, { key: Math.max(0, ...ls.map((l) => l.key)) + 1, invId: '', productName: '', qty: 1, amount: 0, cost: 0, shipping: 0 }]); }
+  function removeLine(key: number) { setMLines((ls) => (ls.length > 1 ? ls.filter((l) => l.key !== key) : ls)); }
+
+  // 도매 마진 미리보기 = (매출 − 원가(개당×수량) − 배송비) ÷ 1.1  (모두 부가세 포함 입력)
+  const mWholesaleMargin = Math.round(mLines.reduce((s, l) => s + (l.amount - l.cost * l.qty - l.shipping), 0) / 1.1);
+
+  async function handleManualSave() {
+    if (!canRegister) { alert('주문 등록 권한이 없습니다 (재고·주문담당/대표/실장).'); return; }
+    if (!mCompany) { alert('사업자를 선택하세요.'); return; }
+    const mall = mType === 'wholesale' ? (mMall || '도매') : mMall;
+    if (!mall) { alert(mType === 'wholesale' ? '채널(도매/직거래)을 선택하세요.' : '판매몰을 선택하세요.'); return; }
+    const valid = mLines.filter((l) => l.invId && l.qty > 0 && l.amount > 0);
+    if (!valid.length) { alert('상품·수량·매출금액을 입력한 품목이 1개 이상 필요합니다.'); return; }
+
+    setSaving(true); setMStatus({ type: 'info', msg: '⏳ 등록 중...' }); setShipWarn(null);
+    try {
+      const rand = Math.random().toString(36).slice(2, 6).toUpperCase();
+      const orderNo = `M-${mDate.replace(/-/g, '')}-${rand}`;
+      const isW = mType === 'wholesale';
+      const rows = valid.map((l) => ({
+        upload_date: mDate, company: mCompany, order_number: orderNo, recipient_name: mPartner,
+        mall_name: mall, product_name: l.productName, collect_product: l.productName,
+        quantity: l.qty, amount: l.amount, is_bundle: valid.length > 1,
+        source: isW ? '도매' : '수기',
+        manual_cost: isW ? l.cost : null, manual_shipping: isW ? l.shipping : null,
+      }));
+
+      const res = await supabaseFetch('/orders', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify(rows) });
+      if (!res.ok) throw new Error('save');
+      const saved: { id: string; product_name?: string; quantity?: number }[] = await res.json();
+
+      await supabaseFetch('/order_uploads', {
+        method: 'POST', headers: { Prefer: 'return=minimal' },
+        body: JSON.stringify({ uploader: me?.name || '', file_name: `[직접등록${isW ? '·도매' : ''}] ${mall} ${valid.length}건`, file_url: null, row_count: valid.length, saved_count: valid.length }),
+      });
+
+      // 재고 자동출고 (선택한 상품 = 재고와 일치하므로 매칭 보장)
+      const invMap = new Map<string, string>();
+      for (const it of inv) { if (it.product_name) invMap.set(`${it.product_name}|${it.company}`, it.id); }
+      const moves = saved.map((o) => {
+        const invId = invMap.get(`${o.product_name}|${mCompany}`);
+        return invId ? { order_id: o.id, inventory_id: invId, quantity: Number(o.quantity) || 0, product_name: o.product_name, company: mCompany, created_by: me?.name || '' } : null;
+      }).filter(Boolean);
+      let shipped = 0; const negative: ShipWarn['negative'] = [];
+      if (moves.length) {
+        const shipRes = await supabaseFetch('/rpc/ship_orders', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ p_moves: moves }) });
+        if (shipRes.ok) { const r = await shipRes.json(); shipped = r?.shipped ?? 0; if (Array.isArray(r?.negative)) negative.push(...r.negative); }
+      }
+      if (negative.length) setShipWarn({ unmatched: [], negative, shipped });
+
+      setMStatus({ type: 'success', msg: `✅ ${isW ? '도매' : '직접'} 주문 ${valid.length}건 등록 완료 · 재고 차감 ${shipped}건 (주문번호 ${orderNo})` });
+      setMLines([{ key: 1, invId: '', productName: '', qty: 1, amount: 0, cost: 0, shipping: 0 }]);
+      setMPartner('');
+    } catch {
+      setMStatus({ type: 'error', msg: '❌ 등록 중 오류가 발생했습니다. (설정 db/manual_orders.sql 적용 여부 확인)' });
+    } finally { setSaving(false); }
+  }
 
   // 주문 조회/취소
   const [sOrderNo, setSOrderNo] = useState('');
@@ -344,6 +437,7 @@ export default function OrdersContent() {
   function handleTabChange(t: Tab) {
     setTab(t);
     if (t === 'history') loadHistory();
+    if (t === 'register' && !invLoaded) loadInventory();
   }
 
   const statusColors = {
@@ -385,6 +479,16 @@ export default function OrdersContent() {
           }`}
         >
           🔍 주문 조회·취소
+        </button>
+        <button
+          onClick={() => handleTabChange('register')}
+          className={`px-5 py-2.5 rounded-xl font-medium text-base transition-all ${
+            tab === 'register'
+              ? 'bg-blue-600 text-white shadow-md shadow-blue-500/20'
+              : 'bg-white text-gray-600 hover:bg-gray-50 border border-gray-200'
+          }`}
+        >
+          ✍️ 직접 주문 등록
         </button>
       </div>
 
@@ -723,6 +827,111 @@ export default function OrdersContent() {
             )}
           </div>
           <p className="text-xs text-gray-400">💡 취소 처리 시 차감했던 재고가 자동으로 복구되고, 취소 해제 시 다시 차감됩니다(이력에 기록). 매출·영업이익에서도 자동 제외/포함됩니다.</p>
+        </div>
+      )}
+
+      {/* 직접 주문 등록 탭 */}
+      {tab === 'register' && (
+        <div className="space-y-4">
+          <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 space-y-4">
+            <div>
+              <h2 className="text-lg font-bold text-gray-800 mb-1">직접 주문 등록</h2>
+              <p className="text-base text-gray-400">사방넷 없이 발생한 주문(도매·직거래·기타)을 직접 등록합니다. 저장 시 매출 집계 + 재고 자동 차감.</p>
+            </div>
+
+            {!canRegister && <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-base text-amber-700">⚠️ 등록 권한이 없습니다. (대표·실장·재고/주문담당만 등록 가능)</div>}
+
+            {/* 유형 */}
+            <div className="flex gap-2">
+              {([{ v: 'normal', l: '일반(몰) 주문' }, { v: 'wholesale', l: '도매·직거래' }] as const).map((t) => (
+                <button key={t.v} onClick={() => { setMType(t.v); setMMall(''); }}
+                  className={`px-4 py-2 rounded-lg text-base font-medium border ${mType === t.v ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600 border-gray-200'}`}>{t.l}</button>
+              ))}
+            </div>
+
+            {/* 기본 정보 */}
+            <div className="grid sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-sm text-gray-500 mb-1">사업자 *</label>
+                <select value={mCompany} onChange={(e) => setMCompany(e.target.value)} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-base">
+                  <option value="">선택</option>
+                  {COMPANY_OPTIONS.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm text-gray-500 mb-1">날짜 *</label>
+                <input type="date" value={mDate} onChange={(e) => setMDate(e.target.value)} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-base" />
+              </div>
+              <div>
+                <label className="block text-sm text-gray-500 mb-1">{mType === 'wholesale' ? '채널' : '판매몰'} *</label>
+                {mType === 'wholesale' ? (
+                  <select value={mMall} onChange={(e) => setMMall(e.target.value)} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-base">
+                    <option value="">선택</option><option value="도매">도매</option><option value="직거래">직거래</option>
+                  </select>
+                ) : (
+                  <select value={mMall} onChange={(e) => setMMall(e.target.value)} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-base">
+                    <option value="">선택</option>{MALL_OPTIONS.map((m) => <option key={m} value={m}>{m}</option>)}
+                  </select>
+                )}
+              </div>
+              <div>
+                <label className="block text-sm text-gray-500 mb-1">거래처/수취인 (선택)</label>
+                <input value={mPartner} onChange={(e) => setMPartner(e.target.value)} placeholder="예: ○○상사" className="w-full px-3 py-2 border border-gray-200 rounded-lg text-base" />
+              </div>
+            </div>
+
+            {!mCompany && <div className="text-sm text-gray-400">※ 사업자를 먼저 선택하면 해당 사업자 재고에서 상품을 고를 수 있습니다.</div>}
+
+            {/* 품목 */}
+            <div className="space-y-2">
+              <div className="text-base font-semibold text-gray-700">품목</div>
+              {mLines.map((l) => (
+                <div key={l.key} className="flex flex-wrap items-end gap-2 p-3 bg-gray-50 rounded-xl">
+                  <div className="flex-1 min-w-[200px]">
+                    <label className="block text-xs text-gray-400 mb-1">상품 (재고에서 선택)</label>
+                    <select value={l.invId} onChange={(e) => pickProduct(l.key, e.target.value)} disabled={!mCompany}
+                      className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-base bg-white disabled:bg-gray-100">
+                      <option value="">{mCompany ? (invForCompany.length ? '상품 선택' : '재고 없음') : '사업자 먼저'}</option>
+                      {invForCompany.map((i) => <option key={i.id} value={i.id}>{i.product_name} (재고 {i.quantity ?? 0})</option>)}
+                    </select>
+                  </div>
+                  <div className="w-20"><label className="block text-xs text-gray-400 mb-1">수량</label>
+                    <input type="number" value={l.qty || ''} onChange={(e) => setLine(l.key, { qty: Number(e.target.value) || 0 })} className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-base text-right" /></div>
+                  <div className="w-28"><label className="block text-xs text-gray-400 mb-1">매출금액</label>
+                    <input type="number" value={l.amount || ''} onChange={(e) => setLine(l.key, { amount: Number(e.target.value) || 0 })} className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-base text-right" /></div>
+                  {mType === 'wholesale' && <>
+                    <div className="w-24"><label className="block text-xs text-gray-400 mb-1">개당원가</label>
+                      <input type="number" value={l.cost || ''} onChange={(e) => setLine(l.key, { cost: Number(e.target.value) || 0 })} className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-base text-right" /></div>
+                    <div className="w-24"><label className="block text-xs text-gray-400 mb-1">배송비</label>
+                      <input type="number" value={l.shipping || ''} onChange={(e) => setLine(l.key, { shipping: Number(e.target.value) || 0 })} className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-base text-right" /></div>
+                  </>}
+                  <button onClick={() => removeLine(l.key)} className="px-2 py-1.5 text-red-400 hover:text-red-600 text-sm">삭제</button>
+                </div>
+              ))}
+              <button onClick={addLine} className="px-3 py-1.5 text-blue-600 text-sm font-medium hover:bg-blue-50 rounded-lg">+ 품목 추가</button>
+            </div>
+
+            {/* 도매 마진 미리보기 */}
+            {mType === 'wholesale' && (
+              <div className="bg-violet-50 border border-violet-200 rounded-xl px-4 py-3 text-base text-violet-700">
+                예상 마진(확정 저장): <b>{mWholesaleMargin.toLocaleString('ko-KR')}원</b> <span className="text-sm text-violet-500">= (매출 − 원가(개당×수량) − 배송비) ÷ 1.1. 부가세 포함 금액으로 입력하세요. 이 값으로 확정됩니다.</span>
+              </div>
+            )}
+
+            {mStatus && <div className={`px-4 py-3 rounded-xl border text-base ${statusColors[mStatus.type]}`}>{mStatus.msg}</div>}
+
+            <button onClick={handleManualSave} disabled={saving || !canRegister}
+              className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-medium text-base shadow-sm disabled:opacity-50 disabled:cursor-not-allowed">
+              {saving ? '⏳ 등록 중...' : '💾 주문 등록 + 재고 차감'}
+            </button>
+          </div>
+
+          {shipWarn && shipWarn.negative.length > 0 && (
+            <div className="bg-red-50 border border-red-200 rounded-xl px-5 py-4">
+              <div className="text-base font-semibold text-orange-600">⚠️ 출고 후 재고 마이너스 {shipWarn.negative.length}종</div>
+              <div className="flex flex-wrap gap-2 mt-2">{shipWarn.negative.map((m, i) => (<span key={i} className="px-2.5 py-1 rounded-lg bg-white border border-orange-200 text-sm text-gray-700">{m.product_name} · 재고 {m.after}</span>))}</div>
+            </div>
+          )}
         </div>
       )}
 

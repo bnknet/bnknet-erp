@@ -12,6 +12,7 @@ interface TargetRow {
   month: number;
   target_amount: number;
   actual_amount: number;
+  target_margin?: number;
 }
 
 const COMPANIES = ['BNKNET', 'SJ글로벌', '더블아이', 'IX글로벌'];
@@ -69,16 +70,21 @@ export default function SalesTargetContent() {
     } finally { setLoading(false); }
   }, [year]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { (async () => { await load(); })(); }, [load]);
 
   // 조회 헬퍼
-  const cell = (company: string, month: number) =>
+  const cell = (company: string, month: number): { target_amount: number; actual_amount: number; target_margin?: number } =>
     rows.find(r => r.company === company && r.month === month) || { target_amount: 0, actual_amount: 0 };
 
   const companyYearTarget = (company: string) =>
     rows.filter(r => r.company === company).reduce((s, r) => s + (r.target_amount || 0), 0);
   const companyYearActual = (company: string) =>
     rows.filter(r => r.company === company).reduce((s, r) => s + (r.actual_amount || 0), 0);
+  // 목표 마진율 (월별 동일값 → 입력된 값 중 첫 값)
+  const companyMargin = (company: string) => {
+    const r = rows.find(r => r.company === company && r.target_margin != null);
+    return r?.target_margin ?? null;
+  };
 
   const quarterSum = (company: string, q: number, field: 'target_amount' | 'actual_amount') => {
     const months = [q * 3 - 2, q * 3 - 1, q * 3];
@@ -105,7 +111,7 @@ export default function SalesTargetContent() {
   const chartMax = Math.max(1, ...monthly.map(d => Math.max(d.target, d.actual)));
 
   // 업서트
-  async function saveCell(company: string, month: number, field: 'target_amount' | 'actual_amount', value: number) {
+  async function saveCell(company: string, month: number, field: 'target_amount' | 'actual_amount' | 'target_margin', value: number) {
     await supabaseFetch('/sales_targets?on_conflict=company,year,month', {
       method: 'POST',
       headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
@@ -189,6 +195,9 @@ export default function SalesTargetContent() {
                       </div>
                       <div className="text-sm text-gray-400 mt-1">목표 {manwon(t)}</div>
                       <div className="text-sm text-gray-600">실적 <span className="font-medium">{manwon(a)}</span></div>
+                      {companyMargin(c) != null && (
+                        <div className="text-sm text-violet-600 mt-0.5">목표 마진율 {companyMargin(c)}%</div>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -286,6 +295,7 @@ export default function SalesTargetContent() {
                   <tr>
                     <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">월</th>
                     <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">목표 금액</th>
+                    <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">목표 마진율(%)</th>
                     <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">실적 금액</th>
                     <th className="px-4 py-3 text-center text-sm font-medium text-gray-500">달성률</th>
                   </tr>
@@ -303,6 +313,11 @@ export default function SalesTargetContent() {
                             className="w-32 text-right px-2 py-1 border border-gray-200 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-blue-400" />
                         </td>
                         <td className="px-4 py-2 text-right">
+                          <input type="number" step="0.1" defaultValue={cc.target_margin ?? ''} placeholder="0"
+                            onBlur={e => { const v = Number(e.target.value) || 0; if (v !== (cc.target_margin || 0)) saveCell(editCompany, m, 'target_margin', v); }}
+                            className="w-24 text-right px-2 py-1 border border-gray-200 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-blue-400" />
+                        </td>
+                        <td className="px-4 py-2 text-right">
                           <input type="number" defaultValue={cc.actual_amount || ''} placeholder="0"
                             onBlur={e => { const v = Number(e.target.value) || 0; if (v !== (cc.actual_amount || 0)) saveCell(editCompany, m, 'actual_amount', v); }}
                             className="w-32 text-right px-2 py-1 border border-gray-200 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-blue-400" />
@@ -318,6 +333,7 @@ export default function SalesTargetContent() {
                   <tr className="bg-gray-50 font-bold border-t border-gray-200">
                     <td className="px-4 py-3 text-gray-700">연간 합계</td>
                     <td className="px-4 py-3 text-right text-gray-800">{won(companyYearTarget(editCompany))}원</td>
+                    <td className="px-4 py-3 text-right text-violet-600">{companyMargin(editCompany) != null ? `${companyMargin(editCompany)}%` : '-'}</td>
                     <td className="px-4 py-3 text-right text-gray-800">{won(companyYearActual(editCompany))}원</td>
                     <td className="px-4 py-3 text-center">
                       {(() => { const t = companyYearTarget(editCompany), a = companyYearActual(editCompany); const pct = t > 0 ? a / t * 100 : 0;
