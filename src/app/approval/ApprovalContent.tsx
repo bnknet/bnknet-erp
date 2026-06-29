@@ -600,6 +600,49 @@ export default function ApprovalContent() {
     setItems(prev => prev.map((item, i) => i === idx ? { ...item, [field]: value } : item));
   }
 
+  // 지출결의서 품목 엑셀 양식 다운로드 (인식 가능한 고정 열 구성)
+  async function downloadItemTemplate() {
+    const XLSX = await import('xlsx');
+    const sample = [
+      { '월/일': '07/01', '구매상품': '예시) 비타민C 1000mg', '구매수량': 2, '금액': 50000, '비고': '' },
+      { '월/일': '', '구매상품': '', '구매수량': '', '금액': '', '비고': '' },
+    ];
+    const ws = XLSX.utils.json_to_sheet(sample, { header: ['월/일', '구매상품', '구매수량', '금액', '비고'] });
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, '품목');
+    XLSX.writeFile(wb, '지출결의서_품목양식.xlsx');
+  }
+
+  // 엑셀 양식 업로드 → 품목으로 반영 (열 이름 유연 매칭)
+  async function handleItemExcel(file: File | null) {
+    if (!file) return;
+    try {
+      const XLSX = await import('xlsx');
+      const buf = await file.arrayBuffer();
+      const wb = XLSX.read(buf, { type: 'array' });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws, { defval: '' });
+      const num = (v: unknown) => Number(String(v).replace(/[^\d.-]/g, '')) || 0;
+      const pick = (r: Record<string, unknown>, keys: string[]) => {
+        for (const k of keys) if (r[k] !== undefined && r[k] !== '') return r[k];
+        return '';
+      };
+      const parsed: ApprovalItem[] = rows.map((r, idx) => ({
+        item_date: String(pick(r, ['월/일', '월일', '날짜', '일자'])).trim(),
+        description: String(pick(r, ['구매상품', '적요', '상품', '품목', '내용'])).trim(),
+        quantity: num(pick(r, ['구매수량', '수량'])),
+        amount: num(pick(r, ['금액', '가격'])),
+        note: String(pick(r, ['비고', '메모'])).trim(),
+        sort_order: idx,
+      })).filter(it => it.description || it.amount);
+      if (!parsed.length) { alert('읽을 항목이 없습니다. 양식의 열 이름(월/일·구매상품·구매수량·금액·비고)을 확인하세요.'); return; }
+      setItems(parsed.map((it, i) => ({ ...it, sort_order: i })));
+      alert(`✅ ${parsed.length}건을 불러왔습니다. 내용 확인 후 상신하세요.`);
+    } catch {
+      alert('엑셀 읽기에 실패했습니다. 다운로드한 .xlsx 양식 파일인지 확인하세요.');
+    }
+  }
+
   function isMyTurn(approval: Approval): boolean {
     if (approval.status !== 'pending') return false;
     const hasStep2 = APPROVAL_LINES[approval.company]?.length === 3;
@@ -1144,8 +1187,18 @@ export default function ApprovalContent() {
                 <div className="w-36 px-2 py-2" />
               </div>
             </div>
-            <button onClick={() => setItems(p => [...p, { ...EMPTY_ITEM, sort_order: p.length }])}
-              className="text-sm text-blue-500 hover:underline mb-4 block">+ 항목 추가</button>
+            <div className="flex items-center gap-3 flex-wrap mb-4">
+              <button onClick={() => setItems(p => [...p, { ...EMPTY_ITEM, sort_order: p.length }])}
+                className="text-sm text-blue-500 hover:underline">+ 항목 추가</button>
+              <span className="text-gray-300">|</span>
+              <button onClick={downloadItemTemplate} className="text-sm text-green-600 hover:underline">⬇️ 엑셀 양식 다운로드</button>
+              <label className="text-sm text-blue-600 hover:underline cursor-pointer">
+                📤 엑셀로 품목 불러오기
+                <input type="file" accept=".xlsx" className="hidden"
+                  onChange={e => { handleItemExcel(e.target.files?.[0] || null); e.target.value = ''; }} />
+              </label>
+              <span className="text-xs text-gray-400">긴 구매 품목은 엑셀 양식에 작성해 한 번에 올리세요</span>
+            </div>
 
             {/* 첨부파일 */}
             <div className="border border-gray-200 rounded-xl p-4 mb-6 bg-gray-50/50">
