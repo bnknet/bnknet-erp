@@ -180,10 +180,12 @@ export default function SalesContent() {
       });
     }
 
-    // 정석 영업이익(부가세 제외): (정산금액 − 원가 − 운임 + 고객배송비)/1.1 − 고객배송비×0.033
-    // 정산금액 = 매출 − 몰수수료(amt − fee). 원가 미입력 라인은 0(원가 미입력 경고로 별도 처리).
+    // 정석 영업이익: (정산금액 − 원가 − 운임)/1.1 + 고객배송비×(1−0.033)
+    // · 정산금액 = 매출 − 몰수수료(amt − fee). 매출·원가·운임은 부가세 포함 → ÷1.1로 제거.
+    // · 고객배송비(택배비)는 부가세 대상이 아니라 3.3% 세금만 차감 → ÷1.1 미적용, ×0.967.
+    // · 원가 미입력 라인은 0(원가 미입력 경고로 별도 처리).
     const lineProfit = (r: Flt) => r.hasCost
-      ? ((r.amt - r.fee) - r.cost - r.unim + r.ship) / VAT_DIV - r.ship * CUST_SHIP_ADJ
+      ? ((r.amt - r.fee) - r.cost - r.unim) / VAT_DIV + r.ship * (1 - CUST_SHIP_ADJ)
       : 0;
 
     const ranges = periodRanges(period, today, earliest);
@@ -539,7 +541,7 @@ export default function SalesContent() {
 
       <p className="text-sm text-gray-400">
         ※ 매출은 주문 변환·저장된 데이터(취소 제외)를 실시간 집계합니다.
-        영업이익 = (정산금액 − 원가 − 운임 + 고객배송비) ÷ 1.1 − 고객배송비×{CUST_SHIP_ADJ} (정산금액 = 매출 − 몰수수료). 부가세 제외(공급가액) 기준.
+        영업이익 = (정산금액 − 원가 − 운임) ÷ 1.1 + 고객배송비×{1 - CUST_SHIP_ADJ} (정산금액 = 매출 − 몰수수료). 매출·원가·운임은 부가세 제외(÷1.1), 배송비는 부가세 대상 아님(3.3% 세금만 차감).
         운임 건당 {UNIT_SHIPPING.toLocaleString('ko-KR')}원(합구매는 주문당 1회). 수수료율은 사업자·판매몰별이며 mall_fees에서 수정 가능. 마진율 = 영업이익 ÷ 판매금액.
       </p>
     </div>
