@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { clearUser, getUser } from '@/lib/auth';
+import { clearUser, getUser, ROLE_ALLOWED_PATHS } from '@/lib/auth';
 import { supabaseFetch } from '@/lib/supabase';
 
 type MenuItem = { href: string; label: string; icon: string; badge?: boolean; roles?: string[] };
@@ -140,8 +140,10 @@ export default function Sidebar({ mobileOpen, onClose }: SidebarProps) {
         {/* 메뉴 */}
         <nav className="flex-1 overflow-y-auto py-4 px-3">
           {menuItems.map((group) => {
+            const allowPaths = user?.role ? ROLE_ALLOWED_PATHS[user.role] : undefined;
             const visibleItems = group.items.filter(
-              (item) => !item.roles || item.roles.includes(user?.role || '')
+              (item) => (!item.roles || item.roles.includes(user?.role || ''))
+                && (!allowPaths || allowPaths.includes(item.href))
             );
             if (visibleItems.length === 0) return null;
             return (

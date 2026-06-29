@@ -150,7 +150,7 @@ export default function SalesContent() {
     // · 일반/수기/사방넷: (정산금액 − 원가 − 운임)/1.1 + 고객배송비×0.967  (정산금액 = 매출 − 몰수수료)
     //   - 매출·원가·운임은 부가세 포함 → ÷1.1로 제거. 고객배송비는 부가세 대상 아님(3.3%만 차감).
     //   - 운임·고객배송비는 합구매(같은 주문번호) 1회만 (주문당 첫 원가확인 라인).
-    // · 도매(source='도매'): 입력값으로 확정 = 매출 − 원가(개당×수량) − 배송비 (수수료/부가세 재계산 없음).
+    // · 도매(source='도매'): 입력값으로 확정 = (매출 − 원가(개당×수량) − 배송비)/1.1 (수수료 없음, 모두 부가세 포함 → ÷1.1).
     type Flt = { date: string; amt: number; qty: number; rep: string; mall: string; company: string;
       profit: number; profitKnown: boolean; fee: number; unim: number;
       missCost: boolean; registered: boolean; feeFound: boolean; invCompany?: string };
@@ -175,7 +175,7 @@ export default function SalesContent() {
         const wship = Number(o.manual_shipping) || 0;
         flt.push({
           date, amt, qty, rep, mall, company,
-          profit: amt - wcost - wship, profitKnown: true,
+          profit: (amt - wcost - wship) / VAT_DIV, profitKnown: true,
           fee: 0, unim: 0, missCost: false, registered: true, feeFound: true,
           invCompany: inv?.company,
         });
