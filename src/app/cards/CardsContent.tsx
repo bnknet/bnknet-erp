@@ -536,7 +536,7 @@ export default function CardsContent() {
             )}
           </div>
           <div className="flex items-center justify-between gap-2 flex-wrap">
-            <p className="text-xs text-gray-400">💡 사용액 = 전체한도 − 6/30 실잔여 + ERP 미결제 카드구매. 잔여한도는 6/30 실잔여에서 시작해 결재가 쌓일수록 줄어듭니다.</p>
+            <p className="text-xs text-gray-400">💡 잔여한도(실시간) = 6/30 잔여 기준값에서 시작 · 카드구매 결재 −차감 / 선결제 결재 +복구. (6/30 기준값은 카드 수정에서 확인·변경)</p>
             <button onClick={exportPurchaseExcel}
               className="px-3 py-1.5 text-sm border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50 whitespace-nowrap">📊 카드 구매내역 엑셀 (세무용)</button>
           </div>
@@ -566,19 +566,13 @@ export default function CardsContent() {
                     <div className="text-xs text-gray-400 mt-0.5">{g.cards[0].holder_name}</div>
                     <div className="border-t border-gray-100 mt-3 pt-3">
                       <div className="flex justify-between items-baseline">
-                        <span className="text-xs text-gray-400">잔여한도</span>
+                        <span className="text-xs text-gray-400">잔여한도 (실시간)</span>
                         <span className={`text-xl font-bold ${g.remaining <= 0 ? 'text-red-500' : pct >= 80 ? 'text-orange-500' : 'text-green-600'}`}>{won(g.remaining)}원</span>
                       </div>
                       <div className="flex justify-between text-xs text-gray-400 mt-1">
                         <span>사용 {won(g.used)}</span>
                         <span>전체한도 {g.limit > 0 ? won(g.limit) : '미설정'}</span>
                       </div>
-                      {g.opening > 0 && (
-                        <div className="flex justify-between text-xs mt-1">
-                          <span className="text-violet-400">6/30 실잔여(참고)</span>
-                          <span className="text-violet-600 font-medium">{won(g.opening)}원</span>
-                        </div>
-                      )}
                       {g.limit > 0 && (
                         <div className="mt-2">
                           <div className="flex justify-between text-xs mb-1">
