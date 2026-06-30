@@ -10,6 +10,7 @@ export interface MiniOrder {
   quantity?: number;
   amount?: number;
   canceled?: boolean;
+  company?: string;
 }
 
 export interface MiniInv {
@@ -28,19 +29,24 @@ export interface CostGapSummary {
   anomaly: boolean;        // 주문은 있는데 매출이 0 (이상 징후)
 }
 
-// 재고 → 상품명별 {원가, 사업자} 맵 (같은 이름이면 원가>0인 것 우선)
-function buildInvMap(inventory: MiniInv[]): Map<string, { cost: number; company: string }> {
-  const invMap = new Map<string, { cost: number; company: string }>();
+// 재고 → (상품명+사업자)별 + 상품명 폴백 맵 (같은 이름이면 원가>0인 것 우선)
+type InvVal = { cost: number; company: string };
+function buildInvMaps(inventory: MiniInv[]): { byKey: Map<string, InvVal>; byName: Map<string, InvVal> } {
+  const byKey = new Map<string, InvVal>();
+  const byName = new Map<string, InvVal>();
   for (const it of inventory) {
-    const key = it.product_name;
-    if (!key) continue;
+    const name = it.product_name;
+    if (!name) continue;
     const cost = Number(it.cost_price) || 0;
-    const prev = invMap.get(key);
-    if (!prev || (prev.cost === 0 && cost > 0)) {
-      invMap.set(key, { cost, company: it.company || '미분류' });
-    }
+    const co = it.company || '미분류';
+    const val: InvVal = { cost, company: co };
+    const k = `${name}|${co}`;
+    const pk = byKey.get(k);
+    if (!pk || (pk.cost === 0 && cost > 0)) byKey.set(k, val);
+    const pn = byName.get(name);
+    if (!pn || (pn.cost === 0 && cost > 0)) byName.set(name, val);
   }
-  return invMap;
+  return { byKey, byName };
 }
 
 /**
@@ -53,7 +59,7 @@ export function computeCostGap(
   start: string,
   end: string,
 ): CostGapSummary {
-  const invMap = buildInvMap(inventory);
+  const { byKey, byName } = buildInvMaps(inventory);
   const editable = new Set<string>();
   const unreg = new Set<string>();
   let missingRevenue = 0;
@@ -72,7 +78,7 @@ export function computeCostGap(
     orderCount++;
 
     const rep = matchProduct(o.collect_product || o.product_name || '').name;
-    const inv = invMap.get(rep);
+    const inv = (o.company ? byKey.get(`${rep}|${o.company}`) : undefined) || byName.get(rep);
     const hasCost = !!inv && inv.cost > 0;
     if (!hasCost) {
       missingRevenue += amt;
