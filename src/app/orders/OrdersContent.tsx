@@ -356,6 +356,7 @@ export default function OrdersContent() {
       // ── 재고 자동출고 ────────────────────────────────────────
       // 상품명(대표명) + 사업자로 재고 매칭 → 못 찾으면 경고(자동출고 안 함, 안전장치)
       let warn: ShipWarn = { unmatched: [], negative: [], shipped: 0 };
+      let unknownProducts: { name: string; cnt: number; qty: number }[] = [];
       try {
         const inv = await supabaseFetchAll<{ id: string; product_name: string; company: string; quantity: number }>(
           '/inventory?select=id,product_name,company,quantity',
@@ -369,9 +370,16 @@ export default function OrdersContent() {
 
         const moves: Record<string, string | number>[] = [];
         const missMap = new Map<string, { cnt: number; qty: number }>();
+        const unknownMap = new Map<string, { cnt: number; qty: number }>(); // 매칭데이터(PRODUCT_MAP)에 없는 = 인식 못한 상품명
         for (const o of saved) {
-          const rep = matchProduct(o.collect_product || o.product_name || '').name;
+          const matched = matchProduct(o.collect_product || o.product_name || '');
+          const rep = matched.name;
           const qty = Number(o.quantity) || 0;
+          if (!matched.matched) {
+            const raw = (o.collect_product || o.product_name || '(상품명 없음)').trim();
+            const u = unknownMap.get(raw) || { cnt: 0, qty: 0 };
+            u.cnt++; u.qty += qty; unknownMap.set(raw, u);
+          }
           const invId = invMap.get(`${rep}|${company}`);
           if (invId) {
             moves.push({ order_id: o.id, inventory_id: invId, quantity: qty, product_name: rep, company, created_by: me?.name || '' });
@@ -380,6 +388,7 @@ export default function OrdersContent() {
             m.cnt++; m.qty += qty; missMap.set(rep, m);
           }
         }
+        unknownProducts = Array.from(unknownMap.entries()).map(([name, v]) => ({ name, ...v })).sort((a, b) => b.qty - a.qty);
 
         if (moves.length) {
           const shipRes = await supabaseFetch('/rpc/ship_orders', {
@@ -401,6 +410,10 @@ export default function OrdersContent() {
       // ── 안전장치: 자동출고 문제 발생 시 DB 알림 기록 → 대시보드 경고로 노출 ──
       try {
         const alerts: Record<string, string | number>[] = [];
+        if (unknownProducts.length) {
+          const d = unknownProducts.slice(0, 30).map(u => `${u.name}(${u.qty}개)`).join(', ');
+          alerts.push({ company, kind: 'unknown_product', detail: `매칭데이터에 없는(인식 못한) 상품 ${unknownProducts.length}종: ${d} — 상품 매칭/재고 등록 필요`, order_count: unknownProducts.reduce((s, u) => s + u.cnt, 0), created_by: me?.name || '' });
+        }
         if (warn.shipped === -1) {
           alerts.push({ company, kind: 'rpc_fail', detail: `재고 자동출고 실패 — 주문 ${newRows.length}건 저장됨(재고 수동 조정 필요)`, order_count: newRows.length, created_by: me?.name || '' });
         }

@@ -16,7 +16,7 @@ interface ShipAlert {
   order_count?: number;
 }
 const SHIP_ALERT_LABEL: Record<string, string> = {
-  unmatched: '재고 미매칭', negative: '재고 부족', rpc_fail: '자동출고 실패',
+  unknown_product: '인식 못한 상품(매칭 필요)', unmatched: '재고 미매칭', negative: '재고 부족', rpc_fail: '자동출고 실패',
 };
 
 const pad = (n: number) => String(n).padStart(2, '0');
