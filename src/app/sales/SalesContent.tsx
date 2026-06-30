@@ -599,13 +599,16 @@ export default function SalesContent() {
         {trend.length === 0 || trendMax <= 1 ? (
           <div className="text-base text-gray-400 text-center py-12">표시할 데이터가 없습니다</div>
         ) : (
-          <div className={`flex items-end gap-2 h-56 ${trend.length > 16 ? 'overflow-x-auto' : ''}`}>
+          <div className={`flex items-stretch gap-1 h-52 ${trend.length > 16 ? 'overflow-x-auto' : ''}`}>
             {trend.map((t, i) => (
-              <div key={i} className="flex-1 min-w-[28px] flex flex-col items-center justify-end h-full gap-1 group">
-                <div className={`text-xs whitespace-nowrap ${t.isCurrent ? 'text-blue-600 font-semibold' : 'text-gray-500'}`}>{t.rev > 0 ? wonShort(t.rev) : ''}</div>
-                <div className={`w-full rounded-t transition-all ${t.isCurrent ? 'bg-blue-600' : t.rev === trendMax ? 'bg-blue-400' : 'bg-blue-200'} group-hover:bg-blue-500`}
-                  style={{ height: `${Math.max(t.rev > 0 ? 4 : 0, (t.rev / trendMax) * 100)}%` }} title={`${t.label} · ${won(t.rev)}`} />
-                <div className={`text-sm whitespace-nowrap ${t.isCurrent ? 'text-blue-600 font-medium' : 'text-gray-400'}`}>{t.label}</div>
+              <div key={i} className="flex-1 min-w-[28px] flex flex-col items-center group">
+                {/* 막대 영역 (값 라벨 + 막대) */}
+                <div className="flex-1 w-full flex flex-col items-center justify-end gap-1.5 min-h-0">
+                  <div className={`text-[11px] whitespace-nowrap ${t.isCurrent ? 'text-blue-600 font-semibold' : 'text-gray-400'}`}>{t.rev > 0 ? wonShort(t.rev) : ''}</div>
+                  <div className={`w-7 rounded-t-md transition-all ${t.isCurrent ? 'bg-blue-500' : 'bg-blue-200'} group-hover:bg-blue-400`}
+                    style={{ height: `${Math.max(t.rev > 0 ? 3 : 0, (t.rev / trendMax) * 100)}%` }} title={`${t.label} · ${won(t.rev)}`} />
+                </div>
+                <div className={`mt-2 text-xs whitespace-nowrap ${t.isCurrent ? 'text-blue-600 font-medium' : 'text-gray-400'}`}>{t.label}</div>
               </div>
             ))}
           </div>
@@ -622,7 +625,7 @@ export default function SalesContent() {
                 <thead>
                   <tr className="text-left text-sm text-gray-400 border-b">
                     <th className="py-2 pr-3">상품명</th><th className="py-2 pr-3 text-right">매출</th>
-                    <th className="py-2 pr-3 text-right">수량</th><th className="py-2 pr-3 text-right">영업이익</th>
+                    <th className="py-2 pr-3 text-right">영업이익</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -630,7 +633,6 @@ export default function SalesContent() {
                     <tr key={p.name} className="border-b border-gray-50">
                       <td className="py-2 pr-3 font-medium text-gray-700">{p.name}{!p.hasCost && <span className="ml-1 text-xs text-red-400">원가?</span>}</td>
                       <td className="py-2 pr-3 text-right text-gray-700">{won(p.rev)}</td>
-                      <td className="py-2 pr-3 text-right text-gray-500">{p.qty}</td>
                       <td className="py-2 pr-3 text-right text-gray-500">{p.hasCost ? won(p.prof) : '-'}</td>
                     </tr>
                   ))}
@@ -648,7 +650,7 @@ export default function SalesContent() {
                 <thead>
                   <tr className="text-left text-sm text-gray-400 border-b">
                     <th className="py-2 pr-3">판매몰</th><th className="py-2 pr-3 text-right">매출</th>
-                    <th className="py-2 pr-3 text-right">건수</th><th className="py-2 pr-3 text-right">영업이익</th><th className="py-2 pr-3 text-right">이익률</th>
+                    <th className="py-2 pr-3 text-right">영업이익</th><th className="py-2 pr-3 text-right">이익률</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -656,7 +658,6 @@ export default function SalesContent() {
                     <tr key={m.name} className="border-b border-gray-50">
                       <td className="py-2 pr-3 font-medium text-gray-700">{m.name}</td>
                       <td className="py-2 pr-3 text-right text-gray-700">{won(m.rev)}</td>
-                      <td className="py-2 pr-3 text-right text-gray-500">{m.cnt}</td>
                       <td className="py-2 pr-3 text-right text-gray-500">{m.mrev > 0 ? won(m.prof) : '-'}</td>
                       <td className="py-2 pr-3 text-right text-gray-500">{m.mrev > 0 ? `${Math.round((m.prof / m.mrev) * 100)}%` : '-'}</td>
                     </tr>
