@@ -169,6 +169,17 @@ export default function SalesContent() {
       const company = o.company || (inv ? inv.company : '미분류');
       const mall = o.mall_name || '(몰 미상)';
 
+      if (o.source === '과거') {
+        // 과거 실적: 엑셀의 매출·마진을 그대로 확정 (manual_cost = 매출 − 마진 → 영업이익 = 마진)
+        flt.push({
+          date, amt, qty, rep, mall, company,
+          profit: amt - (Number(o.manual_cost) || 0), profitKnown: true,
+          fee: 0, unim: 0, missCost: false, registered: true, feeFound: true,
+          invCompany: inv?.company,
+        });
+        continue;
+      }
+
       if (o.source === '도매') {
         // 도매: 등록 시 입력값으로 마진 확정 (재계산 안 함)
         const wcost = (Number(o.manual_cost) || 0) * qty;
