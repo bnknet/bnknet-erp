@@ -461,7 +461,13 @@ export default function InventoryContent() {
     const matchBrand = filterBrand === '전체' || (p.brand || '') === filterBrand;
     const matchSearch = !search || p.product_name.includes(search) || (p.brand || '').includes(search);
     return matchCompany && matchCategory && matchBrand && matchSearch;
-  }).sort((a, b) => (b.quantity - a.quantity) || ((b.cost_price || 0) - (a.cost_price || 0))); // 재고 많은 순 → 원가 높은 순
+  }).sort((a, b) => {
+    // 판매O 먼저 → 재고수량 많은 순 → 원가총합(수량×원가) 높은 순
+    const av = a.is_active !== false, bv = b.is_active !== false;
+    if (av !== bv) return av ? -1 : 1;
+    if (b.quantity !== a.quantity) return b.quantity - a.quantity;
+    return (b.quantity * (b.cost_price || 0)) - (a.quantity * (a.cost_price || 0));
+  });
 
   const totalQty = filtered.reduce((s, p) => s + p.quantity, 0);
   const totalCost = filtered.reduce((s, p) => s + p.quantity * (p.cost_price || 0), 0);
