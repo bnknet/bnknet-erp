@@ -7,6 +7,18 @@ import { computeCostGap, type CostGapSummary, type MiniOrder, type MiniInv } fro
 
 const companies = ['BNKNET', 'SJ글로벌', '더블아이', 'IX글로벌'];
 
+interface ShipAlert {
+  id: string;
+  created_at?: string;
+  company?: string;
+  kind: string;       // 'unmatched' | 'negative' | 'rpc_fail'
+  detail?: string;
+  order_count?: number;
+}
+const SHIP_ALERT_LABEL: Record<string, string> = {
+  unmatched: '재고 미매칭', negative: '재고 부족', rpc_fail: '자동출고 실패',
+};
+
 const pad = (n: number) => String(n).padStart(2, '0');
 const dStr = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 function yesterdayStr() {
@@ -69,6 +81,29 @@ export default function DashboardContent() {
     })();
   }, [canSeeSnapAlert]);
 
+  // 자동출고 안전장치 알림 (미해결) — 권한자에게만
+  const [shipAlerts, setShipAlerts] = useState<ShipAlert[]>([]);
+  useEffect(() => {
+    if (!canSeeSnapAlert) return;
+    (async () => {
+      try {
+        const res = await supabaseFetch('/ship_alerts?resolved=eq.false&order=created_at.desc&limit=50');
+        const data = await res.json();
+        setShipAlerts(Array.isArray(data) ? data : []);
+      } catch { /* 무시 */ }
+    })();
+  }, [canSeeSnapAlert]);
+
+  async function resolveAlert(id: string) {
+    try {
+      await supabaseFetch(`/ship_alerts?id=eq.${id}`, {
+        method: 'PATCH', headers: { Prefer: 'return=minimal' },
+        body: JSON.stringify({ resolved: true, resolved_by: user?.name || '', resolved_at: new Date().toISOString() }),
+      });
+      setShipAlerts(prev => prev.filter(a => a.id !== id));
+    } catch { /* 무시 */ }
+  }
+
   return (
     <div className="space-y-6">
       {/* 재고 자동저장 누락 경고 */}
@@ -78,6 +113,22 @@ export default function DashboardContent() {
           <div className="text-sm text-red-400 mt-0.5">재고 관리 → 일자별 재고에서 &apos;지금 재고 저장&apos;을 눌러 복구하세요. (클릭하면 이동)</div>
         </a>
       )}
+
+      {/* 자동출고 안전장치 알림 (미해결) */}
+      {canSeeSnapAlert && shipAlerts.map(a => (
+        <div key={a.id} className="bg-orange-50 border border-orange-200 rounded-2xl px-5 py-4">
+          <div className="flex items-start justify-between gap-3">
+            <a href="/orders" className="block flex-1 min-w-0">
+              <div className="text-base font-medium text-orange-700">
+                ⚠️ [{a.company || '미지정'}] {SHIP_ALERT_LABEL[a.kind] || a.kind} — 담당자 확인 필요
+              </div>
+              <div className="text-sm text-orange-600 mt-0.5 break-words">{a.detail}{a.created_at ? ` · ${a.created_at.slice(0, 16).replace('T', ' ')}` : ''}</div>
+            </a>
+            <button onClick={() => resolveAlert(a.id)}
+              className="flex-shrink-0 px-3 py-1.5 text-sm bg-white border border-orange-300 rounded-lg text-orange-600 hover:bg-orange-100">확인</button>
+          </div>
+        </div>
+      ))}
 
       {/* 매출 이상 징후 경고 (이번 달 주문은 있는데 매출 0) */}
       {canSeeSnapAlert && costGap?.anomaly && (
