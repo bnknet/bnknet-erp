@@ -162,16 +162,21 @@ export default function SalesContent() {
     const today = parseYmd(anchor); today.setHours(0, 0, 0, 0); // 기준일(과거 기간 조회 시 이동)
     const realToday = new Date(); realToday.setHours(0, 0, 0, 0); // 실제 오늘 (미래분 제외용)
 
-    // 재고 → 상품명별 {원가, 사업자, 브랜드} 맵 (같은 이름이면 원가>0인 것 우선)
-    const invMap = new Map<string, { cost: number; company: string; brand: string }>();
+    // 재고 → (상품명+사업자)별 {원가, 사업자, 브랜드} 맵. 같은 상품이라도 사업자 다르면 원가 따로.
+    type InvVal = { cost: number; company: string; brand: string };
+    const invMap = new Map<string, InvVal>();      // key: `${상품명}|${사업자}` — 사업자별 원가 정확 매칭
+    const invByName = new Map<string, InvVal>();    // 폴백: 상품명만 (주문에 사업자 없을 때)
     for (const it of inventory) {
-      const key = it.product_name;
-      if (!key) continue;
+      const name = it.product_name;
+      if (!name) continue;
       const cost = Number(it.cost_price) || 0;
+      const co = it.company || '미분류';
+      const val: InvVal = { cost, company: co, brand: it.brand || '' };
+      const key = `${name}|${co}`;
       const prev = invMap.get(key);
-      if (!prev || (prev.cost === 0 && cost > 0)) {
-        invMap.set(key, { cost, company: it.company || '미분류', brand: it.brand || '' });
-      }
+      if (!prev || (prev.cost === 0 && cost > 0)) invMap.set(key, val);
+      const pn = invByName.get(name);
+      if (!pn || (pn.cost === 0 && cost > 0)) invByName.set(name, val);
     }
 
     // 몰 수수료 맵 (사업자+정규몰명 → %)
@@ -206,7 +211,8 @@ export default function SalesContent() {
       const amt = Number(o.amount) || 0;
       if (qty < 1 && amt === 0) continue;
       const rep = matchProduct(o.collect_product || o.product_name || '').name;
-      const inv = invMap.get(rep);
+      // 원가·브랜드는 (상품명+사업자)로 매칭. 주문에 사업자 있으면 그 사업자 재고, 없으면 상품명만으로 폴백.
+      const inv = (o.company ? invMap.get(`${rep}|${o.company}`) : undefined) || invByName.get(rep);
       const date = o.upload_date || '';
       if (date && date < earliest) earliest = date;
       const company = o.company || (inv ? inv.company : '미분류');

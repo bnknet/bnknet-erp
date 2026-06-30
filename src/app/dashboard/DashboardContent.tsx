@@ -73,7 +73,7 @@ export default function DashboardContent() {
         const ms = monthStartStr();
         const today = dStr(new Date());
         const [ord, inv] = await Promise.all([
-          supabaseFetchAll<MiniOrder>(`/orders?select=upload_date,product_name,collect_product,quantity,amount,canceled&upload_date=gte.${ms}`),
+          supabaseFetchAll<MiniOrder>(`/orders?select=upload_date,product_name,collect_product,quantity,amount,canceled,company&upload_date=gte.${ms}`),
           supabaseFetchAll<MiniInv>('/inventory?select=product_name,company,cost_price'),
         ]);
         setCostGap(computeCostGap(ord, inv, ms, today));
