@@ -45,6 +45,7 @@ interface Approval {
   // 카드 매입 전용 필드 (지출결의서)
   card_id?: string;
   purchase_vendor?: string;
+  is_card_payment?: boolean;
   payment_due_date?: string;
   purchase_status?: string;
   canceled_at?: string;
@@ -208,6 +209,7 @@ export default function ApprovalContent() {
   const [account, setAccount] = useState('');
   const [cardId, setCardId] = useState('');
   const [purchaseVendor, setPurchaseVendor] = useState('');
+  const [isPrepay, setIsPrepay] = useState(false); // 카드구매(false) / 선결제·한도복구(true)
   const [cards, setCards] = useState<Card[]>([]);
   const [attachments, setAttachments] = useState<{ name: string; url: string }[]>([]);
   const [uploading, setUploading] = useState(false);
@@ -439,6 +441,7 @@ export default function ApprovalContent() {
           purchase_vendor: purchaseVendor || null,
           payment_due_date: paymentDue,
           purchase_status: 'normal',
+          is_card_payment: docType === '카드구매' ? isPrepay : false,
           canceled_at: null, refund_due_date: null,
           attachments,
           vacation_type: null, vacation_start: null, vacation_end: null,
@@ -550,6 +553,7 @@ export default function ApprovalContent() {
       setAccount(approval.account || '');
       setCardId(approval.card_id || '');
       setPurchaseVendor(approval.purchase_vendor || '');
+      setIsPrepay(!!approval.is_card_payment);
       setAttachments(approval.attachments || []);
       const loaded = (approval.items || []).map((i, idx) => ({ ...i, sort_order: idx }));
       const padded = [...loaded, ...[0,1,2,3,4].map(i => ({ ...EMPTY_ITEM, sort_order: i }))].slice(0, Math.max(5, loaded.length));
@@ -626,7 +630,7 @@ export default function ApprovalContent() {
     setCompany(me?.company || 'BNKNET');
     setIssueDate(today()); setSettleDate(today()); setSpendDate(today());
     setOrganizer(me?.name || ''); setProcessor(''); setAccount('');
-    setCardId(''); setPurchaseVendor(''); setAttachments([]);
+    setCardId(''); setPurchaseVendor(''); setIsPrepay(false); setAttachments([]);
     setItems([0,1,2,3,4].map(i => ({ ...EMPTY_ITEM, sort_order: i })));
     setVacationType('annual');
     setVacationStart(today()); setVacationEnd(today()); setVacationReason('');
@@ -1103,7 +1107,18 @@ export default function ApprovalContent() {
             </div>
 
             {/* 결제 카드 / 구매처 */}
-            <div className={`grid sm:grid-cols-2 gap-3 mb-6 border rounded-xl p-4 ${docType === '카드구매' ? 'bg-amber-50/60 border-amber-200' : 'bg-blue-50/50 border-blue-100'}`}>
+            {docType === '카드구매' && (
+              <div className="mb-3 flex gap-2">
+                <button type="button" onClick={() => setIsPrepay(false)}
+                  className={`px-4 py-2 rounded-lg text-base font-medium ${!isPrepay ? 'bg-amber-600 text-white' : 'bg-white border border-gray-200 text-gray-600'}`}>카드구매 (한도 차감)</button>
+                <button type="button" onClick={() => setIsPrepay(true)}
+                  className={`px-4 py-2 rounded-lg text-base font-medium ${isPrepay ? 'bg-green-600 text-white' : 'bg-white border border-gray-200 text-gray-600'}`}>선결제 (한도 복구)</button>
+              </div>
+            )}
+            {docType === '카드구매' && isPrepay && (
+              <p className="text-sm text-green-700 bg-green-50 border border-green-200 rounded-lg px-3 py-2 mb-3">💳 선결제: 기존 카드 사용분을 앞당겨 결제 → 승인되면 해당 카드 <b>잔여한도가 복구</b>되고 결제 캘린더에 −금액으로 기록됩니다.</p>
+            )}
+            <div className={`grid sm:grid-cols-2 gap-3 mb-6 border rounded-xl p-4 ${docType === '카드구매' ? (isPrepay ? 'bg-green-50/60 border-green-200' : 'bg-amber-50/60 border-amber-200') : 'bg-blue-50/50 border-blue-100'}`}>
               <div>
                 <label className="block text-sm font-medium text-gray-500 mb-1">
                   결제 카드{docType === '카드구매' && <span className="text-red-500"> *</span>}
@@ -1131,7 +1146,7 @@ export default function ApprovalContent() {
             </div>
 
             <div className="flex items-start justify-between mb-6">
-              <h2 className="text-xl sm:text-2xl font-bold text-gray-800 tracking-widest">〈 {docType === '카드구매' ? '매 입 품 의 서 (카드구매)' : '지 출 결 의 서'} 〉</h2>
+              <h2 className="text-xl sm:text-2xl font-bold text-gray-800 tracking-widest">〈 {docType === '카드구매' ? (isPrepay ? '카 드 선 결 제' : '매 입 품 의 서 (카드구매)') : '지 출 결 의 서'} 〉</h2>
               <div className="border border-gray-400">
                 <div className="flex">
                   {approvalLine.map((role) => (
