@@ -546,7 +546,7 @@ export default function SalesContent() {
                 <thead>
                   <tr className="text-left text-sm text-gray-400 border-b">
                     <th className="py-2 pr-3">판매몰</th><th className="py-2 pr-3 text-right">매출</th>
-                    <th className="py-2 pr-3 text-right">건수</th><th className="py-2 pr-3 text-right">평균단가</th>
+                    <th className="py-2 pr-3 text-right">건수</th><th className="py-2 pr-3 text-right">영업이익</th><th className="py-2 pr-3 text-right">이익률</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -555,7 +555,8 @@ export default function SalesContent() {
                       <td className="py-2 pr-3 font-medium text-gray-700">{m.name}</td>
                       <td className="py-2 pr-3 text-right text-gray-700">{won(m.rev)}</td>
                       <td className="py-2 pr-3 text-right text-gray-500">{m.cnt}</td>
-                      <td className="py-2 pr-3 text-right text-gray-500">{m.cnt > 0 ? won(m.rev / m.cnt) : '-'}</td>
+                      <td className="py-2 pr-3 text-right text-gray-500">{m.mrev > 0 ? won(m.prof) : '-'}</td>
+                      <td className="py-2 pr-3 text-right text-gray-500">{m.mrev > 0 ? `${Math.round((m.prof / m.mrev) * 100)}%` : '-'}</td>
                     </tr>
                   ))}
                 </tbody>
