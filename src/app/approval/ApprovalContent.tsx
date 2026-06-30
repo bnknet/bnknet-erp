@@ -157,7 +157,7 @@ type View = 'list' | 'form' | 'detail' | 'leave';
 type DocType = '지출결의서' | '카드구매' | '휴가신청서';
 const DOC_TYPE_LABELS: Record<DocType, string> = {
   '지출결의서': '지출결의서',
-  '카드구매': '지출결의서(카드구매)',
+  '카드구매': '매입품의서(카드구매)',
   '휴가신청서': '휴가신청서',
 };
 
@@ -647,7 +647,7 @@ export default function ApprovalContent() {
     const ws = XLSX.utils.json_to_sheet(sample, { header: ['월/일', '구매상품', '구매수량', '금액', '비고'] });
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, '품목');
-    XLSX.writeFile(wb, '지출결의서_품목양식.xlsx');
+    XLSX.writeFile(wb, '매입품의서_품목양식.xlsx');
   }
 
   // 엑셀 양식 업로드 → 품목으로 반영 (열 이름 유연 매칭)
@@ -723,7 +723,7 @@ export default function ApprovalContent() {
           <div className="flex items-start justify-between gap-3 mb-6 flex-wrap">
             <div>
               <h2 className="text-xl sm:text-2xl font-bold text-gray-800 tracking-widest">
-                〈 {isVacation ? '휴 가 신 청 서' : selected.doc_type === '카드구매' ? '지 출 결 의 서 (카드구매)' : '지 출 결 의 서'} 〉
+                〈 {isVacation ? '휴 가 신 청 서' : selected.doc_type === '카드구매' ? '매 입 품 의 서 (카드구매)' : '지 출 결 의 서'} 〉
               </h2>
               <div className="mt-2 flex items-center gap-2">
                 <span className={`text-sm px-2 py-1 rounded-md font-medium ${STATUS_MAP[selected.status]?.color}`}>
@@ -1131,7 +1131,7 @@ export default function ApprovalContent() {
             </div>
 
             <div className="flex items-start justify-between mb-6">
-              <h2 className="text-xl sm:text-2xl font-bold text-gray-800 tracking-widest">〈 지 출 결 의 서 {docType === '카드구매' ? '(카드구매)' : ''}〉</h2>
+              <h2 className="text-xl sm:text-2xl font-bold text-gray-800 tracking-widest">〈 {docType === '카드구매' ? '매 입 품 의 서 (카드구매)' : '지 출 결 의 서'} 〉</h2>
               <div className="border border-gray-400">
                 <div className="flex">
                   {approvalLine.map((role) => (
