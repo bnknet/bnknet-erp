@@ -315,9 +315,14 @@ export default function CardsContent() {
       }
     }
     return groups.map(g => {
-      const used = g.cards.reduce((s, c) => s + cardOutstanding(c.id), 0);
+      const erpUsed = g.cards.reduce((s, c) => s + cardOutstanding(c.id), 0);
+      const hasOpening = g.cards.some(c => c.opening_balance != null);
       const opening = g.cards.reduce((s, c) => s + (c.opening_balance || 0), 0);
-      return { ...g, used, opening, remaining: g.limit - used };
+      // 사용액 = (전체한도 − 6/30 실잔여) + ERP 미결제분.
+      // 잔여한도는 6/30 실잔여에서 출발해 결재가 쌓일수록 더 차감됨.
+      const pastUsed = hasOpening ? Math.max(0, g.limit - opening) : 0;
+      const used = Math.min(g.limit, pastUsed + erpUsed);
+      return { ...g, used, erpUsed, opening, hasOpening, remaining: g.limit - used };
     });
   })();
   const totalLimit = limitGroups.reduce((s, g) => s + g.limit, 0);
@@ -497,18 +502,29 @@ export default function CardsContent() {
         // ─────────── 한도 현황 ───────────
         <div className="space-y-4">
           {/* 전체 요약 */}
-          <div className="bg-gradient-to-r from-slate-800 to-slate-600 rounded-2xl p-5 text-white flex items-center justify-between flex-wrap gap-3">
-            <div>
-              <div className="text-sm text-slate-300">전체 한도 / 사용중 / 잔여</div>
-              <div className="text-2xl font-bold mt-1">
-                잔여 {won(totalLimit - totalUsed)}원
-                <span className="text-base font-normal text-slate-300"> · 사용 {won(totalUsed)} / 한도 {won(totalLimit)}</span>
+          <div className="bg-gradient-to-r from-slate-800 to-slate-600 rounded-2xl p-5 text-white">
+            <div className="flex items-center justify-between flex-wrap gap-3">
+              <div>
+                <div className="text-sm text-slate-300">전체 한도 / 사용중 / 잔여</div>
+                <div className="text-2xl font-bold mt-1">
+                  잔여 {won(totalLimit - totalUsed)}원
+                  <span className="text-base font-normal text-slate-300"> · 사용 {won(totalUsed)} / 한도 {won(totalLimit)}</span>
+                </div>
               </div>
+              <div className="text-xs text-slate-300 text-right">미결제 = 결제일 안 지난 매입<br />결제일 지나면 자동 회복</div>
             </div>
-            <div className="text-xs text-slate-300 text-right">미결제 = 결제일 안 지난 매입<br />결제일 지나면 자동 회복</div>
+            {totalLimit > 0 && (
+              <div className="mt-3">
+                <div className="h-3 bg-slate-900/40 rounded-full overflow-hidden">
+                  <div className="h-full rounded-full bg-gradient-to-r from-blue-400 to-cyan-300"
+                    style={{ width: `${Math.min(100, Math.round(totalUsed / totalLimit * 100))}%` }} />
+                </div>
+                <div className="text-xs text-slate-300 mt-1 text-right">전체 사용률 {Math.round(totalUsed / totalLimit * 100)}%</div>
+              </div>
+            )}
           </div>
           <div className="flex items-center justify-between gap-2 flex-wrap">
-            <p className="text-xs text-gray-400">💡 ERP 계산잔여 = 전체한도 − 미결제 카드구매. 결재 쌓이면 6/30 실잔여에 수렴합니다.</p>
+            <p className="text-xs text-gray-400">💡 사용액 = 전체한도 − 6/30 실잔여 + ERP 미결제 카드구매. 잔여한도는 6/30 실잔여에서 시작해 결재가 쌓일수록 줄어듭니다.</p>
             <button onClick={exportPurchaseExcel}
               className="px-3 py-1.5 text-sm border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50 whitespace-nowrap">📊 카드 구매내역 엑셀 (세무용)</button>
           </div>
@@ -553,8 +569,14 @@ export default function CardsContent() {
                         </div>
                       )}
                       {g.limit > 0 && (
-                        <div className="h-2 bg-gray-100 rounded-full overflow-hidden mt-2">
-                          <div className={`h-full rounded-full ${pct >= 90 ? 'bg-red-400' : pct >= 80 ? 'bg-orange-400' : 'bg-blue-400'}`} style={{ width: `${pct}%` }} />
+                        <div className="mt-2">
+                          <div className="flex justify-between text-xs mb-1">
+                            <span className="text-gray-400">사용률</span>
+                            <span className={`font-semibold ${pct >= 90 ? 'text-red-500' : pct >= 80 ? 'text-orange-500' : 'text-blue-500'}`}>{pct}%</span>
+                          </div>
+                          <div className="h-2.5 bg-gray-100 rounded-full overflow-hidden">
+                            <div className={`h-full rounded-full transition-all ${pct >= 90 ? 'bg-red-400' : pct >= 80 ? 'bg-orange-400' : 'bg-blue-400'}`} style={{ width: `${pct}%` }} />
+                          </div>
                         </div>
                       )}
                     </div>
