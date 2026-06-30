@@ -28,6 +28,12 @@ interface InvRow {
   brand?: string;
   cost_price?: number;
 }
+interface BrandSaleRow {
+  period_date: string;
+  brand: string;
+  sales?: number;
+  margin?: number;
+}
 type Period = 'day' | 'week' | 'month' | 'all';
 
 const COMPANIES = ['전체', 'BNKNET', 'SJ글로벌', '더블아이', 'IX글로벌', '미분류'];
@@ -87,6 +93,7 @@ export default function SalesContent() {
   const [orders, setOrders] = useState<OrderRow[]>([]);
   const [inventory, setInventory] = useState<InvRow[]>([]);
   const [fees, setFees] = useState<MallFee[]>([]);
+  const [brandSales, setBrandSales] = useState<BrandSaleRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
@@ -109,6 +116,11 @@ export default function SalesContent() {
       setOrders(ord);
       setInventory(inv);
       setFees(fee);
+      // 브랜드별 매출 (없으면 무시 — 테이블 미설정 가능)
+      try {
+        const bs = await supabaseFetchAll<BrandSaleRow>('/brand_sales?select=period_date,brand,sales,margin');
+        setBrandSales(bs);
+      } catch { /* brand_sales 미설정 시 건너뜀 */ }
     } catch (e) {
       setLoadError(e instanceof Error ? e.message : '데이터를 불러오지 못했습니다.');
     } finally {
@@ -153,7 +165,8 @@ export default function SalesContent() {
     // · 도매(source='도매'): 입력값으로 확정 = (매출 − 원가(개당×수량) − 배송비)/1.1 (수수료 없음, 모두 부가세 포함 → ÷1.1).
     type Flt = { date: string; amt: number; qty: number; rep: string; mall: string; company: string;
       profit: number; profitKnown: boolean; fee: number; unim: number;
-      missCost: boolean; registered: boolean; feeFound: boolean; invCompany?: string };
+      missCost: boolean; registered: boolean; feeFound: boolean; invCompany?: string;
+      brand: string; isPast: boolean };
     const flt: Flt[] = [];
     const shipAssigned = new Set<string>(); // 운임 배정 완료한 주문번호
     let earliest = ymd(today);
@@ -175,7 +188,7 @@ export default function SalesContent() {
           date, amt, qty, rep, mall, company,
           profit: amt - (Number(o.manual_cost) || 0), profitKnown: true,
           fee: 0, unim: 0, missCost: false, registered: true, feeFound: true,
-          invCompany: inv?.company,
+          invCompany: inv?.company, brand: '', isPast: true,
         });
         continue;
       }
@@ -188,7 +201,7 @@ export default function SalesContent() {
           date, amt, qty, rep, mall, company,
           profit: (amt - wcost - wship) / VAT_DIV, profitKnown: true,
           fee: 0, unim: 0, missCost: false, registered: true, feeFound: true,
-          invCompany: inv?.company,
+          invCompany: inv?.company, brand: inv?.brand || '', isPast: false,
         });
         continue;
       }
@@ -210,7 +223,7 @@ export default function SalesContent() {
         date, amt, qty, rep, mall, company,
         profit, profitKnown: hasCost, fee: ff.fee, unim,
         missCost: !hasCost, registered: !!inv, feeFound: ff.found,
-        invCompany: inv?.company,
+        invCompany: inv?.company, brand: inv?.brand || '', isPast: false,
       });
     }
 
@@ -297,16 +310,32 @@ export default function SalesContent() {
     const missingUnreg = Array.from(missUnreg.entries()).map(([name, v]) => ({ name, ...v })).sort((a, b) => b.rev - a.rev);
     const missingFee = Array.from(missFee.values()).sort((a, b) => b.rev - a.rev);
 
+    // 브랜드별 매출 (전 사업자 합산 — 사업자 필터 무관). 과거=brand_sales, 현재=주문×재고 브랜드
+    const brandMap = new Map<string, { sales: number; margin: number }>();
+    for (const r of flt) {
+      if (r.isPast || !r.brand) continue;
+      if (r.date < ranges.curStart || r.date > ranges.curEnd) continue;
+      const e = brandMap.get(r.brand) || { sales: 0, margin: 0 };
+      e.sales += r.amt; e.margin += r.profit; brandMap.set(r.brand, e);
+    }
+    for (const b of brandSales) {
+      const d = b.period_date || '';
+      if (d < ranges.curStart || d > ranges.curEnd) continue;
+      const e = brandMap.get(b.brand) || { sales: 0, margin: 0 };
+      e.sales += Number(b.sales) || 0; e.margin += Number(b.margin) || 0; brandMap.set(b.brand, e);
+    }
+    const byBrand = Array.from(brandMap.entries()).map(([name, v]) => ({ name, ...v })).sort((a, b) => b.sales - a.sales);
+
     return {
       ranges,
       cur: { rev: curRev, prof: curProf, mrev: curMrev, cnt: curCnt, qty: curQty, fee: curFee, unim: curUnim },
       prev,
-      trend, byProduct, byMall, missingEditable, missingUnreg, missingFee,
+      trend, byProduct, byMall, byBrand, missingEditable, missingUnreg, missingFee,
       missingCount: missingEditable.length + missingUnreg.length,
     };
-  }, [orders, inventory, fees, period, companyFilter]);
+  }, [orders, inventory, fees, brandSales, period, companyFilter]);
 
-  const { ranges, cur, prev, trend, byProduct, byMall, missingEditable, missingUnreg, missingFee, missingCount } = data;
+  const { ranges, cur, prev, trend, byProduct, byMall, byBrand, missingEditable, missingUnreg, missingFee, missingCount } = data;
   const marginPct = cur.mrev > 0 ? Math.round((cur.prof / cur.mrev) * 100) : null;
   const trendMax = Math.max(1, ...trend.map((t) => t.rev));
 
@@ -564,6 +593,37 @@ export default function SalesContent() {
             </div>
           )}
         </div>
+      </div>
+
+      {/* 브랜드별 매출 (전 사업자 합산 — 사업자 필터 무관) */}
+      <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="font-semibold text-gray-700">브랜드별 매출</h3>
+          <span className="text-sm text-gray-400">전 사업자 합산 · {ranges.label}</span>
+        </div>
+        {byBrand.length === 0 ? <Empty /> : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-base">
+              <thead>
+                <tr className="text-left text-sm text-gray-400 border-b">
+                  <th className="py-2 pr-3">브랜드</th><th className="py-2 pr-3 text-right">매출</th>
+                  <th className="py-2 pr-3 text-right">영업이익</th><th className="py-2 pr-3 text-right">이익률</th>
+                </tr>
+              </thead>
+              <tbody>
+                {byBrand.slice(0, 30).map((b) => (
+                  <tr key={b.name} className="border-b border-gray-50">
+                    <td className="py-2 pr-3 font-medium text-gray-700">{b.name}</td>
+                    <td className="py-2 pr-3 text-right text-gray-700">{won(b.sales)}</td>
+                    <td className="py-2 pr-3 text-right text-gray-500">{won(b.margin)}</td>
+                    <td className="py-2 pr-3 text-right text-gray-500">{b.sales > 0 ? `${Math.round((b.margin / b.sales) * 100)}%` : '-'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {byBrand.length > 30 && <p className="text-sm text-gray-400 text-center mt-3">상위 30개 표시 (전체 {byBrand.length}개)</p>}
+          </div>
+        )}
       </div>
 
       <p className="text-sm text-gray-400">
