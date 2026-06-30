@@ -34,6 +34,7 @@ as $$
 declare v_kind text;
 begin
   v_kind := case new.kind
+    when 'unknown_product' then '인식 못한 상품(매칭데이터 추가 필요)'
     when 'unmatched' then '재고 미매칭'
     when 'negative'  then '재고 부족(마이너스)'
     when 'rpc_fail'  then '자동출고 실패'
