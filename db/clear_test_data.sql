@@ -22,3 +22,9 @@ delete from public.approvals where doc_type = '휴가신청서';
 delete from public.approval_items
 where approval_id in (select id from public.approvals where card_id is not null);
 delete from public.approvals where card_id is not null;
+
+-- 7) 재고 + 상품마스터 테스트 전체 삭제 → 7/1 최종 리스트로 새로 적재
+delete from public.inventory_logs;
+delete from public.inventory_snapshots;
+delete from public.inventory;
+delete from public.products;
