@@ -398,6 +398,25 @@ export default function OrdersContent() {
       }
       setShipWarn(warn);
 
+      // ── 안전장치: 자동출고 문제 발생 시 DB 알림 기록 → 대시보드 경고로 노출 ──
+      try {
+        const alerts: Record<string, string | number>[] = [];
+        if (warn.shipped === -1) {
+          alerts.push({ company, kind: 'rpc_fail', detail: `재고 자동출고 실패 — 주문 ${newRows.length}건 저장됨(재고 수동 조정 필요)`, order_count: newRows.length, created_by: me?.name || '' });
+        }
+        if (warn.unmatched.length) {
+          const d = warn.unmatched.slice(0, 20).map(u => `${u.name}(${u.qty}개)`).join(', ');
+          alerts.push({ company, kind: 'unmatched', detail: `재고 미매칭 ${warn.unmatched.length}종: ${d}`, order_count: warn.unmatched.reduce((s, u) => s + u.cnt, 0), created_by: me?.name || '' });
+        }
+        if (warn.negative.length) {
+          const d = warn.negative.slice(0, 20).map(n => (typeof n === 'string' ? n : JSON.stringify(n))).join(', ');
+          alerts.push({ company, kind: 'negative', detail: `재고 부족(마이너스) ${warn.negative.length}건: ${d}`, order_count: warn.negative.length, created_by: me?.name || '' });
+        }
+        if (alerts.length) {
+          await supabaseFetch('/ship_alerts', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify(alerts) });
+        }
+      } catch { /* 알림 기록 실패는 주문 저장 흐름에 영향 주지 않음 */ }
+
       const dupMsg = rows.length - newRows.length > 0 ? ` (중복 ${rows.length - newRows.length}건 제외)` : '';
       if (warn.shipped === -1) {
         setStatus({ type: 'error', msg: `⚠️ 주문 ${newRows.length}건은 저장됐으나 재고 자동출고에 실패했습니다 — 설정(db/order_inventory_sync.sql) 적용 여부 확인 필요. 재고는 수동 조정하세요.` });
