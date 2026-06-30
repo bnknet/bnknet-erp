@@ -34,7 +34,7 @@ interface BrandSaleRow {
   sales?: number;
   margin?: number;
 }
-type Period = 'day' | 'week' | 'month' | 'all';
+type Period = 'day' | 'week' | 'month' | 'all' | 'range';
 
 const COMPANIES = ['전체', 'BNKNET', 'SJ글로벌', '더블아이', 'IX글로벌', '미분류'];
 
@@ -70,9 +70,18 @@ interface Ranges {
   label: string; prevLabel: string;
 }
 // anchor = 조회 기준일, realToday = 실제 오늘(미래분 제외용)
-function periodRanges(period: Period, anchor: Date, earliest: string, realToday: string): Ranges {
+function periodRanges(period: Period, anchor: Date, earliest: string, realToday: string, rangeStart?: string, rangeEnd?: string): Ranges {
   const t = ymd(anchor);
   const cap = (d: string) => (d > realToday ? realToday : d); // 미래 날짜는 오늘까지만
+  if (period === 'range') {
+    const cs = rangeStart || t;
+    const ce = cap(rangeEnd || t);
+    // 직전 동기간(같은 일수만큼 앞) 비교
+    const days = Math.max(1, Math.round((parseYmd(ce).getTime() - parseYmd(cs).getTime()) / 86400000) + 1);
+    const ps = ymd(addDays(parseYmd(cs), -days));
+    const pe = ymd(addDays(parseYmd(cs), -1));
+    return { curStart: cs, curEnd: ce, prevStart: ps, prevEnd: pe, label: `${cs} ~ ${ce}`, prevLabel: '직전 동기간' };
+  }
   if (period === 'day') {
     const y = ymd(addDays(anchor, -1));
     return { curStart: t, curEnd: t, prevStart: y, prevEnd: y, label: `${anchor.getMonth() + 1}/${anchor.getDate()}`, prevLabel: '전일' };
@@ -107,6 +116,8 @@ export default function SalesContent() {
   const [period, setPeriod] = useState<Period>('month');
   const [companyFilter, setCompanyFilter] = useState('전체');
   const [anchor, setAnchor] = useState(() => ymd(new Date())); // 조회 기준일 (지난달 등 과거 기간 조회용)
+  const [rangeStart, setRangeStart] = useState(() => ymd(startOfMonth(new Date()))); // 기간조회 시작일
+  const [rangeEnd, setRangeEnd] = useState(() => ymd(new Date()));                    // 기간조회 종료일
 
   function shiftAnchor(dir: number) {
     const d = parseYmd(anchor);
@@ -245,7 +256,7 @@ export default function SalesContent() {
       });
     }
 
-    const ranges = periodRanges(period, today, earliest, ymd(realToday));
+    const ranges = periodRanges(period, today, earliest, ymd(realToday), rangeStart, rangeEnd);
     const cf = (company: string) => companyFilter === '전체' || company === companyFilter;
 
     // 기간 합계만 (이전 기간/추이용)
@@ -315,7 +326,23 @@ export default function SalesContent() {
       const ws0 = startOfWeekMon(today);
       for (let i = 7; i >= 0; i--) { const ws = addDays(ws0, -7 * i); const we = addDays(ws, 6); trend.push({ label: `${ws.getMonth() + 1}/${ws.getDate()}`, rev: sumBucket(ymd(ws), ymd(we)), isCurrent: i === 0 }); }
     } else if (period === 'month') {
-      for (let i = 5; i >= 0; i--) { const ms = startOfMonth(addMonths(today, -i)); trend.push({ label: `${ms.getMonth() + 1}월`, rev: sumBucket(ymd(ms), ymd(endOfMonth(ms))), isCurrent: i === 0 }); }
+      // 월초(1일)로 직접 생성 — 30·31일 기준일이 짧은 달에서 다음 달로 밀리는 버그 방지
+      for (let i = 5; i >= 0; i--) { const ms = new Date(today.getFullYear(), today.getMonth() - i, 1); trend.push({ label: `${ms.getMonth() + 1}월`, rev: sumBucket(ymd(ms), ymd(endOfMonth(ms))), isCurrent: i === 0 }); }
+    } else if (period === 'range') {
+      const cs = parseYmd(ranges.curStart); const ce = parseYmd(ranges.curEnd);
+      const days = Math.round((ce.getTime() - cs.getTime()) / 86400000) + 1;
+      if (days <= 31) {
+        for (let i = 0; i < days; i++) { const d = addDays(cs, i); const s = ymd(d); trend.push({ label: `${d.getMonth() + 1}/${d.getDate()}`, rev: sumBucket(s, s), isCurrent: false }); }
+      } else {
+        let ms = new Date(cs.getFullYear(), cs.getMonth(), 1);
+        while (ms <= ce) {
+          const bs = ymd(ms) < ranges.curStart ? ranges.curStart : ymd(ms);
+          const be = ymd(endOfMonth(ms)) > ranges.curEnd ? ranges.curEnd : ymd(endOfMonth(ms));
+          trend.push({ label: `${ms.getMonth() + 1}월`, rev: sumBucket(bs, be), isCurrent: false });
+          ms = new Date(ms.getFullYear(), ms.getMonth() + 1, 1);
+        }
+        if (trend.length > 12) trend.splice(0, trend.length - 12);
+      }
     } else {
       let ms = startOfMonth(parseYmd(earliest)); const end = startOfMonth(realToday);
       while (ms <= end) { trend.push({ label: `${String(ms.getFullYear()).slice(2)}.${pad(ms.getMonth() + 1)}`, rev: sumBucket(ymd(ms), ymd(endOfMonth(ms))), isCurrent: ms.getTime() === end.getTime() }); ms = addMonths(ms, 1); }
@@ -351,7 +378,7 @@ export default function SalesContent() {
       trend, byProduct, byMall, byBrand, missingEditable, missingUnreg, missingFee,
       missingCount: missingEditable.length + missingUnreg.length,
     };
-  }, [orders, inventory, fees, brandSales, period, companyFilter, anchor]);
+  }, [orders, inventory, fees, brandSales, period, companyFilter, anchor, rangeStart, rangeEnd]);
 
   const { ranges, cur, prev, trend, byProduct, byMall, byBrand, missingEditable, missingUnreg, missingFee, missingCount } = data;
   const marginPct = cur.mrev > 0 ? Math.round((cur.prof / cur.mrev) * 100) : null;
@@ -393,7 +420,7 @@ export default function SalesContent() {
   }
 
   const periodBtns: { key: Period; label: string }[] = [
-    { key: 'day', label: '당일' }, { key: 'week', label: '주간' }, { key: 'month', label: '월간' }, { key: 'all', label: '누적' },
+    { key: 'day', label: '당일' }, { key: 'week', label: '주간' }, { key: 'month', label: '월간' }, { key: 'all', label: '누적' }, { key: 'range', label: '기간' },
   ];
 
   return (
@@ -413,8 +440,8 @@ export default function SalesContent() {
           {COMPANIES.map((c) => <option key={c} value={c}>{c}</option>)}
         </select>
 
-        {/* 기간 이동 (지난달·특정일 조회) — 누적은 제외 */}
-        {period !== 'all' && (
+        {/* 기간 이동 (지난달·특정일 조회) — 누적·기간조회는 제외 */}
+        {period !== 'all' && period !== 'range' && (
           <div className="flex items-center gap-1">
             <button onClick={() => shiftAnchor(-1)} title="이전"
               className="px-2 py-2 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50">◀</button>
@@ -424,6 +451,19 @@ export default function SalesContent() {
               className="px-2 py-2 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50">▶</button>
             <button onClick={() => setAnchor(ymd(new Date()))}
               className="px-2.5 py-2 rounded-lg border border-gray-200 text-sm text-gray-500 hover:bg-gray-50">오늘</button>
+          </div>
+        )}
+
+        {/* 기간 조회 (시작일 ~ 종료일 직접 선택) */}
+        {period === 'range' && (
+          <div className="flex items-center gap-1">
+            <input type="date" value={rangeStart} max={rangeEnd}
+              onChange={(e) => e.target.value && setRangeStart(e.target.value)}
+              className="px-2 py-2 rounded-lg border border-gray-200 text-base bg-white" />
+            <span className="text-gray-400">~</span>
+            <input type="date" value={rangeEnd} min={rangeStart}
+              onChange={(e) => e.target.value && setRangeEnd(e.target.value)}
+              className="px-2 py-2 rounded-lg border border-gray-200 text-base bg-white" />
           </div>
         )}
 
@@ -554,17 +594,17 @@ export default function SalesContent() {
       <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
         <div className="flex items-center justify-between mb-4">
           <h3 className="font-semibold text-gray-700">매출 추이</h3>
-          <span className="text-sm text-gray-400">{companyFilter} · {period === 'day' ? '최근 14일' : period === 'week' ? '최근 8주' : period === 'month' ? '최근 6개월' : '월별'}</span>
+          <span className="text-sm text-gray-400">{companyFilter} · {period === 'day' ? '최근 14일' : period === 'week' ? '최근 8주' : period === 'month' ? '최근 6개월' : period === 'range' ? '선택 기간' : '월별'}</span>
         </div>
         {trend.length === 0 || trendMax <= 1 ? (
           <div className="text-base text-gray-400 text-center py-12">표시할 데이터가 없습니다</div>
         ) : (
-          <div className="flex items-end gap-2 h-48">
+          <div className={`flex items-end gap-2 h-56 ${trend.length > 16 ? 'overflow-x-auto' : ''}`}>
             {trend.map((t, i) => (
-              <div key={i} className="flex-1 flex flex-col items-center justify-end h-full gap-1 group">
-                <div className="text-xs text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">{wonShort(t.rev)}</div>
-                <div className={`w-full rounded-t transition-all ${t.isCurrent ? 'bg-blue-600' : 'bg-blue-200'}`}
-                  style={{ height: `${Math.max(2, (t.rev / trendMax) * 100)}%` }} title={`${t.label} · ${won(t.rev)}`} />
+              <div key={i} className="flex-1 min-w-[28px] flex flex-col items-center justify-end h-full gap-1 group">
+                <div className={`text-xs whitespace-nowrap ${t.isCurrent ? 'text-blue-600 font-semibold' : 'text-gray-500'}`}>{t.rev > 0 ? wonShort(t.rev) : ''}</div>
+                <div className={`w-full rounded-t transition-all ${t.isCurrent ? 'bg-blue-600' : t.rev === trendMax ? 'bg-blue-400' : 'bg-blue-200'} group-hover:bg-blue-500`}
+                  style={{ height: `${Math.max(t.rev > 0 ? 4 : 0, (t.rev / trendMax) * 100)}%` }} title={`${t.label} · ${won(t.rev)}`} />
                 <div className={`text-sm whitespace-nowrap ${t.isCurrent ? 'text-blue-600 font-medium' : 'text-gray-400'}`}>{t.label}</div>
               </div>
             ))}
