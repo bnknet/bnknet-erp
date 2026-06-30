@@ -219,6 +219,38 @@ export default function OrdersContent() {
     await searchOrders();
   }
 
+  async function partialCancelOrder() {
+    if (orderChecked.size !== 1) { alert('부분취소/반품은 한 번에 1건만 선택하세요.'); return; }
+    const id = Array.from(orderChecked)[0];
+    const order = orderList.find(o => o.id === id);
+    const maxQty = Number(order?.quantity) || 0;
+    if (order?.canceled) { alert('이미 취소된 주문입니다.'); return; }
+    if (maxQty < 1) { alert('수량 정보가 없는 주문입니다.'); return; }
+    const isReturn = confirm('유형을 선택하세요.\n\n[확인] = 반품\n[취소] = 단순취소');
+    const type = isReturn ? '반품' : '취소';
+    const qtyStr = prompt(`${type}할 수량을 입력하세요 (현재 수량 ${maxQty}개)\n※ 전체 수량을 입력하면 주문 전체가 ${type} 처리됩니다.`, '1');
+    if (qtyStr === null) return;
+    const qty = parseInt(qtyStr, 10);
+    if (!qty || qty < 1) { alert('수량을 올바르게 입력하세요.'); return; }
+    if (qty > maxQty) { alert(`현재 수량(${maxQty}개)보다 많이 취소할 수 없습니다.`); return; }
+    const reason = (prompt(`${type} 사유 (선택)`, type) || type).trim();
+    try {
+      const res = await supabaseFetch('/rpc/partial_cancel_order', {
+        method: 'POST', headers: { Prefer: 'return=representation' },
+        body: JSON.stringify({ p_order_id: id, p_cancel_qty: qty, p_reason: reason, p_type: type, p_by: me?.name || '' }),
+      });
+      if (!res.ok) throw new Error(String(res.status));
+      const r = await res.json();
+      if (r?.error) { alert(`❌ ${r.error}`); return; }
+      if (r?.full_canceled) alert(`✅ 전체 수량 ${type} → 주문 전체가 취소 처리되었습니다 (재고 복구됨).`);
+      else alert(`✅ ${qty}개 ${type} 처리 완료 (남은 수량 ${r?.new_qty}개, 금액·재고 자동 반영).`);
+      setOrderChecked(new Set());
+    } catch {
+      alert('❌ 부분취소 처리 중 오류. (db/partial_cancel.sql 적용 여부 확인)');
+    }
+    await searchOrders();
+  }
+
   async function deleteSelectedOrders() {
     if (orderChecked.size === 0) { alert('삭제할 주문을 선택하세요.'); return; }
     if (!confirm(`선택한 ${orderChecked.size}건을 완전히 삭제하시겠습니까? (복구 불가)`)) return;
@@ -805,6 +837,7 @@ export default function OrdersContent() {
               <span className="text-base font-medium">{orderChecked.size}건 선택</span>
               <div className="flex gap-2 ml-auto flex-wrap">
                 <button onClick={cancelSelectedOrders} className="px-3 py-1.5 bg-orange-500 hover:bg-orange-400 rounded-lg text-sm font-medium">취소 처리</button>
+                {orderChecked.size === 1 && <button onClick={partialCancelOrder} className="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 rounded-lg text-sm font-medium">부분취소/반품</button>}
                 <button onClick={uncancelSelectedOrders} className="px-3 py-1.5 bg-slate-500 hover:bg-slate-400 rounded-lg text-sm font-medium">취소 해제</button>
                 {canDelete && <button onClick={deleteSelectedOrders} className="px-3 py-1.5 bg-red-500 hover:bg-red-400 rounded-lg text-sm font-medium">완전 삭제</button>}
               </div>
