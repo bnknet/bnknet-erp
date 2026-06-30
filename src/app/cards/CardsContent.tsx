@@ -29,6 +29,7 @@ interface CardPurchase {
   refund_due_date?: string;
   spend_date?: string;
   purchase_vendor?: string;
+  is_card_payment?: boolean;
 }
 
 interface PurchaseItem {
@@ -47,8 +48,8 @@ interface PurchaseItem {
 interface PayEvent {
   date: string;
   cardId: string;
-  amount: number;       // + 매입, - 환불
-  type: 'charge' | 'refund';
+  amount: number;       // + 매입, - 환불/선결제
+  type: 'charge' | 'refund' | 'prepay';
   purchase: CardPurchase;
 }
 
@@ -108,7 +109,7 @@ export default function CardsContent() {
     // 카드 매입은 계속 누적 → 1000건 넘어도 전부 가져오기
     const data = await supabaseFetchAll<CardPurchase>(
       '/approvals?doc_type=in.(지출결의서,카드구매)&status=eq.approved&card_id=not.is.null' +
-      '&select=id,company,organizer,total_amount,card_id,payment_due_date,purchase_status,refund_due_date,spend_date,purchase_vendor&order=payment_due_date.asc'
+      '&select=id,company,organizer,total_amount,card_id,payment_due_date,purchase_status,refund_due_date,spend_date,purchase_vendor,is_card_payment&order=payment_due_date.asc'
     );
     setPurchases(data);
     // 취소된 항목(부분취소 포함) — 환불 이벤트/한도 계산용
@@ -203,7 +204,11 @@ export default function CardsContent() {
   // ── 캘린더 이벤트 생성 ──
   const events: PayEvent[] = [];
   for (const p of purchases) {
-    if (p.payment_due_date) {
+    if (p.is_card_payment) {
+      // 선결제(결제·한도복구) → 결제예정일(없으면 구매일)에 -금액으로 표시
+      const d = p.payment_due_date || p.spend_date;
+      if (d) events.push({ date: d, cardId: p.card_id, amount: -(p.total_amount || 0), type: 'prepay', purchase: p });
+    } else if (p.payment_due_date) {
       events.push({ date: p.payment_due_date, cardId: p.card_id, amount: p.total_amount, type: 'charge', purchase: p });
     }
   }
@@ -295,11 +300,15 @@ export default function CardsContent() {
   const todayStr = ymd(new Date());
 
   // ── 한도 현황 계산 ──
-  // 카드별 미결제(아직 결제일 안 지난 매입 − 취소금액)
+  // 카드별 미결제 = (결제일 안 지난 매입 − 취소금액) − 선결제(승인 즉시 한도 복구).
   function cardOutstanding(cardId: string): number {
     return purchases
-      .filter(p => p.card_id === cardId && p.payment_due_date && p.payment_due_date >= todayStr)
-      .reduce((s, p) => s + (p.total_amount - (canceledAmtByPurchase[p.id] || 0)), 0);
+      .filter(p => p.card_id === cardId)
+      .reduce((s, p) => {
+        if (p.is_card_payment) return s - (p.total_amount || 0); // 선결제 = 한도 복구(크레딧), 즉시 반영
+        if (p.payment_due_date && p.payment_due_date >= todayStr) return s + (p.total_amount - (canceledAmtByPurchase[p.id] || 0)); // 미결제 매입
+        return s;
+      }, 0);
   }
   // 한도 그룹 묶기 (limit_group 같으면 한도 공유, 없으면 카드 단독)
   const limitGroups = (() => {
@@ -321,7 +330,8 @@ export default function CardsContent() {
       // 사용액 = (전체한도 − 6/30 실잔여) + ERP 미결제분.
       // 잔여한도는 6/30 실잔여에서 출발해 결재가 쌓일수록 더 차감됨.
       const pastUsed = hasOpening ? Math.max(0, g.limit - opening) : 0;
-      const used = Math.min(g.limit, pastUsed + erpUsed);
+      const used = Math.max(0, Math.min(g.limit, pastUsed + erpUsed)); // 선결제 크레딧으로 음수 되면 0(=전액 복구)
+
       return { ...g, used, erpUsed, opening, hasOpening, remaining: g.limit - used };
     });
   })();
@@ -336,7 +346,7 @@ export default function CardsContent() {
       .sort((a, b) => a.date.localeCompare(b.date))
       .map(e => ({
         결제예정일: e.date,
-        구분: e.type === 'charge' ? '매입' : '환불',
+        구분: e.type === 'charge' ? '매입' : e.type === 'prepay' ? '선결제' : '환불',
         카드: cardName(e.cardId),
         사업자: e.purchase.company,
         담당: e.purchase.organizer,
@@ -755,7 +765,7 @@ export default function CardsContent() {
                       <tr key={i} onClick={() => openPurchaseDetail(e)} className="cursor-pointer hover:bg-blue-50/40">
                         <td className="py-2 text-gray-600 whitespace-nowrap">{e.date}</td>
                         <td className="py-2">
-                          <span className={`text-xs px-2 py-0.5 rounded-md font-medium ${e.type === 'refund' ? 'bg-red-50 text-red-500' : 'bg-blue-50 text-blue-600'}`}>{e.type === 'refund' ? '환불' : '매입'}</span>
+                          <span className={`text-xs px-2 py-0.5 rounded-md font-medium ${e.type === 'refund' ? 'bg-red-50 text-red-500' : e.type === 'prepay' ? 'bg-green-50 text-green-600' : 'bg-blue-50 text-blue-600'}`}>{e.type === 'refund' ? '환불' : e.type === 'prepay' ? '선결제' : '매입'}</span>
                         </td>
                         <td className="py-2 text-gray-600">{cardName(e.cardId)}</td>
                         <td className="py-2 text-gray-500">{e.purchase.company}</td>
@@ -822,8 +832,8 @@ export default function CardsContent() {
                   {byDate[selectedDay].map((e, idx) => (
                     <tr key={idx} onClick={() => openPurchaseDetail(e)} className="cursor-pointer hover:bg-blue-50/40">
                       <td className="py-2">
-                        <span className={`text-sm px-2 py-0.5 rounded-md font-medium ${e.type === 'refund' ? 'bg-red-50 text-red-500' : 'bg-blue-50 text-blue-600'}`}>
-                          {e.type === 'refund' ? '환불' : '매입'}
+                        <span className={`text-sm px-2 py-0.5 rounded-md font-medium ${e.type === 'refund' ? 'bg-red-50 text-red-500' : e.type === 'prepay' ? 'bg-green-50 text-green-600' : 'bg-blue-50 text-blue-600'}`}>
+                          {e.type === 'refund' ? '환불' : e.type === 'prepay' ? '선결제' : '매입'}
                         </span>
                       </td>
                       <td className="py-2 text-gray-600">{cardName(e.cardId)}</td>
@@ -860,8 +870,8 @@ export default function CardsContent() {
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6 my-8" onClick={e => e.stopPropagation()}>
             <div className="flex items-start justify-between mb-4">
               <div>
-                <span className={`text-xs px-2 py-0.5 rounded-md font-medium ${detailEvent.type === 'refund' ? 'bg-red-50 text-red-500' : 'bg-blue-50 text-blue-600'}`}>
-                  {detailEvent.type === 'refund' ? '환불' : '카드 매입'}
+                <span className={`text-xs px-2 py-0.5 rounded-md font-medium ${detailEvent.type === 'refund' ? 'bg-red-50 text-red-500' : detailEvent.type === 'prepay' ? 'bg-green-50 text-green-600' : 'bg-blue-50 text-blue-600'}`}>
+                  {detailEvent.type === 'refund' ? '환불' : detailEvent.type === 'prepay' ? '선결제(한도복구)' : '카드 매입'}
                 </span>
                 <h3 className="text-lg font-bold text-gray-800 mt-2">{detailEvent.purchase.purchase_vendor || '구매 내역'}</h3>
               </div>
@@ -875,7 +885,7 @@ export default function CardsContent() {
                 { l: '담당', v: detailEvent.purchase.organizer },
                 { l: '구매처', v: detailEvent.purchase.purchase_vendor || '-' },
                 { l: '구매일', v: detailEvent.purchase.spend_date || '-' },
-                { l: detailEvent.type === 'refund' ? '환불예정일' : '결제예정일', v: detailEvent.date },
+                { l: detailEvent.type === 'refund' ? '환불예정일' : detailEvent.type === 'prepay' ? '선결제일' : '결제예정일', v: detailEvent.date },
               ].map((row, i) => (
                 <div key={i} className="bg-gray-50 rounded-lg px-3 py-2">
                   <div className="text-xs text-gray-400">{row.l}</div>
