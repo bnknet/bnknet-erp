@@ -273,8 +273,8 @@ export default function SalesContent() {
     };
 
     // 현재 기간 상세 (품목/몰/원가미입력)
-    const productMap = new Map<string, { rev: number; qty: number; prof: number; cnt: number; hasCost: boolean }>();
     const mallMap = new Map<string, { rev: number; cnt: number; prof: number; mrev: number }>();
+    const companyMap = new Map<string, { rev: number; cnt: number; prof: number; mrev: number }>();
     const missEdit = new Map<string, { qty: number; cnt: number; rev: number; company: string }>();
     const missUnreg = new Map<string, { qty: number; cnt: number; rev: number }>();
     const missFee = new Map<string, { company: string; mall: string; rev: number; cnt: number }>();
@@ -285,14 +285,13 @@ export default function SalesContent() {
       curRev += r.rev; curCnt++; curQty += r.qty;
       if (r.profitKnown) { curProf += r.profit; curMrev += r.rev; curFee += r.fee; curUnim += r.unim; }
 
-      const p = productMap.get(r.rep) || { rev: 0, qty: 0, prof: 0, cnt: 0, hasCost: r.profitKnown };
-      p.rev += r.rev; p.qty += r.qty; p.cnt++; if (r.profitKnown) p.prof += r.profit;
-      p.hasCost = p.hasCost && r.profitKnown;
-      productMap.set(r.rep, p);
-
       const m = mallMap.get(r.mall) || { rev: 0, cnt: 0, prof: 0, mrev: 0 };
       m.rev += r.rev; m.cnt++; if (r.profitKnown) { m.prof += r.profit; m.mrev += r.rev; }
       mallMap.set(r.mall, m);
+
+      const co = companyMap.get(r.company) || { rev: 0, cnt: 0, prof: 0, mrev: 0 };
+      co.rev += r.rev; co.cnt++; if (r.profitKnown) { co.prof += r.profit; co.mrev += r.rev; }
+      companyMap.set(r.company, co);
 
       // 수수료 미설정 몰 추적 (매출은 있는데 요율 없음 → 경고)
       if (!r.feeFound && r.amt > 0) {
@@ -350,8 +349,8 @@ export default function SalesContent() {
       if (trend.length > 12) trend.splice(0, trend.length - 12);
     }
 
-    const byProduct = Array.from(productMap.entries()).map(([name, v]) => ({ name, ...v })).sort((a, b) => b.rev - a.rev);
     const byMall = Array.from(mallMap.entries()).map(([name, v]) => ({ name, ...v })).sort((a, b) => b.rev - a.rev);
+    const byCompany = Array.from(companyMap.entries()).map(([name, v]) => ({ name, ...v })).sort((a, b) => b.rev - a.rev);
     const missingEditable = Array.from(missEdit.entries()).map(([name, v]) => ({ name, ...v })).sort((a, b) => b.rev - a.rev);
     const missingUnreg = Array.from(missUnreg.entries()).map(([name, v]) => ({ name, ...v })).sort((a, b) => b.rev - a.rev);
     const missingFee = Array.from(missFee.values()).sort((a, b) => b.rev - a.rev);
@@ -377,12 +376,12 @@ export default function SalesContent() {
       ranges,
       cur: { rev: curRev, prof: curProf, mrev: curMrev, cnt: curCnt, qty: curQty, fee: curFee, unim: curUnim },
       prev,
-      trend, byProduct, byMall, byBrand, missingEditable, missingUnreg, missingFee,
+      trend, byMall, byCompany, byBrand, missingEditable, missingUnreg, missingFee,
       missingCount: missingEditable.length + missingUnreg.length,
     };
   }, [orders, inventory, fees, brandSales, period, companyFilter, anchor, rangeStart, rangeEnd]);
 
-  const { ranges, cur, prev, trend, byProduct, byMall, byBrand, missingEditable, missingUnreg, missingFee, missingCount } = data;
+  const { ranges, cur, prev, trend, byMall, byCompany, byBrand, missingEditable, missingUnreg, missingFee, missingCount } = data;
   const marginPct = cur.mrev > 0 ? Math.round((cur.prof / cur.mrev) * 100) : null;
   const trendMax = Math.max(1, ...trend.map((t) => t.rev));
 
@@ -617,25 +616,26 @@ export default function SalesContent() {
         )}
       </div>
 
-      {/* 품목별 / 몰별 분석 */}
+      {/* 사업자별 / 몰별 분석 */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
-          <h3 className="font-semibold text-gray-700 mb-4">품목별 매출 (상위 {Math.min(byProduct.length, 15)})</h3>
-          {byProduct.length === 0 ? <Empty /> : (
+          <h3 className="font-semibold text-gray-700 mb-4">사업자별 매출</h3>
+          {byCompany.length === 0 ? <Empty /> : (
             <div className="overflow-x-auto">
               <table className="w-full text-base">
                 <thead>
                   <tr className="text-left text-sm text-gray-400 border-b">
-                    <th className="py-2 pr-3">상품명</th><th className="py-2 pr-3 text-right">매출</th>
-                    <th className="py-2 pr-3 text-right">영업이익</th>
+                    <th className="py-2 pr-3">사업자</th><th className="py-2 pr-3 text-right">매출</th>
+                    <th className="py-2 pr-3 text-right">영업이익</th><th className="py-2 pr-3 text-right">이익률</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {byProduct.slice(0, 15).map((p) => (
-                    <tr key={p.name} className="border-b border-gray-50">
-                      <td className="py-2 pr-3 font-medium text-gray-700">{p.name}{!p.hasCost && <span className="ml-1 text-xs text-red-400">원가?</span>}</td>
-                      <td className="py-2 pr-3 text-right text-gray-700">{won(p.rev)}</td>
-                      <td className="py-2 pr-3 text-right text-gray-500">{p.hasCost ? won(p.prof) : '-'}</td>
+                  {byCompany.map((c) => (
+                    <tr key={c.name} className="border-b border-gray-50">
+                      <td className="py-2 pr-3 font-medium text-gray-700">{c.name}</td>
+                      <td className="py-2 pr-3 text-right text-gray-700">{won(c.rev)}</td>
+                      <td className="py-2 pr-3 text-right text-gray-500">{c.mrev > 0 ? won(c.prof) : '-'}</td>
+                      <td className="py-2 pr-3 text-right text-gray-500">{c.mrev > 0 ? `${Math.round((c.prof / c.mrev) * 100)}%` : '-'}</td>
                     </tr>
                   ))}
                 </tbody>
