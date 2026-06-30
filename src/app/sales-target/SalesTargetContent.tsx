@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import * as XLSX from 'xlsx';
-import { supabaseFetch } from '@/lib/supabase';
+import { supabaseFetch, supabaseFetchAll } from '@/lib/supabase';
 import { getUser } from '@/lib/auth';
 
 interface TargetRow {
@@ -57,6 +57,7 @@ export default function SalesTargetContent() {
   const [tab, setTab] = useState<Tab>('dashboard');
   const [year, setYear] = useState(new Date().getFullYear());
   const [rows, setRows] = useState<TargetRow[]>([]);
+  const [actualMap, setActualMap] = useState<Map<string, number>>(new Map()); // `${company}_${month}` → 실적매출(부가세 제외)
   const [loading, setLoading] = useState(true);
   const [chartCompany, setChartCompany] = useState('전체');
   const [chartUnit, setChartUnit] = useState<'month' | 'quarter' | 'year'>('month');
@@ -68,6 +69,22 @@ export default function SalesTargetContent() {
       const res = await supabaseFetch(`/sales_targets?year=eq.${year}`);
       const data = await res.json();
       setRows(Array.isArray(data) ? data : []);
+
+      // 실적 = 주문 데이터 사업자별·월별 매출 자동 집계 (부가세 제외 = 정산금액 ÷1.1)
+      const orders = await supabaseFetchAll(
+        `/orders?upload_date=gte.${year}-01-01&upload_date=lte.${year}-12-31&select=company,amount,upload_date,canceled`
+      );
+      const om = new Map<string, number>();
+      for (const o of (orders as { company?: string; amount?: number; upload_date?: string; canceled?: boolean }[])) {
+        if (o.canceled) continue;
+        const amt = Number(o.amount) || 0;
+        if (!amt) continue;
+        const m = Number((o.upload_date || '').slice(5, 7));
+        if (!m) continue;
+        const key = `${o.company || '미분류'}_${m}`;
+        om.set(key, (om.get(key) || 0) + amt / 1.1);
+      }
+      setActualMap(om);
     } finally { setLoading(false); }
   }, [year]);
 
@@ -77,19 +94,24 @@ export default function SalesTargetContent() {
   const cell = (company: string, month: number): { target_amount: number; actual_amount: number; target_margin?: number } =>
     rows.find(r => r.company === company && r.month === month) || { target_amount: 0, actual_amount: 0 };
 
+  // 실적 = 주문 자동 집계값 (수동 입력 actual_amount 대체)
+  const actualOf = (company: string, month: number) => actualMap.get(`${company}_${month}`) || 0;
   const companyYearTarget = (company: string) =>
     rows.filter(r => r.company === company).reduce((s, r) => s + (r.target_amount || 0), 0);
   const companyYearActual = (company: string) =>
-    rows.filter(r => r.company === company).reduce((s, r) => s + (r.actual_amount || 0), 0);
+    Array.from({ length: 12 }, (_, i) => i + 1).reduce((s, m) => s + actualOf(company, m), 0);
   // 목표 마진율 (월별 동일값 → 입력된 값 중 첫 값)
   const companyMargin = (company: string) => {
     const r = rows.find(r => r.company === company && r.target_margin != null);
     return r?.target_margin ?? null;
   };
 
+  // 금액 조회: 실적은 주문 자동집계, 목표는 sales_targets
+  const valOf = (company: string, month: number, field: 'target_amount' | 'actual_amount') =>
+    field === 'actual_amount' ? actualOf(company, month) : (cell(company, month)[field] || 0);
   const quarterSum = (company: string, q: number, field: 'target_amount' | 'actual_amount') => {
     const months = [q * 3 - 2, q * 3 - 1, q * 3];
-    return months.reduce((s, m) => s + (cell(company, m)[field] || 0), 0);
+    return months.reduce((s, m) => s + valOf(company, m, field), 0);
   };
 
   const totalTarget = COMPANIES.reduce((s, c) => s + companyYearTarget(c), 0);
@@ -99,7 +121,7 @@ export default function SalesTargetContent() {
   // 차트 데이터 — 월/분기/연 단위 (선택 회사 또는 전체)
   const chartCos = chartCompany === '전체' ? COMPANIES : [chartCompany];
   const sumMonths = (months: number[], field: 'target_amount' | 'actual_amount') =>
-    chartCos.reduce((s, c) => s + months.reduce((a, m) => a + (cell(c, m)[field] || 0), 0), 0);
+    chartCos.reduce((s, c) => s + months.reduce((a, m) => a + valOf(c, m, field), 0), 0);
   const buckets: { label: string; target: number; actual: number }[] =
     chartUnit === 'month'
       ? Array.from({ length: 12 }, (_, i) => ({ label: `${i + 1}월`, target: sumMonths([i + 1], 'target_amount'), actual: sumMonths([i + 1], 'actual_amount') }))
@@ -124,10 +146,11 @@ export default function SalesTargetContent() {
     COMPANIES.forEach(c => {
       for (let m = 1; m <= 12; m++) {
         const cc = cell(c, m);
+        const act = Math.round(actualOf(c, m));
         data.push({
           사업자: c, 연도: year, 월: m,
-          목표: cc.target_amount || 0, 실적: cc.actual_amount || 0,
-          달성률: cc.target_amount ? `${Math.round((cc.actual_amount || 0) / cc.target_amount * 100)}%` : '-',
+          목표: cc.target_amount || 0, 실적: act,
+          달성률: cc.target_amount ? `${Math.round(act / cc.target_amount * 100)}%` : '-',
         });
       }
     });
@@ -284,7 +307,7 @@ export default function SalesTargetContent() {
             </div>
           </div>
 
-          <p className="text-sm text-gray-400 text-center">💡 실적은 현재 수동 입력이며, 추후 주문 변환 매출 데이터와 자동 연동됩니다.</p>
+          <p className="text-sm text-gray-400 text-center">💡 실적은 주문 변환 매출(부가세 제외)에서 사업자별·월별로 자동 집계됩니다.</p>
         </div>
       ) : (
         // ── 목표 설정 ──
@@ -303,14 +326,15 @@ export default function SalesTargetContent() {
                     <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">월</th>
                     <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">목표 금액</th>
                     <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">목표 마진율(%)</th>
-                    <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">실적 금액</th>
+                    <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">실적 금액 (자동)</th>
                     <th className="px-4 py-3 text-center text-sm font-medium text-gray-500">달성률</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
                   {Array.from({ length: 12 }, (_, i) => i + 1).map(m => {
                     const cc = cell(editCompany, m);
-                    const pct = cc.target_amount > 0 ? (cc.actual_amount || 0) / cc.target_amount * 100 : 0;
+                    const act = actualOf(editCompany, m);
+                    const pct = cc.target_amount > 0 ? act / cc.target_amount * 100 : 0;
                     return (
                       <tr key={m}>
                         <td className="px-4 py-2.5 font-medium text-gray-700">{m}월</td>
@@ -324,11 +348,7 @@ export default function SalesTargetContent() {
                             onBlur={e => { const v = Number(e.target.value) || 0; if (v !== (cc.target_margin || 0)) saveCell(editCompany, m, 'target_margin', v); }}
                             className="w-24 text-right px-2 py-1 border border-gray-200 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-blue-400" />
                         </td>
-                        <td className="px-4 py-2 text-right">
-                          <input type="number" defaultValue={cc.actual_amount || ''} placeholder="0"
-                            onBlur={e => { const v = Number(e.target.value) || 0; if (v !== (cc.actual_amount || 0)) saveCell(editCompany, m, 'actual_amount', v); }}
-                            className="w-32 text-right px-2 py-1 border border-gray-200 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-blue-400" />
-                        </td>
+                        <td className="px-4 py-2 text-right text-gray-700">{act > 0 ? won(Math.round(act)) : '-'}</td>
                         <td className="px-4 py-2.5 text-center">
                           <span className={`font-bold ${achColor(pct).text}`}>{cc.target_amount > 0 ? `${Math.round(pct)}%` : '-'}</span>
                         </td>
@@ -351,7 +371,7 @@ export default function SalesTargetContent() {
               </table>
             </div>
           </div>
-          <p className="text-sm text-gray-400">💡 금액 입력 후 칸 밖을 클릭하면 자동 저장됩니다. 실적은 추후 주문 변환 매출과 자동 연동 예정입니다.</p>
+          <p className="text-sm text-gray-400">💡 목표 금액·마진율 입력 후 칸 밖을 클릭하면 자동 저장됩니다. 실적은 주문 변환 매출(부가세 제외)에서 자동 집계되어 수정할 수 없습니다.</p>
         </div>
       )}
     </div>
