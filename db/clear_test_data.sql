@@ -17,3 +17,8 @@ delete from public.orders;
 -- 5) 연차(휴가신청서) 테스트 일정 전체 삭제 → 연차 사용내역 0으로 초기화
 --    ※ 직원 부여 연차(employees.annual_leave_total)는 설정값이라 유지됨.
 delete from public.approvals where doc_type = '휴가신청서';
+
+-- 6) 테스트 카드구매(카드 연결 결재) 삭제 → 카드 한도 사용분 0 초기화
+delete from public.approval_items
+where approval_id in (select id from public.approvals where card_id is not null);
+delete from public.approvals where card_id is not null;
