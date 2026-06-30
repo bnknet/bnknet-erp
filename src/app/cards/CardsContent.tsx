@@ -325,8 +325,10 @@ export default function CardsContent() {
       return { ...g, used, erpUsed, opening, hasOpening, remaining: g.limit - used };
     });
   })();
-  const totalLimit = limitGroups.reduce((s, g) => s + g.limit, 0);
-  const totalUsed = limitGroups.reduce((s, g) => s + g.used, 0);
+  // 상단 요약은 선택한 사업자 필터(typeFilter)에 맞춰 집계
+  const visibleGroups = limitGroups.filter(g => typeFilter === 'all' || g.cards.some(c => c.card_type === typeFilter));
+  const totalLimit = visibleGroups.reduce((s, g) => s + g.limit, 0);
+  const totalUsed = visibleGroups.reduce((s, g) => s + g.used, 0);
 
   function exportExcel() {
     const rows = filteredEvents
@@ -505,7 +507,7 @@ export default function CardsContent() {
           <div className="bg-gradient-to-r from-slate-800 to-slate-600 rounded-2xl p-5 text-white">
             <div className="flex items-center justify-between flex-wrap gap-3">
               <div>
-                <div className="text-sm text-slate-300">전체 한도 / 사용중 / 잔여</div>
+                <div className="text-sm text-slate-300">{typeFilter === 'all' ? '전체' : typeFilter} · 한도 / 사용중 / 잔여</div>
                 <div className="text-2xl font-bold mt-1">
                   잔여 {won(totalLimit - totalUsed)}원
                   <span className="text-base font-normal text-slate-300"> · 사용 {won(totalUsed)} / 한도 {won(totalLimit)}</span>
@@ -540,8 +542,7 @@ export default function CardsContent() {
           </div>
 
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {limitGroups
-              .filter(g => typeFilter === 'all' || g.cards.some(c => c.card_type === typeFilter))
+            {visibleGroups
               .map(g => {
                 const pct = g.limit > 0 ? Math.min(100, Math.round(g.used / g.limit * 100)) : 0;
                 const shared = g.cards.length > 1;
