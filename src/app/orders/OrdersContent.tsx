@@ -162,6 +162,8 @@ export default function OrdersContent() {
   const [sOrderNo, setSOrderNo] = useState('');
   const [sProduct, setSProduct] = useState('');
   const [sMall, setSMall] = useState('');
+  const [sFrom, setSFrom] = useState('');
+  const [sTo, setSTo] = useState('');
   const [orderList, setOrderList] = useState<OrderRow[]>([]);
   const [orderChecked, setOrderChecked] = useState<Set<string>>(new Set());
   const [orderLoading, setOrderLoading] = useState(false);
@@ -170,10 +172,12 @@ export default function OrdersContent() {
     setOrderLoading(true);
     setOrderChecked(new Set());
     try {
-      let q = '/orders?select=id,upload_date,order_number,recipient_name,mall_name,product_name,quantity,amount,tracking_number,canceled&order=upload_date.desc&limit=300';
+      let q = '/orders?select=id,upload_date,order_number,recipient_name,mall_name,product_name,quantity,amount,tracking_number,canceled&order=upload_date.desc&limit=1000';
       if (sOrderNo.trim()) q += `&order_number=ilike.*${encodeURIComponent(sOrderNo.trim())}*`;
       if (sProduct.trim()) q += `&product_name=ilike.*${encodeURIComponent(sProduct.trim())}*`;
       if (sMall.trim()) q += `&mall_name=ilike.*${encodeURIComponent(sMall.trim())}*`;
+      if (sFrom) q += `&upload_date=gte.${sFrom}`;
+      if (sTo) q += `&upload_date=lte.${sTo}`;
       const res = await supabaseFetch(q);
       const data = await res.json();
       setOrderList(Array.isArray(data) ? data : []);
@@ -821,15 +825,25 @@ export default function OrdersContent() {
           <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
             <h2 className="text-lg font-bold text-gray-800 mb-1">주문 조회 · 취소</h2>
             <p className="text-base text-gray-400 mb-4">고객 취소 등으로 주문을 취소/삭제합니다. 취소된 주문은 매출·영업이익 집계에서 제외됩니다.</p>
-            <div className="flex gap-2 flex-wrap">
+            <div className="flex gap-2 flex-wrap items-center">
+              <div className="flex items-center gap-1">
+                <input type="date" value={sFrom} max={sTo || undefined} onChange={e => setSFrom(e.target.value)}
+                  className="px-2 py-2 border border-gray-200 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-blue-400" />
+                <span className="text-gray-400">~</span>
+                <input type="date" value={sTo} min={sFrom || undefined} onChange={e => setSTo(e.target.value)}
+                  className="px-2 py-2 border border-gray-200 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-blue-400" />
+              </div>
               <input value={sOrderNo} onChange={e => setSOrderNo(e.target.value)} onKeyDown={e => e.key === 'Enter' && searchOrders()}
-                placeholder="주문번호" className="px-3 py-2 border border-gray-200 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-blue-400 w-40" />
+                placeholder="주문번호" className="px-3 py-2 border border-gray-200 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-blue-400 w-36" />
               <input value={sProduct} onChange={e => setSProduct(e.target.value)} onKeyDown={e => e.key === 'Enter' && searchOrders()}
-                placeholder="상품명" className="px-3 py-2 border border-gray-200 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-blue-400 flex-1 min-w-[140px]" />
+                placeholder="상품명" className="px-3 py-2 border border-gray-200 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-blue-400 flex-1 min-w-[120px]" />
               <input value={sMall} onChange={e => setSMall(e.target.value)} onKeyDown={e => e.key === 'Enter' && searchOrders()}
-                placeholder="몰명" className="px-3 py-2 border border-gray-200 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-blue-400 w-32" />
+                placeholder="몰명" className="px-3 py-2 border border-gray-200 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-blue-400 w-28" />
               <button onClick={searchOrders} className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-base font-medium">검색</button>
+              <button onClick={() => { setSFrom(''); setSTo(''); setSOrderNo(''); setSProduct(''); setSMall(''); }}
+                className="px-3 py-2 border border-gray-200 rounded-lg text-sm text-gray-500 hover:bg-gray-50">초기화</button>
             </div>
+            <p className="text-xs text-gray-400 mt-2">📅 업로드일(주문 변환일) 기준 조회 · 날짜·검색어 없으면 최근 1,000건. 누적 전체에서 조건으로 찾으세요.</p>
           </div>
 
           {orderChecked.size > 0 && (
