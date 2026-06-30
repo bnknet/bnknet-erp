@@ -20,7 +20,7 @@ const COMPANY_COLORS: Record<string, string> = {
   '더블아이': '#3b82f6', 'BNKNET': '#8b5cf6', 'SJ글로벌': '#10b981', 'IX글로벌': '#f59e0b',
 };
 
-function won(n: number) { return n.toLocaleString(); }
+function won(n: number) { return Math.round(n).toLocaleString(); }
 function manwon(n: number) {
   if (n >= 100000000) return `${(n / 100000000).toFixed(1)}억`;
   if (n >= 10000) return `${Math.round(n / 10000).toLocaleString()}만`;
