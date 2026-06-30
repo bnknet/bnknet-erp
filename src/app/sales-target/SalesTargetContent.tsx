@@ -189,7 +189,7 @@ export default function SalesTargetContent() {
             <div className="flex items-center justify-between flex-wrap gap-4">
               <div>
                 <div className="text-base text-slate-300">{year}년 전체 매출 달성</div>
-                <div className="text-3xl font-bold mt-1">{won(totalActual)}<span className="text-lg font-normal text-slate-300"> / {won(totalTarget)}원</span></div>
+                <div className="text-3xl font-bold mt-1">{won(totalActual)}원<span className="text-lg font-normal text-slate-300"> / {won(totalTarget)}원</span></div>
               </div>
               <div className="text-right">
                 <div className={`text-4xl font-bold ${totalPct >= 100 ? 'text-green-300' : 'text-white'}`}>{Math.round(totalPct)}%</div>
