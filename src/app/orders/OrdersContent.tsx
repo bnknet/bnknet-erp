@@ -172,15 +172,23 @@ export default function OrdersContent() {
     setOrderLoading(true);
     setOrderChecked(new Set());
     try {
-      let q = '/orders?select=id,upload_date,order_number,recipient_name,mall_name,product_name,quantity,amount,tracking_number,canceled&order=upload_date.desc&limit=1000';
+      let q = '/orders?select=id,upload_date,order_number,recipient_name,mall_name,product_name,quantity,amount,tracking_number,canceled&order=upload_date.desc';
       if (sOrderNo.trim()) q += `&order_number=ilike.*${encodeURIComponent(sOrderNo.trim())}*`;
       if (sProduct.trim()) q += `&product_name=ilike.*${encodeURIComponent(sProduct.trim())}*`;
       if (sMall.trim()) q += `&mall_name=ilike.*${encodeURIComponent(sMall.trim())}*`;
       if (sFrom) q += `&upload_date=gte.${sFrom}`;
       if (sTo) q += `&upload_date=lte.${sTo}`;
-      const res = await supabaseFetch(q);
-      const data = await res.json();
-      setOrderList(Array.isArray(data) ? data : []);
+      // 조건(날짜/검색어)이 있으면 해당 범위 "전부" 조회(1000건 초과도 페이지네이션). 조건 없으면 최근 1000건만.
+      const hasFilter = !!(sFrom || sTo || sOrderNo.trim() || sProduct.trim() || sMall.trim());
+      let data: OrderRow[];
+      if (hasFilter) {
+        data = await supabaseFetchAll<OrderRow>(q);
+      } else {
+        const res = await supabaseFetch(q + '&limit=1000');
+        const j = await res.json();
+        data = Array.isArray(j) ? j : [];
+      }
+      setOrderList(data);
     } catch { setOrderList([]); }
     finally { setOrderLoading(false); }
   }
@@ -843,7 +851,7 @@ export default function OrdersContent() {
               <button onClick={() => { setSFrom(''); setSTo(''); setSOrderNo(''); setSProduct(''); setSMall(''); }}
                 className="px-3 py-2 border border-gray-200 rounded-lg text-sm text-gray-500 hover:bg-gray-50">초기화</button>
             </div>
-            <p className="text-xs text-gray-400 mt-2">📅 업로드일(주문 변환일) 기준 조회 · 날짜·검색어 없으면 최근 1,000건. 누적 전체에서 조건으로 찾으세요.</p>
+            <p className="text-xs text-gray-400 mt-2">📅 업로드일(주문 변환일) 기준 · 날짜·검색어를 걸면 <b>해당 범위 전부</b> 조회, 조건이 없으면 최근 1,000건만 표시. (조회 {orderList.length.toLocaleString()}건)</p>
           </div>
 
           {orderChecked.size > 0 && (
