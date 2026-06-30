@@ -192,7 +192,8 @@ export default function SalesContent() {
     //   - 매출·원가·운임은 부가세 포함 → ÷1.1로 제거. 고객배송비는 부가세 대상 아님(3.3%만 차감).
     //   - 운임·고객배송비는 합구매(같은 주문번호) 1회만 (주문당 첫 원가확인 라인).
     // · 도매(source='도매'): 입력값으로 확정 = (매출 − 원가(개당×수량) − 배송비)/1.1 (수수료 없음, 모두 부가세 포함 → ÷1.1).
-    type Flt = { date: string; amt: number; qty: number; rep: string; mall: string; company: string;
+    // amt = 결제·정산금액(부가세 포함, DB 원본). rev = 부가세 제외 매출(공급가액 = amt/1.1) — 화면 표시·집계용.
+    type Flt = { date: string; amt: number; rev: number; qty: number; rep: string; mall: string; company: string;
       profit: number; profitKnown: boolean; fee: number; unim: number;
       missCost: boolean; registered: boolean; feeFound: boolean; invCompany?: string;
       brand: string; isPast: boolean };
@@ -214,7 +215,7 @@ export default function SalesContent() {
       if (o.source === '과거') {
         // 과거 실적: 엑셀의 매출·마진을 그대로 확정 (manual_cost = 매출 − 마진 → 영업이익 = 마진)
         flt.push({
-          date, amt, qty, rep, mall, company,
+          date, amt, rev: amt / VAT_DIV, qty, rep, mall, company,
           profit: amt - (Number(o.manual_cost) || 0), profitKnown: true,
           fee: 0, unim: 0, missCost: false, registered: true, feeFound: true,
           invCompany: inv?.company, brand: '', isPast: true,
@@ -227,7 +228,7 @@ export default function SalesContent() {
         const wcost = (Number(o.manual_cost) || 0) * qty;
         const wship = Number(o.manual_shipping) || 0;
         flt.push({
-          date, amt, qty, rep, mall, company,
+          date, amt, rev: amt / VAT_DIV, qty, rep, mall, company,
           profit: (amt - wcost - wship) / VAT_DIV, profitKnown: true,
           fee: 0, unim: 0, missCost: false, registered: true, feeFound: true,
           invCompany: inv?.company, brand: inv?.brand || '', isPast: false,
@@ -249,7 +250,7 @@ export default function SalesContent() {
       }
       const profit = hasCost ? ((amt - ff.fee) - cost - unim) / VAT_DIV + ship * (1 - CUST_SHIP_ADJ) : 0;
       flt.push({
-        date, amt, qty, rep, mall, company,
+        date, amt, rev: amt / VAT_DIV, qty, rep, mall, company,
         profit, profitKnown: hasCost, fee: ff.fee, unim,
         missCost: !hasCost, registered: !!inv, feeFound: ff.found,
         invCompany: inv?.company, brand: inv?.brand || '', isPast: false,
@@ -265,8 +266,8 @@ export default function SalesContent() {
       for (const r of flt) {
         if (!cf(r.company)) continue;
         if (r.date < start || r.date > end) continue;
-        rev += r.amt; cnt++;
-        if (r.profitKnown) { prof += r.profit; mrev += r.amt; }
+        rev += r.rev; cnt++;
+        if (r.profitKnown) { prof += r.profit; mrev += r.rev; }
       }
       return { rev, prof, mrev, cnt };
     };
@@ -281,32 +282,32 @@ export default function SalesContent() {
     for (const r of flt) {
       if (!cf(r.company)) continue;
       if (r.date < ranges.curStart || r.date > ranges.curEnd) continue;
-      curRev += r.amt; curCnt++; curQty += r.qty;
-      if (r.profitKnown) { curProf += r.profit; curMrev += r.amt; curFee += r.fee; curUnim += r.unim; }
+      curRev += r.rev; curCnt++; curQty += r.qty;
+      if (r.profitKnown) { curProf += r.profit; curMrev += r.rev; curFee += r.fee; curUnim += r.unim; }
 
       const p = productMap.get(r.rep) || { rev: 0, qty: 0, prof: 0, cnt: 0, hasCost: r.profitKnown };
-      p.rev += r.amt; p.qty += r.qty; p.cnt++; if (r.profitKnown) p.prof += r.profit;
+      p.rev += r.rev; p.qty += r.qty; p.cnt++; if (r.profitKnown) p.prof += r.profit;
       p.hasCost = p.hasCost && r.profitKnown;
       productMap.set(r.rep, p);
 
       const m = mallMap.get(r.mall) || { rev: 0, cnt: 0, prof: 0, mrev: 0 };
-      m.rev += r.amt; m.cnt++; if (r.profitKnown) { m.prof += r.profit; m.mrev += r.amt; }
+      m.rev += r.rev; m.cnt++; if (r.profitKnown) { m.prof += r.profit; m.mrev += r.rev; }
       mallMap.set(r.mall, m);
 
       // 수수료 미설정 몰 추적 (매출은 있는데 요율 없음 → 경고)
       if (!r.feeFound && r.amt > 0) {
         const fk = `${r.company}|${normalizeMall(r.mall)}`;
         const fe = missFee.get(fk) || { company: r.company, mall: r.mall, rev: 0, cnt: 0 };
-        fe.rev += r.amt; fe.cnt++; missFee.set(fk, fe);
+        fe.rev += r.rev; fe.cnt++; missFee.set(fk, fe);
       }
 
       if (r.missCost) {
         if (r.registered) {
           const e = missEdit.get(r.rep) || { qty: 0, cnt: 0, rev: 0, company: r.invCompany || '미분류' };
-          e.qty += r.qty; e.cnt++; e.rev += r.amt; missEdit.set(r.rep, e);
+          e.qty += r.qty; e.cnt++; e.rev += r.rev; missEdit.set(r.rep, e);
         } else {
           const u = missUnreg.get(r.rep) || { qty: 0, cnt: 0, rev: 0 };
-          u.qty += r.qty; u.cnt++; u.rev += r.amt; missUnreg.set(r.rep, u);
+          u.qty += r.qty; u.cnt++; u.rev += r.rev; missUnreg.set(r.rep, u);
         }
       }
     }
@@ -316,7 +317,7 @@ export default function SalesContent() {
     // 추이 그래프 버킷
     const sumBucket = (start: string, end: string) => {
       let s = 0;
-      for (const r of flt) { if (!cf(r.company)) continue; if (r.date < start || r.date > end) continue; s += r.amt; }
+      for (const r of flt) { if (!cf(r.company)) continue; if (r.date < start || r.date > end) continue; s += r.rev; }
       return s;
     };
     const trend: { label: string; rev: number; isCurrent: boolean }[] = [];
@@ -361,13 +362,14 @@ export default function SalesContent() {
       if (r.isPast || !r.brand) continue;
       if (r.date < ranges.curStart || r.date > ranges.curEnd) continue;
       const e = brandMap.get(r.brand) || { sales: 0, margin: 0 };
-      e.sales += r.amt; e.margin += r.profit; brandMap.set(r.brand, e);
+      e.sales += r.rev; e.margin += r.profit; brandMap.set(r.brand, e);
     }
     for (const b of brandSales) {
       const d = b.period_date || '';
       if (d < ranges.curStart || d > ranges.curEnd) continue;
       const e = brandMap.get(b.brand) || { sales: 0, margin: 0 };
-      e.sales += Number(b.sales) || 0; e.margin += Number(b.margin) || 0; brandMap.set(b.brand, e);
+      // 과거 브랜드 매출은 부가세 포함 → ÷1.1. 마진은 파일 값(이미 부가세 제외) 그대로.
+      e.sales += (Number(b.sales) || 0) / VAT_DIV; e.margin += Number(b.margin) || 0; brandMap.set(b.brand, e);
     }
     const byBrand = Array.from(brandMap.entries()).map(([name, v]) => ({ name, ...v })).sort((a, b) => b.sales - a.sales);
 
