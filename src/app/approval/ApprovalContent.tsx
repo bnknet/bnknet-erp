@@ -132,6 +132,25 @@ function countWeekdays(start: string, end: string): number {
   return count;
 }
 
+// 입사일 기준 법정 연차(근로기준법) 계산
+// · 1년 미만: 1개월 개근당 1일, 최대 11일
+// · 1년 이상: 15일 + 3년차부터 2년마다 1일 가산, 최대 25일
+function statutoryLeave(hireDate?: string): number | null {
+  if (!hireDate) return null;
+  const h = new Date(hireDate);
+  if (isNaN(h.getTime())) return null;
+  const now = new Date();
+  let years = now.getFullYear() - h.getFullYear();
+  const anniv = new Date(h); anniv.setFullYear(h.getFullYear() + years);
+  if (now < anniv) years -= 1;
+  if (years < 1) {
+    let months = (now.getFullYear() - h.getFullYear()) * 12 + (now.getMonth() - h.getMonth());
+    if (now.getDate() < h.getDate()) months -= 1;
+    return Math.max(0, Math.min(11, months));
+  }
+  return Math.min(25, 15 + Math.floor((years - 1) / 2));
+}
+
 const EMPTY_ITEM: ApprovalItem = { item_date: '', description: '', quantity: 0, amount: 0, note: '', sort_order: 0 };
 
 type View = 'list' | 'form' | 'detail' | 'leave';
@@ -309,6 +328,24 @@ export default function ApprovalContent() {
     });
     setEditingLeave(null);
     await loadLeaveData();
+  }
+
+  // 입사일 기준 법정 연차 일괄 적용 (대표·실장 제외 직원 전체)
+  async function applyStatutoryLeave() {
+    const targets = leaveRows
+      .map(r => ({ id: r.id, name: r.name, hire: r.hire_date, law: statutoryLeave(r.hire_date) }))
+      .filter(t => t.law !== null);
+    const noHire = leaveRows.filter(r => !r.hire_date).map(r => r.name);
+    if (!targets.length) { alert('입사일이 등록된 직원이 없습니다. 인사 관리에서 입사일을 먼저 등록하세요.'); return; }
+    if (!confirm(`입사일 기준 법정 연차를 ${targets.length}명에게 적용합니다.\n${noHire.length ? `\n⚠️ 입사일 미등록(제외): ${noHire.join(', ')}` : ''}\n진행할까요?`)) return;
+    for (const t of targets) {
+      await supabaseFetch(`/employees?id=eq.${t.id}`, {
+        method: 'PATCH', headers: { Prefer: 'return=minimal' },
+        body: JSON.stringify({ annual_leave_total: t.law }),
+      });
+    }
+    await loadLeaveData();
+    alert(`✅ ${targets.length}명 법정 연차 적용 완료.${noHire.length ? ` (입사일 미등록 ${noHire.length}명 제외)` : ''}`);
   }
 
   // 내 직원 정보 + 사용한 연차 수 로드
@@ -1258,10 +1295,12 @@ export default function ApprovalContent() {
             ← 결재 목록
           </button>
           <h2 className="text-lg font-bold text-gray-800">직원 연차 현황 ({new Date().getFullYear()}년)</h2>
-          <button onClick={loadLeaveData}
-            className="ml-auto px-3 py-1.5 text-sm border border-gray-200 rounded-lg text-gray-500 hover:bg-gray-50">
-            새로고침
-          </button>
+          <div className="ml-auto flex items-center gap-2 flex-wrap">
+            <button onClick={applyStatutoryLeave}
+              className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium">📅 입사일 기준 법정연차 자동적용</button>
+            <button onClick={loadLeaveData}
+              className="px-3 py-1.5 text-sm border border-gray-200 rounded-lg text-gray-500 hover:bg-gray-50">새로고침</button>
+          </div>
         </div>
 
         {leaveLoading ? (
@@ -1312,6 +1351,9 @@ export default function ApprovalContent() {
                         </div>
                       )}
                       <div className="text-sm text-gray-400">부여</div>
+                      {statutoryLeave(row.hire_date) != null && (
+                        <div className={`text-[10px] ${statutoryLeave(row.hire_date) === row.annual_leave_total ? 'text-gray-300' : 'text-blue-400'}`}>법정 {statutoryLeave(row.hire_date)}</div>
+                      )}
                     </div>
                     <div className="text-center">
                       <div className="text-lg font-bold text-orange-500">{row.used}</div>
