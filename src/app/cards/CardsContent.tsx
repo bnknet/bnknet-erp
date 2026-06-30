@@ -205,8 +205,8 @@ export default function CardsContent() {
   const events: PayEvent[] = [];
   for (const p of purchases) {
     if (p.is_card_payment) {
-      // 선결제(결제·한도복구) → 결제예정일(없으면 구매일)에 -금액으로 표시
-      const d = p.payment_due_date || p.spend_date;
+      // 선결제(결제·한도복구) → 실제 선결제한 날(지출일) 기준 표시, 없으면 결제예정일
+      const d = p.spend_date || p.payment_due_date;
       if (d) events.push({ date: d, cardId: p.card_id, amount: -(p.total_amount || 0), type: 'prepay', purchase: p });
     } else if (p.payment_due_date) {
       events.push({ date: p.payment_due_date, cardId: p.card_id, amount: p.total_amount, type: 'charge', purchase: p });
