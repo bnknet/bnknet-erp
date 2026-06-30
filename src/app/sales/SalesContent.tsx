@@ -69,21 +69,28 @@ interface Ranges {
   prevStart: string | null; prevEnd: string | null;
   label: string; prevLabel: string;
 }
-function periodRanges(period: Period, today: Date, earliest: string): Ranges {
-  const t = ymd(today);
+// anchor = 조회 기준일, realToday = 실제 오늘(미래분 제외용)
+function periodRanges(period: Period, anchor: Date, earliest: string, realToday: string): Ranges {
+  const t = ymd(anchor);
+  const cap = (d: string) => (d > realToday ? realToday : d); // 미래 날짜는 오늘까지만
   if (period === 'day') {
-    const y = ymd(addDays(today, -1));
-    return { curStart: t, curEnd: t, prevStart: y, prevEnd: y, label: '오늘', prevLabel: '어제' };
+    const y = ymd(addDays(anchor, -1));
+    return { curStart: t, curEnd: t, prevStart: y, prevEnd: y, label: `${anchor.getMonth() + 1}/${anchor.getDate()}`, prevLabel: '전일' };
   }
   if (period === 'week') {
-    const ws = startOfWeekMon(today);
-    return { curStart: ymd(ws), curEnd: t, prevStart: ymd(addDays(ws, -7)), prevEnd: ymd(addDays(today, -7)), label: '이번 주', prevLabel: '지난주 같은 기간' };
+    const ws = startOfWeekMon(anchor);
+    const curEnd = cap(ymd(addDays(ws, 6)));
+    return { curStart: ymd(ws), curEnd, prevStart: ymd(addDays(ws, -7)), prevEnd: ymd(addDays(parseYmd(curEnd), -7)), label: '주간', prevLabel: '전주 동기간' };
   }
   if (period === 'month') {
-    const ms = startOfMonth(today); const pm = addMonths(today, -1);
-    return { curStart: ymd(ms), curEnd: t, prevStart: ymd(startOfMonth(pm)), prevEnd: ymd(pm), label: '이번 달', prevLabel: '지난달 같은 기간' };
+    const ms = startOfMonth(anchor); const me = endOfMonth(anchor);
+    const full = ymd(me) <= realToday;            // 지난달이면 그 달 전체
+    const curEnd = cap(ymd(me));
+    const pm = addMonths(anchor, -1);
+    const prevEnd = full ? ymd(endOfMonth(pm)) : ymd(addMonths(parseYmd(curEnd), -1));
+    return { curStart: ymd(ms), curEnd, prevStart: ymd(startOfMonth(pm)), prevEnd, label: `${anchor.getFullYear()}년 ${anchor.getMonth() + 1}월`, prevLabel: '전월 동기간' };
   }
-  return { curStart: earliest, curEnd: t, prevStart: null, prevEnd: null, label: '전체 누적', prevLabel: '' };
+  return { curStart: earliest, curEnd: realToday, prevStart: null, prevEnd: null, label: '전체 누적', prevLabel: '' };
 }
 
 export default function SalesContent() {
@@ -99,6 +106,16 @@ export default function SalesContent() {
 
   const [period, setPeriod] = useState<Period>('month');
   const [companyFilter, setCompanyFilter] = useState('전체');
+  const [anchor, setAnchor] = useState(() => ymd(new Date())); // 조회 기준일 (지난달 등 과거 기간 조회용)
+
+  function shiftAnchor(dir: number) {
+    const d = parseYmd(anchor);
+    if (period === 'day') d.setDate(d.getDate() + dir);
+    else if (period === 'week') d.setDate(d.getDate() + 7 * dir);
+    else if (period === 'month') d.setMonth(d.getMonth() + dir);
+    else return; // 누적은 이동 없음
+    setAnchor(ymd(d));
+  }
 
   // 원가 미입력 경고 패널
   const [showCostPanel, setShowCostPanel] = useState(false);
@@ -131,7 +148,8 @@ export default function SalesContent() {
 
   // ── 집계 (모든 계산을 한 곳에서) ──────────────────────
   const data = useMemo(() => {
-    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const today = parseYmd(anchor); today.setHours(0, 0, 0, 0); // 기준일(과거 기간 조회 시 이동)
+    const realToday = new Date(); realToday.setHours(0, 0, 0, 0); // 실제 오늘 (미래분 제외용)
 
     // 재고 → 상품명별 {원가, 사업자, 브랜드} 맵 (같은 이름이면 원가>0인 것 우선)
     const invMap = new Map<string, { cost: number; company: string; brand: string }>();
@@ -227,7 +245,7 @@ export default function SalesContent() {
       });
     }
 
-    const ranges = periodRanges(period, today, earliest);
+    const ranges = periodRanges(period, today, earliest, ymd(realToday));
     const cf = (company: string) => companyFilter === '전체' || company === companyFilter;
 
     // 기간 합계만 (이전 기간/추이용)
@@ -299,7 +317,7 @@ export default function SalesContent() {
     } else if (period === 'month') {
       for (let i = 5; i >= 0; i--) { const ms = startOfMonth(addMonths(today, -i)); trend.push({ label: `${ms.getMonth() + 1}월`, rev: sumBucket(ymd(ms), ymd(endOfMonth(ms))), isCurrent: i === 0 }); }
     } else {
-      let ms = startOfMonth(parseYmd(earliest)); const end = startOfMonth(today);
+      let ms = startOfMonth(parseYmd(earliest)); const end = startOfMonth(realToday);
       while (ms <= end) { trend.push({ label: `${String(ms.getFullYear()).slice(2)}.${pad(ms.getMonth() + 1)}`, rev: sumBucket(ymd(ms), ymd(endOfMonth(ms))), isCurrent: ms.getTime() === end.getTime() }); ms = addMonths(ms, 1); }
       if (trend.length > 12) trend.splice(0, trend.length - 12);
     }
@@ -333,7 +351,7 @@ export default function SalesContent() {
       trend, byProduct, byMall, byBrand, missingEditable, missingUnreg, missingFee,
       missingCount: missingEditable.length + missingUnreg.length,
     };
-  }, [orders, inventory, fees, brandSales, period, companyFilter]);
+  }, [orders, inventory, fees, brandSales, period, companyFilter, anchor]);
 
   const { ranges, cur, prev, trend, byProduct, byMall, byBrand, missingEditable, missingUnreg, missingFee, missingCount } = data;
   const marginPct = cur.mrev > 0 ? Math.round((cur.prof / cur.mrev) * 100) : null;
@@ -394,7 +412,22 @@ export default function SalesContent() {
           className="px-3 py-2 rounded-lg border border-gray-200 text-base bg-white">
           {COMPANIES.map((c) => <option key={c} value={c}>{c}</option>)}
         </select>
-        <span className="text-sm text-gray-400">{ranges.curStart} ~ {ranges.curEnd}</span>
+
+        {/* 기간 이동 (지난달·특정일 조회) — 누적은 제외 */}
+        {period !== 'all' && (
+          <div className="flex items-center gap-1">
+            <button onClick={() => shiftAnchor(-1)} title="이전"
+              className="px-2 py-2 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50">◀</button>
+            <input type="date" value={anchor} onChange={(e) => e.target.value && setAnchor(e.target.value)}
+              className="px-2 py-2 rounded-lg border border-gray-200 text-base bg-white" />
+            <button onClick={() => shiftAnchor(1)} title="다음"
+              className="px-2 py-2 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50">▶</button>
+            <button onClick={() => setAnchor(ymd(new Date()))}
+              className="px-2.5 py-2 rounded-lg border border-gray-200 text-sm text-gray-500 hover:bg-gray-50">오늘</button>
+          </div>
+        )}
+
+        <span className="text-sm text-gray-400">{ranges.label} · {ranges.curStart}{ranges.curStart !== ranges.curEnd ? ` ~ ${ranges.curEnd}` : ''}</span>
         <button onClick={loadAll} disabled={loading}
           className="ml-auto px-3 py-2 rounded-lg border border-gray-200 text-base text-gray-600 hover:bg-gray-50 disabled:opacity-50">
           {loading ? '불러오는 중…' : '새로고침'}
