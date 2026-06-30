@@ -9,6 +9,7 @@ export interface Card {
   card_company?: string;
   last4?: string;
   limit_amount: number;
+  opening_balance?: number;   // 6/30 기준 실제 잔여한도(참고용·정적값)
   billing_day: number;        // 결제일 (1~31)
   close_day: number;          // 사용 마감일 (31 = 말일)
   benefit_memo?: string;
