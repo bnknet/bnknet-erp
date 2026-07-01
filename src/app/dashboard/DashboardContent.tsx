@@ -73,11 +73,12 @@ export default function DashboardContent() {
       try {
         const ms = monthStartStr();
         const today = dStr(new Date());
-        const [ord, inv] = await Promise.all([
+        const [ord, inv, bom] = await Promise.all([
           supabaseFetchAll<MiniOrder>(`/orders?select=upload_date,product_name,collect_product,quantity,amount,canceled,company&upload_date=gte.${ms}`),
           supabaseFetchAll<MiniInv>('/inventory?select=product_name,company,cost_price'),
+          supabaseFetchAll<{ set_name: string; component_name: string }>('/product_bom?select=set_name,component_name').catch(() => []),
         ]);
-        setCostGap(computeCostGap(ord, inv, ms, today));
+        setCostGap(computeCostGap(ord, inv, ms, today, bom));
       } catch { /* 무시 — 대시보드 경고는 보조 지표 */ }
     })();
   }, [canSeeSnapAlert]);
