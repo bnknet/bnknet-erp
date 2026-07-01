@@ -45,7 +45,22 @@ function today() { return ymd(new Date()); }
 const EMPTY_EVENT = {
   title: '', event_type: '외근', start_date: today(), end_date: '',
   all_day: true, start_time: '', end_time: '', location: '', description: '',
+  recur: '없음' as '없음' | '매주' | '매월' | '매년', recur_until: '',
 };
+
+// 반복 i번째 발생일 (시작일 기준, 월말 클램프). 반환 YYYY-MM-DD
+function occurDate(startStr: string, mode: string, i: number): string {
+  const b = new Date(startStr + 'T00:00:00');
+  let y = b.getFullYear(), m = b.getMonth(), d = b.getDate();
+  if (mode === '매주') { const t = new Date(b); t.setDate(b.getDate() + 7 * i); y = t.getFullYear(); m = t.getMonth(); d = t.getDate(); }
+  else if (mode === '매년') { y = b.getFullYear() + i; }
+  else if (mode === '매월') { const tm = b.getMonth() + i; y = b.getFullYear() + Math.floor(tm / 12); m = ((tm % 12) + 12) % 12; d = Math.min(b.getDate(), new Date(y, m + 1, 0).getDate()); }
+  return `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+}
+function addDaysStr(startStr: string, days: number): string {
+  const d = new Date(startStr + 'T00:00:00'); d.setDate(d.getDate() + days);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
 
 export default function CalendarContent() {
   const me = getUser();
@@ -74,13 +89,14 @@ export default function CalendarContent() {
 
   const loadVacations = useCallback(async () => {
     const res = await supabaseFetch(
-      '/approvals?doc_type=eq.휴가신청서&status=eq.approved&select=id,submitter_name,company,vacation_type,vacation_start,vacation_end,vacation_days'
+      '/approvals?doc_type=eq.휴가신청서&status=eq.approved&select=id,submitter_name,company,vacation_type,vacation_start,vacation_end,vacation_days,vacation_reason'
     );
     const data = await res.json();
     if (!Array.isArray(data)) { setVacations([]); return; }
     const vac: DisplayEvent[] = data.map((v: {
       id: string; submitter_name: string; company: string;
       vacation_type: string; vacation_start: string; vacation_end?: string;
+      vacation_days?: number; vacation_reason?: string;
     }) => ({
       id: 'vac_' + v.id,
       title: `${v.submitter_name} ${VAC_LABEL[v.vacation_type] || '휴가'}`,
@@ -88,6 +104,8 @@ export default function CalendarContent() {
       start_date: v.vacation_start,
       end_date: v.vacation_end || v.vacation_start,
       all_day: true,
+      // 사유·일수를 description에 담아 상세에서 표시
+      description: `${VAC_LABEL[v.vacation_type] || '휴가'}${v.vacation_days ? ` ${v.vacation_days}일` : ''}${v.vacation_reason ? ` · 사유: ${v.vacation_reason}` : ' · 사유 미기재'}`,
       created_by: v.submitter_name,
       company: v.company,
       readonly_link: true,
@@ -137,6 +155,24 @@ export default function CalendarContent() {
           method: 'PATCH', headers: { Prefer: 'return=minimal' },
           body: JSON.stringify(payload),
         });
+      } else if (form.recur && form.recur !== '없음') {
+        // 반복 일정: 시작일~반복종료일까지 발생일마다 개별 일정 생성 (구글캘린더식)
+        if (!form.recur_until || form.recur_until < form.start_date) {
+          alert('반복 종료일을 시작일 이후로 지정하세요.'); setSaving(false); return;
+        }
+        const durDays = form.end_date ? Math.max(0, Math.round((new Date(form.end_date + 'T00:00:00').getTime() - new Date(form.start_date + 'T00:00:00').getTime()) / 86400000)) : 0;
+        const rows: Record<string, unknown>[] = [];
+        for (let i = 0; i < 400; i++) {
+          const s = occurDate(form.start_date, form.recur, i);
+          if (s > form.recur_until) break;
+          rows.push({ ...payload, start_date: s, end_date: durDays > 0 ? addDaysStr(s, durDays) : null });
+        }
+        if (!rows.length) { alert('생성할 반복 일정이 없습니다.'); setSaving(false); return; }
+        await supabaseFetch('/calendar_events', {
+          method: 'POST', headers: { Prefer: 'return=minimal' },
+          body: JSON.stringify(rows),
+        });
+        alert(`✅ 반복 일정 ${rows.length}건이 등록되었습니다 (${form.recur}, ~${form.recur_until}).`);
       } else {
         await supabaseFetch('/calendar_events', {
           method: 'POST', headers: { Prefer: 'return=minimal' },
@@ -163,6 +199,7 @@ export default function CalendarContent() {
       start_date: e.start_date, end_date: e.end_date || '',
       all_day: e.all_day, start_time: e.start_time || '', end_time: e.end_time || '',
       location: e.location || '', description: e.description || '',
+      recur: '없음', recur_until: '',
     });
     setEditId(e.id);
     setShowForm(true);
@@ -386,6 +423,27 @@ export default function CalendarContent() {
                 <input type="checkbox" checked={form.all_day} onChange={e => setForm({ ...form, all_day: e.target.checked })} className="accent-blue-600" />
                 종일 일정
               </label>
+
+              {/* 반복 일정 (신규 등록만) */}
+              {!editId && (
+                <div className="bg-blue-50/40 border border-blue-100 rounded-xl p-3">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-sm font-medium text-gray-600">🔁 반복</span>
+                    {(['없음', '매주', '매월', '매년'] as const).map(r => (
+                      <button key={r} type="button" onClick={() => setForm({ ...form, recur: r })}
+                        className={`px-3 py-1 rounded-lg text-sm font-medium border ${form.recur === r ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600 border-gray-200'}`}>{r}</button>
+                    ))}
+                  </div>
+                  {form.recur !== '없음' && (
+                    <div className="mt-2 flex items-center gap-2 flex-wrap">
+                      <span className="text-sm text-gray-500">반복 종료일</span>
+                      <input type="date" value={form.recur_until} min={form.start_date} onChange={e => setForm({ ...form, recur_until: e.target.value })}
+                        className="px-3 py-1.5 border border-gray-200 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-blue-400" />
+                      <span className="text-xs text-gray-400">{form.recur} · 이 날짜까지 매 {form.recur === '매주' ? '주' : form.recur === '매월' ? '월' : '년'} 같은 날 자동 등록</span>
+                    </div>
+                  )}
+                </div>
+              )}
               {!form.all_day && (
                 <div className="grid grid-cols-2 gap-3">
                   <div>
