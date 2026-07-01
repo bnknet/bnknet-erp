@@ -265,6 +265,37 @@ export default function OrdersContent() {
     await searchOrders();
   }
 
+  // 미차감 주문 재고 재출고 — 자동출고 실패분 일괄 복구 (재변환 없이)
+  async function reshipUndeducted() {
+    if (!canRegister) { alert('권한이 없습니다.'); return; }
+    if (!confirm('재고 자동출고가 안 된 주문들을 다시 출고 처리합니다.\n(이미 차감된 건은 건너뜁니다) 진행할까요?')) return;
+    try {
+      const undeducted = await supabaseFetchAll<{ id: string; collect_product?: string; product_name?: string; quantity?: number; company?: string; source?: string }>(
+        '/orders?stock_deducted=eq.false&canceled=eq.false&select=id,collect_product,product_name,quantity,company,source',
+      );
+      const targets = undeducted.filter(o => o.source !== '과거' && o.source !== '도매'); // 사방넷/일반/수기만
+      if (!targets.length) { alert('재출고할 미차감 주문이 없습니다.'); return; }
+      const inv = await supabaseFetchAll<{ id: string; product_name: string; company: string }>('/inventory?select=id,product_name,company');
+      const invMap = new Map<string, string>();
+      for (const it of inv) { if (!it.product_name) continue; const k = `${it.product_name}|${it.company || ''}`; if (!invMap.has(k)) invMap.set(k, it.id); }
+      const moves: Record<string, string | number>[] = [];
+      let unmatchedCnt = 0;
+      for (const o of targets) {
+        const rep = matchProduct(o.collect_product || o.product_name || '').name;
+        const invId = invMap.get(`${rep}|${o.company || ''}`);
+        if (invId) moves.push({ order_id: o.id, inventory_id: invId, quantity: Number(o.quantity) || 0, product_name: rep, company: o.company || '', created_by: me?.name || '' });
+        else unmatchedCnt++;
+      }
+      if (!moves.length) { alert(`매칭되는 재고가 없어 재출고할 게 없습니다. (미매칭 ${unmatchedCnt}건)`); return; }
+      const res = await supabaseFetch('/rpc/ship_orders', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ p_moves: moves }) });
+      const txt = await res.text();
+      if (!res.ok) { alert(`❌ 재출고 실패 (HTTP ${res.status})\n\n원인: ${txt}`); return; }
+      const r = JSON.parse(txt);
+      alert(`✅ 재출고 완료\n· 재고 차감: ${r.shipped ?? 0}건\n· 건너뜀(이미 차감): ${r.skipped ?? 0}건\n· 매칭 안 됨: ${unmatchedCnt}건${Array.isArray(r.negative) && r.negative.length ? `\n· ⚠️ 재고 마이너스: ${r.negative.length}건` : ''}`);
+      await searchOrders();
+    } catch (e) { alert('❌ 재출고 중 오류: ' + ((e as Error)?.message || e)); }
+  }
+
   async function deleteSelectedOrders() {
     if (orderChecked.size === 0) { alert('삭제할 주문을 선택하세요.'); return; }
     if (!confirm(`선택한 ${orderChecked.size}건을 완전히 삭제하시겠습니까? (복구 불가)`)) return;
@@ -403,6 +434,7 @@ export default function OrdersContent() {
       // 상품명(대표명) + 사업자로 재고 매칭 → 못 찾으면 경고(자동출고 안 함, 안전장치)
       let warn: ShipWarn = { unmatched: [], negative: [], shipped: 0 };
       let unknownProducts: { name: string; cnt: number; qty: number }[] = [];
+      let shipErrMsg = '';
       try {
         const inv = await supabaseFetchAll<{ id: string; product_name: string; company: string; quantity: number }>(
           '/inventory?select=id,product_name,company,quantity',
@@ -441,7 +473,7 @@ export default function OrdersContent() {
             method: 'POST', headers: { Prefer: 'return=representation' },
             body: JSON.stringify({ p_moves: moves }),
           });
-          if (!shipRes.ok) throw new Error('ship ' + shipRes.status);
+          if (!shipRes.ok) { shipErrMsg = (shipRes.status + ' ' + (await shipRes.text())).slice(0, 400); throw new Error('ship'); }
           const shipResult = await shipRes.json();
           warn.shipped = shipResult?.shipped ?? 0;
           warn.negative = Array.isArray(shipResult?.negative) ? shipResult.negative : [];
@@ -461,7 +493,7 @@ export default function OrdersContent() {
           alerts.push({ company, kind: 'unknown_product', detail: `매칭데이터에 없는(인식 못한) 상품 ${unknownProducts.length}종: ${d} — 상품 매칭/재고 등록 필요`, order_count: unknownProducts.reduce((s, u) => s + u.cnt, 0), created_by: me?.name || '' });
         }
         if (warn.shipped === -1) {
-          alerts.push({ company, kind: 'rpc_fail', detail: `재고 자동출고 실패 — 주문 ${newRows.length}건 저장됨(재고 수동 조정 필요)`, order_count: newRows.length, created_by: me?.name || '' });
+          alerts.push({ company, kind: 'rpc_fail', detail: `재고 자동출고 실패 — 주문 ${newRows.length}건 저장됨(재고 수동 조정 필요)${shipErrMsg ? ` [원인: ${shipErrMsg}]` : ''}`, order_count: newRows.length, created_by: me?.name || '' });
         }
         if (warn.unmatched.length) {
           const d = warn.unmatched.slice(0, 20).map(u => `${u.name}(${u.qty}개)`).join(', ');
@@ -840,8 +872,14 @@ export default function OrdersContent() {
       {tab === 'manage' && (
         <div className="space-y-4">
           <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
-            <h2 className="text-lg font-bold text-gray-800 mb-1">주문 조회 · 취소</h2>
-            <p className="text-base text-gray-400 mb-4">고객 취소 등으로 주문을 취소/삭제합니다. 취소된 주문은 매출·영업이익 집계에서 제외됩니다.</p>
+            <div className="flex items-start justify-between gap-2 flex-wrap mb-1">
+              <h2 className="text-lg font-bold text-gray-800">주문 조회 · 취소</h2>
+              {canRegister && (
+                <button onClick={reshipUndeducted}
+                  className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-sm font-medium">🔄 미차감분 재고 재출고</button>
+              )}
+            </div>
+            <p className="text-base text-gray-400 mb-4">고객 취소 등으로 주문을 취소/삭제합니다. 취소된 주문은 매출·영업이익 집계에서 제외됩니다. · <b>자동출고 실패분</b>은 우측 &apos;재고 재출고&apos;로 일괄 차감.</p>
             <div className="flex gap-2 flex-wrap items-center">
               <div className="flex items-center gap-1">
                 <input type="date" value={sFrom} max={sTo || undefined} onChange={e => setSFrom(e.target.value)}
