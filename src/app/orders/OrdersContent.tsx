@@ -79,6 +79,8 @@ export default function OrdersContent() {
   const [mDate, setMDate] = useState(todayStr());
   const [mMall, setMMall] = useState('');
   const [mPartner, setMPartner] = useState('');
+  const [mShipMethod, setMShipMethod] = useState<'택배' | '직접수령' | '화물'>('택배'); // 출고방식
+  const [mCourierCount, setMCourierCount] = useState<number>(1); // 택배 출고 건수
   const [mLines, setMLines] = useState<ManualLine[]>([{ key: 1, invId: '', productName: '', qty: 1, amount: 0, cost: 0, shipping: 0 }]);
   const [inv, setInv] = useState<InvItem[]>([]);
   const [invLoaded, setInvLoaded] = useState(false);
@@ -125,6 +127,9 @@ export default function OrdersContent() {
         quantity: l.qty, amount: l.amount, is_bundle: valid.length > 1,
         source: isW ? '도매' : '수기',
         manual_cost: isW ? l.cost : null, manual_shipping: isW ? l.shipping : null,
+        shipping_method: mShipMethod,
+        // 택배 출고 건수: 택배일 때만 기록(주문 전체 기준 동일값 → 매출현황에서 주문당 1회 집계)
+        courier_count: mShipMethod === '택배' ? (Number(mCourierCount) || 1) : null,
       }));
 
       const res = await supabaseFetch('/orders', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify(rows) });
@@ -1032,6 +1037,23 @@ export default function OrdersContent() {
                 <label className="block text-sm text-gray-500 mb-1">거래처/수취인 (선택)</label>
                 <input value={mPartner} onChange={(e) => setMPartner(e.target.value)} placeholder="예: ○○상사" className="w-full px-3 py-2 border border-gray-200 rounded-lg text-base" />
               </div>
+              <div>
+                <label className="block text-sm text-gray-500 mb-1">출고방식 *</label>
+                <select value={mShipMethod} onChange={(e) => setMShipMethod(e.target.value as '택배' | '직접수령' | '화물')}
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-base">
+                  <option value="택배">택배</option>
+                  <option value="직접수령">직접수령</option>
+                  <option value="화물">화물(용차)</option>
+                </select>
+              </div>
+              {mShipMethod === '택배' && (
+                <div>
+                  <label className="block text-sm text-gray-500 mb-1">택배 출고 건수</label>
+                  <input type="number" min={1} value={mCourierCount || ''} onChange={(e) => setMCourierCount(Number(e.target.value) || 0)}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-base text-right" />
+                  <p className="text-xs text-gray-400 mt-1">이 주문으로 나간 택배 상자 수 → 매출현황 택배건수에 자동 반영</p>
+                </div>
+              )}
             </div>
 
             {!mCompany && <div className="text-sm text-gray-400">※ 사업자를 먼저 선택하면 해당 사업자 재고에서 상품을 고를 수 있습니다.</div>}

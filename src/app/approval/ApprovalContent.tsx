@@ -183,7 +183,8 @@ export default function ApprovalContent() {
   const [selected, setSelected] = useState<Approval | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [filterStatus, setFilterStatus] = useState('all');
+  // 승인권자(대표·실장)는 기본으로 '내 결재 대기'만 보이게 → 바로바로 연속 결재
+  const [filterStatus, setFilterStatus] = useState(isCeo || isAdmin ? 'myturn' : 'all');
 
   // 연차 현황
   const [leaveRows, setLeaveRows] = useState<LeaveRow[]>([]);
@@ -486,27 +487,44 @@ export default function ApprovalContent() {
     } finally { setSaving(false); }
   }
 
+  // IX글로벌은 실장(admin)이 대표 자격으로 최종 결재 (세무증빙: 대표 명의, 실장 표기 없음)
+  function canFinalApprove(approval: Approval): boolean {
+    return isCeo || (approval.company === 'IX글로벌' && isAdmin);
+  }
+
   async function handleApprove(approval: Approval) {
     const now = new Date().toISOString();
     const hasStep2 = APPROVAL_LINES[approval.company]?.length === 3;
     let patch: Record<string, unknown> = {};
 
-    if (hasStep2 && isAdmin && approval.approver1_status === 'pending') {
-      patch = { approver1_status: 'approved', approver1_at: now };
-    } else if (isCeo) {
-      if (hasStep2) {
+    if (hasStep2) {
+      if (isAdmin && approval.approver1_status === 'pending') {
+        patch = { approver1_status: 'approved', approver1_at: now };
+      } else if (isCeo && approval.approver1_status === 'approved') {
         patch = { approver2_status: 'approved', approver2_at: now, final_approver_status: 'approved', final_approver_at: now, status: 'approved' };
-      } else {
-        patch = { approver1_status: 'approved', approver1_at: now, final_approver_status: 'approved', final_approver_at: now, status: 'approved' };
       }
+    } else if (canFinalApprove(approval) && approval.approver1_status === 'pending') {
+      patch = { approver1_status: 'approved', approver1_at: now, final_approver_status: 'approved', final_approver_at: now, status: 'approved' };
     }
 
+    if (Object.keys(patch).length === 0) return; // 권한 없음/이미 처리됨 → 무시(안전장치)
     await supabaseFetch(`/approvals?id=eq.${approval.id}`, {
       method: 'PATCH', headers: { Prefer: 'return=minimal' },
       body: JSON.stringify(patch),
     });
-    await loadDetail(approval.id);
+    // 승인 후 상세로 빠지지 않고 목록으로 → '내 결재 대기'에서 다음 건 바로 처리
+    setView('list');
     await loadApprovals();
+  }
+
+  // 목록에서 바로 승인 (상세 진입 없이 연속 결재)
+  async function quickApprove(approval: Approval, e: React.MouseEvent) {
+    e.stopPropagation();
+    const label = approval.doc_type === '휴가신청서'
+      ? `${VACATION_TYPES.find(v => v.value === approval.vacation_type)?.label || ''} ${approval.vacation_days}일`
+      : `${approval.total_amount.toLocaleString()}원`;
+    if (!confirm(`[${approval.company}] ${approval.doc_type} · ${approval.submitter_name}\n${label}\n\n승인하시겠습니까?`)) return;
+    await handleApprove(approval);
   }
 
   async function handleReject(approval: Approval) {
@@ -515,14 +533,14 @@ export default function ApprovalContent() {
     const hasStep2 = APPROVAL_LINES[approval.company]?.length === 3;
     let patch: Record<string, unknown> = { status: 'rejected', rejection_reason: rejectReason };
 
-    if (hasStep2 && isAdmin && approval.approver1_status === 'pending') {
-      patch = { ...patch, approver1_status: 'rejected', approver1_at: now };
-    } else if (isCeo) {
-      if (hasStep2) {
-        patch = { ...patch, approver2_status: 'rejected', approver2_at: now };
-      } else {
+    if (hasStep2) {
+      if (isAdmin && approval.approver1_status === 'pending') {
         patch = { ...patch, approver1_status: 'rejected', approver1_at: now };
+      } else if (isCeo && approval.approver1_status === 'approved') {
+        patch = { ...patch, approver2_status: 'rejected', approver2_at: now };
       }
+    } else if (canFinalApprove(approval)) {
+      patch = { ...patch, approver1_status: 'rejected', approver1_at: now };
     }
 
     await supabaseFetch(`/approvals?id=eq.${approval.id}`, {
@@ -531,7 +549,7 @@ export default function ApprovalContent() {
     });
     setShowRejectModal(false);
     setRejectReason('');
-    await loadDetail(approval.id);
+    setView('list');
     await loadApprovals();
   }
 
@@ -691,7 +709,8 @@ export default function ApprovalContent() {
       if (isAdmin && approval.approver1_status === 'pending') return true;
       if (isCeo && approval.approver1_status === 'approved' && approval.approver2_status === 'pending') return true;
     } else {
-      if (isCeo && approval.approver1_status === 'pending') return true;
+      // 2단계(담당·대표): 대표(CEO) 또는 IX글로벌은 실장(대표 자격)이 결재
+      if (canFinalApprove(approval) && approval.approver1_status === 'pending') return true;
     }
     return false;
   }
@@ -1526,9 +1545,10 @@ export default function ApprovalContent() {
                           {STATUS_MAP[a.status]?.label}
                         </span>
                       </td>
-                      <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
+                      <td className="px-4 py-3 text-right" onClick={e => e.stopPropagation()}>
                         {isMyTurn(a) && (
-                          <span className="text-sm text-yellow-600 font-medium bg-yellow-50 px-2 py-0.5 rounded-md">결재 대기</span>
+                          <button onClick={(e) => quickApprove(a, e)}
+                            className="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium">✓ 승인</button>
                         )}
                       </td>
                     </tr>
@@ -1559,8 +1579,10 @@ export default function ApprovalContent() {
                     <div className="text-sm text-gray-400">{a.submitter_name} · {a.issue_date}</div>
                   </div>
                   {isMyTurn(a) && (
-                    <div className="mt-2">
-                      <span className="text-sm text-yellow-700 font-bold bg-yellow-50 px-2 py-1 rounded-md">⏳ 내 결재 대기</span>
+                    <div className="mt-2.5 flex items-center gap-2" onClick={e => e.stopPropagation()}>
+                      <button onClick={(e) => quickApprove(a, e)}
+                        className="flex-1 px-3 py-2 bg-green-600 active:bg-green-700 text-white rounded-lg text-base font-bold">✓ 승인</button>
+                      <span className="text-sm text-gray-400">탭하면 상세</span>
                     </div>
                   )}
                 </div>
