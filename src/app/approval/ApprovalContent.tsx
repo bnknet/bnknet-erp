@@ -183,6 +183,7 @@ export default function ApprovalContent() {
   const [selected, setSelected] = useState<Approval | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [exporting, setExporting] = useState(false);
   // 승인권자(대표·실장)는 기본으로 '내 결재 대기'만 보이게 → 바로바로 연속 결재
   const [filterStatus, setFilterStatus] = useState(isCeo || isAdmin ? 'myturn' : 'all');
 
@@ -586,6 +587,57 @@ export default function ApprovalContent() {
     await supabaseFetch(`/approvals?id=eq.${id}`, { method: 'DELETE' });
     setView('list');
     await loadApprovals();
+  }
+
+  // 세무사 제출용: 승인완료된 지출결의서·매입품의서(카드구매)를 품목 단위로 엑셀 내보내기
+  async function exportTaxExcel() {
+    setExporting(true);
+    try {
+      const XLSX = await import('xlsx');
+      const apps = await supabaseFetchAll<Approval>(
+        '/approvals?status=eq.approved&doc_type=in.(지출결의서,카드구매)&select=id,doc_type,company,issue_date,spend_date,organizer,processor,account,total_amount,card_id,purchase_vendor,payment_due_date,purchase_status,attachments&order=issue_date.asc',
+      );
+      if (!apps.length) { alert('승인완료된 지출결의서/매입품의서가 없습니다.'); return; }
+      const ids = apps.map(a => a.id);
+      const items = await supabaseFetchAll<ApprovalItem & { approval_id: string }>(
+        `/approval_items?approval_id=in.(${ids.join(',')})&order=sort_order.asc`,
+      );
+      const byApp = new Map<string, (ApprovalItem & { approval_id: string })[]>();
+      for (const it of items) { const a = byApp.get(it.approval_id) || []; a.push(it); byApp.set(it.approval_id, a); }
+
+      const rows: Record<string, string | number>[] = [];
+      for (const a of apps) {
+        const card = cards.find(c => c.id === a.card_id)?.card_name || '';
+        const attach = (a.attachments || []).map(f => f.url).join(' | ');
+        const base = {
+          발의일: a.issue_date || '', 사업자: a.company || '',
+          문서종류: DOC_TYPE_LABELS[a.doc_type as DocType] || a.doc_type,
+          거래처: a.purchase_vendor || a.processor || '', 계정과목: a.account || '',
+          결제카드: card, 결제예정일: a.payment_due_date || '',
+          취소여부: a.purchase_status === 'canceled' ? '전체취소' : a.purchase_status === 'partial' ? '일부취소' : '',
+        };
+        const its = byApp.get(a.id) || [];
+        if (!its.length) {
+          rows.push({ ...base, 월일: '', 품목: '', 수량: '', 금액: a.total_amount || 0, 비고: '', 첨부URL: attach });
+        } else {
+          for (const it of its) {
+            rows.push({
+              ...base,
+              월일: it.item_date || '', 품목: it.description || '',
+              수량: it.quantity || '', 금액: it.amount || 0,
+              비고: (it.canceled ? '[취소] ' : '') + (it.note || ''), 첨부URL: attach,
+            });
+          }
+        }
+      }
+      const header = ['발의일', '사업자', '문서종류', '거래처', '계정과목', '결제카드', '결제예정일', '월일', '품목', '수량', '금액', '비고', '취소여부', '첨부URL'];
+      const ws = XLSX.utils.json_to_sheet(rows, { header });
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, '지출결의서(승인)');
+      XLSX.writeFile(wb, `세무제출_지출결의서_${today()}.xlsx`);
+    } catch {
+      alert('내보내기 중 오류가 발생했습니다.');
+    } finally { setExporting(false); }
   }
 
   // 카드 매입 취소 → 환불(-) 처리 (항목별 부분취소 지원)
@@ -1503,10 +1555,18 @@ export default function ApprovalContent() {
             </button>
           ))}
         </div>
-        <button onClick={() => { resetForm(); setView('form'); }}
-          className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-base font-medium">
-          + 문서 작성
-        </button>
+        <div className="flex gap-2">
+          {(isCeo || isAdmin) && (
+            <button onClick={exportTaxExcel} disabled={exporting}
+              className="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-green-300 text-white rounded-xl text-base font-medium">
+              {exporting ? '내보내는 중...' : '🧾 세무 제출용(승인) 내보내기'}
+            </button>
+          )}
+          <button onClick={() => { resetForm(); setView('form'); }}
+            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-base font-medium">
+            + 문서 작성
+          </button>
+        </div>
       </div>
 
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
