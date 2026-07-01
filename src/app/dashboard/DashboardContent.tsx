@@ -81,15 +81,32 @@ export default function DashboardContent() {
     })();
   }, [canSeeSnapAlert]);
 
-  // 자동출고 안전장치 알림 (미해결) — 권한자에게만
+  // 자동출고 안전장치 알림 (미해결) — 권한자에게만.
+  // ⭐ 자동 해결: 그 사업자의 '재고 미차감 주문'이 0건이면(=문제 해소) 알림 자동 resolve.
   const [shipAlerts, setShipAlerts] = useState<ShipAlert[]>([]);
   useEffect(() => {
     if (!canSeeSnapAlert) return;
     (async () => {
       try {
-        const res = await supabaseFetch('/ship_alerts?resolved=eq.false&order=created_at.desc&limit=50');
-        const data = await res.json();
-        setShipAlerts(Array.isArray(data) ? data : []);
+        const res = await supabaseFetch('/ship_alerts?resolved=eq.false&order=created_at.desc&limit=100');
+        let data: ShipAlert[] = await res.json();
+        data = Array.isArray(data) ? data : [];
+        if (!data.length) { setShipAlerts([]); return; }
+        // 사업자별 미차감(재고 안 빠진) 주문이 남아있는지 — 없으면 그 사업자 알림 자동 해결
+        const undeducted = await supabaseFetchAll<{ company?: string; source?: string }>(
+          '/orders?stock_deducted=eq.false&canceled=eq.false&select=company,source',
+        );
+        const pending = new Set(
+          undeducted.filter(o => o.source !== '과거' && o.source !== '도매').map(o => o.company || ''),
+        );
+        const stale = data.filter(a => !pending.has(a.company || ''));
+        if (stale.length) {
+          await supabaseFetch(`/ship_alerts?id=in.(${stale.map(a => a.id).join(',')})`, {
+            method: 'PATCH', headers: { Prefer: 'return=minimal' },
+            body: JSON.stringify({ resolved: true, resolved_by: 'auto', resolved_at: new Date().toISOString() }),
+          }).catch(() => {});
+        }
+        setShipAlerts(data.filter(a => pending.has(a.company || '')));
       } catch { /* 무시 */ }
     })();
   }, [canSeeSnapAlert]);
