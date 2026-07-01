@@ -41,6 +41,10 @@ interface OrderRow {
   amount?: number;
   tracking_number?: string;
   canceled?: boolean;
+  source?: string;
+  company?: string;
+  manual_cost?: number;
+  manual_shipping?: number;
 }
 
 interface UploadHistory {
@@ -141,6 +145,16 @@ export default function OrdersContent() {
         body: JSON.stringify({ uploader: me?.name || '', file_name: `[직접등록${isW ? '·도매' : ''}] ${mall} ${valid.length}건`, file_url: null, row_count: valid.length, saved_count: valid.length }),
       });
 
+      // 변경 이력: 등록 로그 (도매/직접) — 어떤 제품이 어떻게 등록됐는지 기록
+      try {
+        const logs = saved.map((o, i) => ({
+          order_id: o.id, action: '등록', changed_by: me?.name || '',
+          detail: `상품: ${o.product_name} · 수량: ${valid[i]?.qty} · 매출: ${(valid[i]?.amount || 0).toLocaleString()}` +
+            (isW ? ` · 원가(개당): ${(valid[i]?.cost || 0).toLocaleString()} · 배송비: ${(valid[i]?.shipping || 0).toLocaleString()}` : ''),
+        }));
+        if (logs.length) await supabaseFetch('/order_change_logs', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify(logs) });
+      } catch { /* 로그 실패는 등록에 영향 없음 */ }
+
       // 재고 자동출고 (선택한 상품 = 재고와 일치하므로 매칭 보장)
       const invMap = new Map<string, string>();
       for (const it of inv) { if (it.product_name) invMap.set(`${it.product_name}|${it.company}`, it.id); }
@@ -173,6 +187,11 @@ export default function OrdersContent() {
   const [orderChecked, setOrderChecked] = useState<Set<string>>(new Set());
   const [orderLoading, setOrderLoading] = useState(false);
   const [undeductedCount, setUndeductedCount] = useState<number | null>(null); // 재고 미차감 실주문 건수(상시 감시)
+  // 도매 주문 수정
+  const [editOrder, setEditOrder] = useState<OrderRow | null>(null);
+  const [editForm, setEditForm] = useState({ invId: '', qty: 1, amount: 0, cost: 0, shipping: 0 });
+  const [editLogs, setEditLogs] = useState<{ id: string; action: string; detail?: string; changed_by?: string; created_at: string }[]>([]);
+  const [editSaving, setEditSaving] = useState(false);
 
   async function searchOrders(opts?: { from?: string; to?: string }) {
     const from = opts?.from !== undefined ? opts.from : sFrom;
@@ -180,7 +199,7 @@ export default function OrdersContent() {
     setOrderLoading(true);
     setOrderChecked(new Set());
     try {
-      let q = '/orders?select=id,upload_date,order_number,recipient_name,mall_name,product_name,quantity,amount,tracking_number,canceled&order=upload_date.desc';
+      let q = '/orders?select=id,upload_date,order_number,recipient_name,mall_name,product_name,quantity,amount,tracking_number,canceled,source,company,manual_cost,manual_shipping&order=upload_date.desc';
       if (sOrderNo.trim()) q += `&order_number=ilike.*${encodeURIComponent(sOrderNo.trim())}*`;
       if (sProduct.trim()) q += `&product_name=ilike.*${encodeURIComponent(sProduct.trim())}*`;
       if (sMall.trim()) q += `&mall_name=ilike.*${encodeURIComponent(sMall.trim())}*`;
@@ -284,6 +303,46 @@ export default function OrdersContent() {
 
   // 마운트 시 미차감 건수 로드 (변환 탭이 기본이라 배너/버튼 노출용)
   useEffect(() => { if (canRegister) refreshUndeductedCount(); }, [canRegister]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 도매 주문 수정 모달 열기 (+ 변경 이력 로드)
+  async function openEditOrder(o: OrderRow) {
+    if (!canRegister) return;
+    if (!invLoaded) await loadInventory();
+    const cur = inv.find(i => i.product_name === o.product_name && i.company === (o.company || ''));
+    setEditForm({ invId: cur?.id || '', qty: Number(o.quantity) || 0, amount: Number(o.amount) || 0, cost: Number(o.manual_cost) || 0, shipping: Number(o.manual_shipping) || 0 });
+    try {
+      const logs = await supabaseFetchAll<{ id: string; action: string; detail?: string; changed_by?: string; created_at: string }>(`/order_change_logs?order_id=eq.${o.id}&select=id,action,detail,changed_by,created_at&order=created_at.desc`);
+      setEditLogs(Array.isArray(logs) ? logs : []);
+    } catch { setEditLogs([]); }
+    setEditOrder(o);
+  }
+
+  async function saveEditOrder() {
+    if (!editOrder) return;
+    const it = inv.find(i => i.id === editForm.invId);
+    if (!it) { alert('상품을 선택하세요.'); return; }
+    if ((Number(editForm.qty) || 0) < 1 || (Number(editForm.amount) || 0) <= 0) { alert('수량·매출금액을 확인하세요.'); return; }
+    setEditSaving(true);
+    try {
+      const res = await supabaseFetch('/rpc/update_manual_order', {
+        method: 'POST', headers: { Prefer: 'return=representation' },
+        body: JSON.stringify({
+          p_order_id: editOrder.id, p_inventory_id: editForm.invId, p_product_name: it.product_name,
+          p_qty: Number(editForm.qty) || 0, p_amount: Number(editForm.amount) || 0,
+          p_cost: Number(editForm.cost) || 0, p_shipping: Number(editForm.shipping) || 0, p_by: me?.name || '',
+        }),
+      });
+      const txt = await res.text();
+      if (!res.ok) { alert(`수정 실패 (HTTP ${res.status})\n${txt}`); return; }
+      const won = (n: number) => Number(n || 0).toLocaleString();
+      const detail = `상품: ${editOrder.product_name} → ${it.product_name} · 수량: ${editOrder.quantity} → ${editForm.qty} · 매출: ${won(editOrder.amount || 0)} → ${won(editForm.amount)} · 원가(개당): ${won(editOrder.manual_cost || 0)} → ${won(editForm.cost)} · 배송비: ${won(editOrder.manual_shipping || 0)} → ${won(editForm.shipping)}`;
+      await supabaseFetch('/order_change_logs', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ order_id: editOrder.id, action: '수정', detail, changed_by: me?.name || '' }) }).catch(() => {});
+      setEditOrder(null);
+      await searchOrders();
+      await refreshUndeductedCount();
+    } catch (e) { alert('수정 중 오류: ' + ((e as Error)?.message || e)); }
+    finally { setEditSaving(false); }
+  }
 
   async function reshipUndeducted() {
     if (!canRegister) { alert('권한이 없습니다.'); return; }
@@ -1002,8 +1061,8 @@ export default function OrdersContent() {
                           onChange={() => setOrderChecked(orderChecked.size === orderList.length ? new Set() : new Set(orderList.map(o => o.id)))}
                           className="w-4 h-4 rounded border-gray-300 text-blue-600 cursor-pointer" />
                       </th>
-                      {['주문번호', '몰명', '상품명', '수량', '금액', '수취인', '상태'].map(h => (
-                        <th key={h} className="px-3 py-3 text-left text-sm font-medium text-gray-500 whitespace-nowrap">{h}</th>
+                      {['주문번호', '몰명', '상품명', '수량', '금액', '수취인', '상태', ''].map((h, i) => (
+                        <th key={i} className="px-3 py-3 text-left text-sm font-medium text-gray-500 whitespace-nowrap">{h}</th>
                       ))}
                     </tr>
                   </thead>
@@ -1026,6 +1085,11 @@ export default function OrdersContent() {
                             ? <span className="text-xs px-2 py-0.5 rounded-md bg-red-100 text-red-600 font-medium">취소됨</span>
                             : <span className="text-xs px-2 py-0.5 rounded-md bg-green-100 text-green-700">정상</span>}
                         </td>
+                        <td className="px-3 py-2.5 whitespace-nowrap">
+                          {canRegister && o.source === '도매' && !o.canceled && (
+                            <button onClick={() => openEditOrder(o)} className="text-sm text-blue-500 hover:text-blue-700 hover:underline">수정</button>
+                          )}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -1033,7 +1097,71 @@ export default function OrdersContent() {
               </div>
             )}
           </div>
-          <p className="text-xs text-gray-400">💡 취소 처리 시 차감했던 재고가 자동으로 복구되고, 취소 해제 시 다시 차감됩니다(이력에 기록). 매출·공헌이익에서도 자동 제외/포함됩니다.</p>
+          <p className="text-xs text-gray-400">💡 취소 처리 시 차감했던 재고가 자동으로 복구되고, 취소 해제 시 다시 차감됩니다(이력에 기록). 매출·공헌이익에서도 자동 제외/포함됩니다. 도매 주문은 <b>수정</b> 버튼으로 상품·수량·금액을 고칠 수 있고 재고·매출에 자동 반영됩니다.</p>
+        </div>
+      )}
+
+      {/* 도매 주문 수정 모달 */}
+      {editOrder && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6 my-8">
+            <h3 className="text-lg font-bold text-gray-800 mb-1">도매 주문 수정</h3>
+            <p className="text-sm text-gray-500 mb-4">{editOrder.order_number} · {editOrder.mall_name} · {editOrder.company}</p>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-sm text-gray-500 mb-1">상품 (해당 사업자 재고)</label>
+                <select value={editForm.invId} onChange={e => setEditForm(f => ({ ...f, invId: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-base">
+                  <option value="">상품 선택</option>
+                  {inv.filter(i => i.company === (editOrder.company || '')).map(i => (
+                    <option key={i.id} value={i.id}>{i.product_name} (재고 {i.quantity ?? 0})</option>
+                  ))}
+                </select>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div><label className="block text-sm text-gray-500 mb-1">수량</label>
+                  <input type="number" min={1} value={editForm.qty || ''} onChange={e => setEditForm(f => ({ ...f, qty: Number(e.target.value) || 0 }))}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-base text-right" /></div>
+                <div><label className="block text-sm text-gray-500 mb-1">매출금액</label>
+                  <input type="number" value={editForm.amount || ''} onChange={e => setEditForm(f => ({ ...f, amount: Number(e.target.value) || 0 }))}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-base text-right" /></div>
+                <div><label className="block text-sm text-gray-500 mb-1">원가(개당)</label>
+                  <input type="number" value={editForm.cost || ''} onChange={e => setEditForm(f => ({ ...f, cost: Number(e.target.value) || 0 }))}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-base text-right" /></div>
+                <div><label className="block text-sm text-gray-500 mb-1">배송비</label>
+                  <input type="number" value={editForm.shipping || ''} onChange={e => setEditForm(f => ({ ...f, shipping: Number(e.target.value) || 0 }))}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-base text-right" /></div>
+              </div>
+              <div className="text-sm text-gray-500 bg-gray-50 rounded-lg px-3 py-2">
+                예상 공헌이익 = (매출 − 원가×수량 − 배송비) ÷ 1.1 = <b>{Math.round((editForm.amount - editForm.cost * editForm.qty - editForm.shipping) / 1.1).toLocaleString()}원</b>
+              </div>
+            </div>
+
+            {/* 변경 이력 */}
+            <div className="mt-4">
+              <div className="text-sm font-medium text-gray-600 mb-1.5">변경 이력</div>
+              {editLogs.length === 0 ? (
+                <div className="text-sm text-gray-400">이력 없음</div>
+              ) : (
+                <div className="max-h-40 overflow-y-auto space-y-1.5 border border-gray-100 rounded-lg p-2">
+                  {editLogs.map(l => (
+                    <div key={l.id} className="text-xs">
+                      <span className={`px-1.5 py-0.5 rounded font-medium ${l.action === '수정' ? 'bg-amber-50 text-amber-600' : 'bg-green-50 text-green-600'}`}>{l.action}</span>
+                      <span className="text-gray-400 ml-1">{l.changed_by} · {l.created_at?.slice(0, 16).replace('T', ' ')}</span>
+                      {l.detail && <div className="text-gray-600 mt-0.5 break-words">{l.detail}</div>}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="flex gap-3 mt-5">
+              <button onClick={saveEditOrder} disabled={editSaving}
+                className="flex-1 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white rounded-xl text-base font-medium">{editSaving ? '저장 중...' : '저장 (재고·매출 자동 반영)'}</button>
+              <button onClick={() => setEditOrder(null)}
+                className="px-5 py-2.5 border border-gray-200 text-gray-600 rounded-xl text-base hover:bg-gray-50">닫기</button>
+            </div>
+          </div>
         </div>
       )}
 
