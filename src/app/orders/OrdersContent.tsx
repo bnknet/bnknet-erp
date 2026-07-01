@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { convertOrders, buildSupabaseRows, matchProduct, type ConvertedOrderRow, type RawOrderRow } from '@/lib/orderConvert';
 import { supabaseFetch, supabaseFetchAll, supabaseUpload, safeStorageKey } from '@/lib/supabase';
 import { getUser } from '@/lib/auth';
@@ -281,6 +281,9 @@ export default function OrdersContent() {
       setUndeductedCount(rows.filter(o => o.source !== '과거' && o.source !== '도매').length);
     } catch { setUndeductedCount(null); }
   }
+
+  // 마운트 시 미차감 건수 로드 (변환 탭이 기본이라 배너/버튼 노출용)
+  useEffect(() => { if (canRegister) refreshUndeductedCount(); }, [canRegister]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function reshipUndeducted() {
     if (!canRegister) { alert('권한이 없습니다.'); return; }
@@ -667,6 +670,14 @@ export default function OrdersContent() {
       {/* 파일 변환 탭 */}
       {tab === 'convert' && (
         <div className="space-y-4">
+          {/* 미차감 재고 알림 + 재출고 (변환 탭에서 바로 처리) */}
+          {canRegister && !!undeductedCount && (
+            <div className="bg-red-50 border border-red-200 rounded-2xl px-5 py-4 flex items-center justify-between gap-3 flex-wrap">
+              <div className="text-base text-red-700">🚨 재고 미차감 주문 <b>{undeductedCount}건</b> — 재고에 아직 반영 안 됨 (매출은 정상 집계)</div>
+              <button onClick={reshipUndeducted}
+                className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded-lg text-sm font-bold whitespace-nowrap">🔄 미차감분 재고 재출고</button>
+            </div>
+          )}
           <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
             <h2 className="text-lg font-bold text-gray-800 mb-1">사방넷 주문 파일 변환</h2>
             <p className="text-base text-gray-400 mb-5">사방넷에서 다운받은 엑셀 파일을 올리면 자동으로 가공 완료 파일을 만들어드립니다</p>
