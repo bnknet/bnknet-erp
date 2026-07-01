@@ -167,6 +167,7 @@ export default function OrdersContent() {
   const [orderList, setOrderList] = useState<OrderRow[]>([]);
   const [orderChecked, setOrderChecked] = useState<Set<string>>(new Set());
   const [orderLoading, setOrderLoading] = useState(false);
+  const [undeductedCount, setUndeductedCount] = useState<number | null>(null); // 재고 미차감 실주문 건수(상시 감시)
 
   async function searchOrders(opts?: { from?: string; to?: string }) {
     const from = opts?.from !== undefined ? opts.from : sFrom;
@@ -266,6 +267,16 @@ export default function OrdersContent() {
   }
 
   // 미차감 주문 재고 재출고 — 자동출고 실패분 일괄 복구 (재변환 없이)
+  // 재고 미차감 실주문 건수 집계 (과거·도매 제외) — 관리 탭 상시 경고용
+  async function refreshUndeductedCount() {
+    try {
+      const rows = await supabaseFetchAll<{ source?: string }>(
+        '/orders?stock_deducted=eq.false&canceled=eq.false&select=source',
+      );
+      setUndeductedCount(rows.filter(o => o.source !== '과거' && o.source !== '도매').length);
+    } catch { setUndeductedCount(null); }
+  }
+
   async function reshipUndeducted() {
     if (!canRegister) { alert('권한이 없습니다.'); return; }
     if (!confirm('재고 자동출고가 안 된 주문들을 다시 출고 처리합니다.\n(이미 차감된 건은 건너뜁니다) 진행할까요?')) return;
@@ -291,8 +302,9 @@ export default function OrdersContent() {
       const txt = await res.text();
       if (!res.ok) { alert(`❌ 재출고 실패 (HTTP ${res.status})\n\n원인: ${txt}`); return; }
       const r = JSON.parse(txt);
-      alert(`✅ 재출고 완료\n· 재고 차감: ${r.shipped ?? 0}건\n· 건너뜀(이미 차감): ${r.skipped ?? 0}건\n· 매칭 안 됨: ${unmatchedCnt}건${Array.isArray(r.negative) && r.negative.length ? `\n· ⚠️ 재고 마이너스: ${r.negative.length}건` : ''}`);
+      alert(`✅ 재출고 완료\n· 재고 차감: ${r.shipped ?? 0}건\n· 건너뜀(이미 차감): ${r.skipped ?? 0}건\n· 매칭 안 됨: ${unmatchedCnt}건${Array.isArray(r.negative) && r.negative.length ? `\n· ⚠️ 재고 마이너스: ${r.negative.length}건` : ''}${unmatchedCnt ? '\n\n⚠️ 매칭 안 된 건은 매칭데이터/재고 등록 후 다시 눌러야 재고가 차감됩니다.' : ''}`);
       await searchOrders();
+      await refreshUndeductedCount();
     } catch (e) { alert('❌ 재출고 중 오류: ' + ((e as Error)?.message || e)); }
   }
 
@@ -554,6 +566,7 @@ export default function OrdersContent() {
       const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
       setSFrom(iso); setSTo(iso); setSOrderNo(''); setSProduct(''); setSMall('');
       searchOrders({ from: iso, to: iso });
+      refreshUndeductedCount();
     }
   }
 
@@ -876,9 +889,16 @@ export default function OrdersContent() {
               <h2 className="text-lg font-bold text-gray-800">주문 조회 · 취소</h2>
               {canRegister && (
                 <button onClick={reshipUndeducted}
-                  className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-sm font-medium">🔄 미차감분 재고 재출고</button>
+                  className={`px-3 py-1.5 rounded-lg text-sm font-medium text-white ${undeductedCount ? 'bg-red-600 hover:bg-red-500' : 'bg-emerald-600 hover:bg-emerald-500'}`}>
+                  🔄 미차감분 재고 재출고{undeductedCount ? ` (${undeductedCount})` : ''}
+                </button>
               )}
             </div>
+            {canRegister && !!undeductedCount && (
+              <div className="mb-3 bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-sm text-red-600">
+                🚨 재고에 아직 반영 안 된 주문 <b>{undeductedCount}건</b>이 있습니다 (매출은 정상 집계). 위 <b>재출고</b> 버튼으로 처리하세요. 매칭이 안 되는 건은 매칭데이터/재고 등록이 필요합니다.
+              </div>
+            )}
             <p className="text-base text-gray-400 mb-4">고객 취소 등으로 주문을 취소/삭제합니다. 취소된 주문은 매출·공헌이익 집계에서 제외됩니다. · <b>자동출고 실패분</b>은 우측 &apos;재고 재출고&apos;로 일괄 차감.</p>
             <div className="flex gap-2 flex-wrap items-center">
               <div className="flex items-center gap-1">

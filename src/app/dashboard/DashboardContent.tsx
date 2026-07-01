@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { getUser } from '@/lib/auth';
 import { supabaseFetch, supabaseFetchAll } from '@/lib/supabase';
 import { computeCostGap, type CostGapSummary, type MiniOrder, type MiniInv } from '@/lib/salesStats';
+import { matchProduct } from '@/lib/orderConvert';
 
 const companies = ['BNKNET', 'SJ글로벌', '더블아이', 'IX글로벌'];
 
@@ -111,6 +112,33 @@ export default function DashboardContent() {
     })();
   }, [canSeeSnapAlert]);
 
+  // ⭐ 상시 감시(ground-truth): 재고 미차감 실주문을 알림 행과 무관하게 주문 상태에서 직접 집계.
+  //    누가 알림을 닫았거나 알림 행이 없어도, 실제로 재고가 안 빠진 주문이 있으면 무조건 경고.
+  const [undeducted, setUndeducted] = useState<{ company: string; count: number; names: string[]; more: boolean }[]>([]);
+  useEffect(() => {
+    if (!canSeeSnapAlert) return;
+    (async () => {
+      try {
+        const rows = await supabaseFetchAll<{ collect_product?: string; product_name?: string; company?: string; source?: string }>(
+          '/orders?stock_deducted=eq.false&canceled=eq.false&select=collect_product,product_name,company,source',
+        );
+        const targets = rows.filter(o => o.source !== '과거' && o.source !== '도매'); // 과거실적·도매는 재고차감 대상 아님
+        const byCo = new Map<string, { count: number; names: Set<string> }>();
+        for (const o of targets) {
+          const co = o.company || '미분류';
+          const e = byCo.get(co) || { count: 0, names: new Set<string>() };
+          e.count++;
+          e.names.add(matchProduct(o.collect_product || o.product_name || '').name);
+          byCo.set(co, e);
+        }
+        setUndeducted(Array.from(byCo.entries()).map(([company, v]) => ({
+          company, count: v.count, names: Array.from(v.names).slice(0, 5), more: v.names.size > 5,
+        })));
+      } catch { /* 무시 */ }
+    })();
+  }, [canSeeSnapAlert]);
+  const undeductedTotal = undeducted.reduce((s, u) => s + u.count, 0);
+
   // 대시보드 실데이터 — 사업자별 이번달 매출 / 최근 주문변환 / 미결재 문서
   const [bizStats, setBizStats] = useState<Record<string, { rev: number; cnt: number }>>({});
   const [recentUploads, setRecentUploads] = useState<{ uploader?: string; file_name?: string; saved_count?: number; row_count?: number; created_at?: string }[]>([]);
@@ -152,6 +180,19 @@ export default function DashboardContent() {
 
   return (
     <div className="space-y-6">
+      {/* ⭐ 상시 감시: 재고 미차감 주문 (닫을 수 없음 — 실제로 재고 차감돼야만 사라짐) */}
+      {canSeeSnapAlert && undeductedTotal > 0 && (
+        <a href="/orders" className="block bg-red-100 border-2 border-red-300 rounded-2xl px-5 py-4 hover:bg-red-200 transition-colors">
+          <div className="text-base font-semibold text-red-700">🚨 재고 미차감 주문 {undeductedTotal}건 — 재고에 아직 반영되지 않았습니다 (매출은 정상 집계됨)</div>
+          <div className="text-sm text-red-600 mt-1 space-y-0.5">
+            {undeducted.map(u => (
+              <div key={u.company}>· [{u.company}] {u.count}건 — {u.names.join(', ')}{u.more ? ' 외' : ''}</div>
+            ))}
+          </div>
+          <div className="text-sm text-red-500 mt-1">주문-조회 → 관리 탭에서 &apos;🔄 미차감분 재고 재출고&apos;를 눌러 처리하세요. (클릭하면 이동)</div>
+        </a>
+      )}
+
       {/* 재고 자동저장 누락 경고 */}
       {canSeeSnapAlert && snapStale && (
         <a href="/inventory" className="block bg-red-50 border border-red-200 rounded-2xl px-5 py-4 hover:bg-red-100 transition-colors">
