@@ -197,7 +197,7 @@ export default function OrdersContent() {
 
   async function cancelSelectedOrders() {
     if (orderChecked.size === 0) { alert('취소할 주문을 선택하세요.'); return; }
-    if (!confirm(`선택한 ${orderChecked.size}건을 취소 처리하시겠습니까?\n(매출·영업이익에서 제외 + 차감했던 재고는 자동 복구됩니다)`)) return;
+    if (!confirm(`선택한 ${orderChecked.size}건을 취소 처리하시겠습니까?\n(매출·공헌이익에서 제외 + 차감했던 재고는 자동 복구됩니다)`)) return;
     const reason = (prompt('취소 사유를 입력하세요 (선택)', '고객 취소') || '주문 취소').trim();
     const ids = Array.from(orderChecked);
     try {
@@ -879,7 +879,7 @@ export default function OrdersContent() {
                   className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-sm font-medium">🔄 미차감분 재고 재출고</button>
               )}
             </div>
-            <p className="text-base text-gray-400 mb-4">고객 취소 등으로 주문을 취소/삭제합니다. 취소된 주문은 매출·영업이익 집계에서 제외됩니다. · <b>자동출고 실패분</b>은 우측 &apos;재고 재출고&apos;로 일괄 차감.</p>
+            <p className="text-base text-gray-400 mb-4">고객 취소 등으로 주문을 취소/삭제합니다. 취소된 주문은 매출·공헌이익 집계에서 제외됩니다. · <b>자동출고 실패분</b>은 우측 &apos;재고 재출고&apos;로 일괄 차감.</p>
             <div className="flex gap-2 flex-wrap items-center">
               <div className="flex items-center gap-1">
                 <input type="date" value={sFrom} max={sTo || undefined} onChange={e => setSFrom(e.target.value)}
@@ -960,7 +960,7 @@ export default function OrdersContent() {
               </div>
             )}
           </div>
-          <p className="text-xs text-gray-400">💡 취소 처리 시 차감했던 재고가 자동으로 복구되고, 취소 해제 시 다시 차감됩니다(이력에 기록). 매출·영업이익에서도 자동 제외/포함됩니다.</p>
+          <p className="text-xs text-gray-400">💡 취소 처리 시 차감했던 재고가 자동으로 복구되고, 취소 해제 시 다시 차감됩니다(이력에 기록). 매출·공헌이익에서도 자동 제외/포함됩니다.</p>
         </div>
       )}
 

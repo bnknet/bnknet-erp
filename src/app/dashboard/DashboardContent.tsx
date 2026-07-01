@@ -187,7 +187,7 @@ export default function DashboardContent() {
       {/* 원가 미입력 경고 (이번 달) */}
       {canSeeSnapAlert && costGap && costGap.missingCount > 0 && (
         <a href="/sales" className="block bg-red-50 border border-red-200 rounded-2xl px-5 py-4 hover:bg-red-100 transition-colors">
-          <div className="text-base font-medium text-red-600">⚠️ 원가 미입력 상품 {costGap.missingCount}건 — 이번 달 영업이익에 반영되지 않았습니다</div>
+          <div className="text-base font-medium text-red-600">⚠️ 원가 미입력 상품 {costGap.missingCount}건 — 이번 달 공헌이익에 반영되지 않았습니다</div>
           <div className="text-sm text-red-400 mt-0.5">
             판매금액 약 {won(costGap.missingRevenue)}분의 이익이 비어 있습니다. 매출 현황에서 원가를 입력하세요. (클릭하면 이동)
           </div>
