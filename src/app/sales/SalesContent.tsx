@@ -111,6 +111,7 @@ export default function SalesContent() {
   const [inventory, setInventory] = useState<InvRow[]>([]);
   const [fees, setFees] = useState<MallFee[]>([]);
   const [brandSales, setBrandSales] = useState<BrandSaleRow[]>([]);
+  const [bomRows, setBomRows] = useState<{ set_name: string; component_name: string; component_qty: number }[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
@@ -150,6 +151,10 @@ export default function SalesContent() {
         const bs = await supabaseFetchAll<BrandSaleRow>('/brand_sales?select=period_date,brand,sales,margin');
         setBrandSales(bs);
       } catch { /* brand_sales 미설정 시 건너뜀 */ }
+      try {
+        const bom = await supabaseFetchAll<{ set_name: string; component_name: string; component_qty: number }>('/product_bom?select=set_name,component_name,component_qty');
+        setBomRows(bom);
+      } catch { /* product_bom 미설정 시 건너뜀 */ }
     } catch (e) {
       setLoadError(e instanceof Error ? e.message : '데이터를 불러오지 못했습니다.');
     } finally {
@@ -179,6 +184,10 @@ export default function SalesContent() {
       const pn = invByName.get(name);
       if (!pn || (pn.cost === 0 && cost > 0)) invByName.set(name, val);
     }
+
+    // 세트 구성표 (세트명 → 구성품·수량). 세트원가 = 구성품 원가 합.
+    const bomMap = new Map<string, { component_name: string; component_qty: number }[]>();
+    for (const b of bomRows) { const a = bomMap.get(b.set_name) || []; a.push({ component_name: b.component_name, component_qty: Number(b.component_qty) || 1 }); bomMap.set(b.set_name, a); }
 
     // 몰 수수료 맵 (사업자+정규몰명 → %)
     const feeMap = buildFeeMap(fees);
@@ -247,8 +256,28 @@ export default function SalesContent() {
 
       // 일반/수기/사방넷
       // 재고에 등록된 상품이면 원가 유효(0원=무상/서비스 품목도 정상 원가로 인정). 재고 미등록만 원가 미확인.
-      const hasCost = !!inv;
-      const cost = hasCost ? (inv!.cost || 0) * qty : 0;
+      // 세트상품(BOM): 재고에 세트명은 없고 구성품만 있으므로 구성품 원가 합으로 계산.
+      const setDef = bomMap.get(rep);
+      let hasCost: boolean;
+      let cost: number;
+      let invCompanyVal = inv?.company;
+      let brandVal = inv?.brand || '';
+      if (setDef) {
+        let sum = 0; let allFound = true;
+        for (const b of setDef) {
+          const ci = (o.company ? invMap.get(`${b.component_name}|${o.company}`) : undefined) || invByName.get(b.component_name);
+          if (!ci) { allFound = false; break; }
+          sum += (ci.cost || 0) * b.component_qty;
+          if (!invCompanyVal) invCompanyVal = ci.company;
+          if (!brandVal) brandVal = ci.brand || '';
+        }
+        hasCost = allFound;
+        cost = allFound ? sum * qty : 0;
+      } else {
+        hasCost = !!inv;
+        cost = hasCost ? (inv!.cost || 0) * qty : 0;
+      }
+      const registered = setDef ? hasCost : !!inv;
       const ff = lookupFee(feeMap, company, mall, amt);
       const on = o.order_number || '';
       const key = on || `__noorder_${flt.length}`; // 주문번호 없으면 라인 단위로 취급
@@ -271,8 +300,8 @@ export default function SalesContent() {
       flt.push({
         date, amt, rev, qty, rep, mall, company,
         profit, profitKnown: hasCost, fee: ff.fee, unim,
-        missCost: !hasCost, registered: !!inv, feeFound: ff.found,
-        invCompany: inv?.company, brand: inv?.brand || '', isPast: false,
+        missCost: !hasCost, registered, feeFound: ff.found,
+        invCompany: invCompanyVal, brand: brandVal, isPast: false,
       });
     }
 

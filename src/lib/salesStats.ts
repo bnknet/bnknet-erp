@@ -58,8 +58,12 @@ export function computeCostGap(
   inventory: MiniInv[],
   start: string,
   end: string,
+  bom: { set_name: string; component_name: string }[] = [],
 ): CostGapSummary {
   const { byKey, byName } = buildInvMaps(inventory);
+  // 세트 구성표: 세트명 → 구성품명들 (구성품이 모두 재고에 있으면 원가 확인된 것으로 간주)
+  const bomMap = new Map<string, string[]>();
+  for (const b of bom) { const a = bomMap.get(b.set_name) || []; a.push(b.component_name); bomMap.set(b.set_name, a); }
   const editable = new Set<string>();
   const unreg = new Set<string>();
   let missingRevenue = 0;
@@ -78,9 +82,13 @@ export function computeCostGap(
     orderCount++;
 
     const rep = matchProduct(o.collect_product || o.product_name || '').name;
+    // 세트상품: 구성품이 모두 재고에 있으면 원가 확인된 것으로 간주 (세트명 자체는 재고에 없음)
+    const setComps = bomMap.get(rep);
     const inv = (o.company ? byKey.get(`${rep}|${o.company}`) : undefined) || byName.get(rep);
+    const hasCost = setComps
+      ? setComps.every(cn => (o.company ? byKey.get(`${cn}|${o.company}`) : undefined) || byName.get(cn))
+      : !!inv;
     // 재고에 등록돼 있으면 원가 확인된 것(0원=무상 품목도 정상). 재고 미등록만 원가 미확인으로 경고.
-    const hasCost = !!inv;
     if (!hasCost) {
       missingRevenue += amt;
       if (inv) editable.add(rep);
