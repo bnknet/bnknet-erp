@@ -640,6 +640,70 @@ export default function ApprovalContent() {
     } finally { setExporting(false); }
   }
 
+  // 승인완료된 지출결의서·매입품의서 전체를 문서 양식으로 한 번에 인쇄/PDF (건별 페이지, 영수증 이미지 포함)
+  async function printAllApproved() {
+    setExporting(true);
+    try {
+      const apps = await supabaseFetchAll<Approval>(
+        '/approvals?status=eq.approved&doc_type=in.(지출결의서,카드구매)&select=id,doc_type,company,issue_date,settle_date,spend_date,organizer,processor,account,total_amount,card_id,payment_due_date,attachments&order=issue_date.asc',
+      );
+      if (!apps.length) { alert('승인완료된 지출결의서/매입품의서가 없습니다.'); return; }
+      const ids = apps.map(a => a.id);
+      const items = await supabaseFetchAll<ApprovalItem & { approval_id: string }>(`/approval_items?approval_id=in.(${ids.join(',')})&order=sort_order.asc`);
+      const byApp = new Map<string, (ApprovalItem & { approval_id: string })[]>();
+      for (const it of items) { const a = byApp.get(it.approval_id) || []; a.push(it); byApp.set(it.approval_id, a); }
+      const esc = (s: unknown) => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c] || c));
+      const won = (n: number) => Number(n || 0).toLocaleString('ko-KR');
+
+      const docs = apps.map(a => {
+        const its = byApp.get(a.id) || [];
+        const isCard = a.doc_type === '카드구매';
+        const card = cards.find(c => c.id === a.card_id)?.card_name || '';
+        const itemRows = its.map(it => `<tr><td>${esc(it.item_date)}</td><td class=l>${esc(it.description)}${it.canceled ? ' (취소)' : ''}</td>${isCard ? `<td class=r>${it.quantity ? won(it.quantity) : ''}</td>` : ''}<td class=r>${it.amount ? won(it.amount) : ''}</td><td>${esc(it.note)}</td></tr>`).join('');
+        const imgs = (a.attachments || []).filter(f => /\.(png|jpe?g|gif|webp|heic)$/i.test(f.url)).map(f => `<img src="${esc(f.url)}" />`).join('');
+        return `<div class="doc">
+          <h2>〈 ${isCard ? '매 입 품 의 서 (카드구매)' : '지 출 결 의 서'} 〉</h2>
+          <div class="meta">${esc(a.company)} · 승인완료 · 발의일 ${esc(a.issue_date)}</div>
+          <table class="amt"><tr><td class="lbl">일금(정)</td><td class="r big">₩ ${won(a.total_amount)}</td></tr></table>
+          <table><tr><td class="lbl">발의</td><td>${esc(a.issue_date)}</td><td class="lbl">정리인</td><td>${esc(a.organizer)}</td></tr>
+          <tr><td class="lbl">결재</td><td>${esc(a.settle_date)}</td><td class="lbl">계정과목</td><td>${esc(a.account)}</td></tr>
+          <tr><td class="lbl">지출</td><td>${esc(a.spend_date)}</td><td class="lbl">처리사항</td><td>${esc(a.processor)}</td></tr></table>
+          <table class="items"><tr class="hd"><th>월/일</th><th>${isCard ? '구매상품' : '적 요'}</th>${isCard ? '<th>수량</th>' : ''}<th>금 액</th><th>비 고</th></tr>
+          ${itemRows}
+          <tr class="sum"><td></td><td class="l">합 계</td>${isCard ? '<td></td>' : ''}<td class="r">₩ ${won(a.total_amount)}</td><td></td></tr></table>
+          ${a.card_id ? `<div class="card">💳 ${esc(card)}${a.payment_due_date ? ` · 결제예정일 ${esc(a.payment_due_date)}` : ''}</div>` : ''}
+          <div class="foot">위 금액을 정히 영수(청구) 합니다. &nbsp;&nbsp; ${esc(a.issue_date)} &nbsp;&nbsp; 영수자 [ ${esc(a.organizer)} ]</div>
+          ${imgs ? `<div class="atts">${imgs}</div>` : ''}
+        </div>`;
+      }).join('');
+
+      const html = `<!doctype html><html><head><meta charset="utf-8"><title>승인 지출결의서 ${apps.length}건</title><style>
+        *{box-sizing:border-box;font-family:'Noto Sans KR',Arial,sans-serif;}
+        body{margin:0;} .doc{padding:14mm;page-break-after:always;}
+        h2{text-align:center;letter-spacing:6px;font-size:19px;margin:0 0 6px;}
+        .meta{text-align:center;color:#666;font-size:12px;margin-bottom:14px;}
+        table{width:100%;border-collapse:collapse;margin-bottom:10px;font-size:13px;}
+        td,th{border:1px solid #444;padding:6px 8px;}
+        .lbl{background:#f3f3f3;text-align:center;width:76px;font-weight:600;}
+        .r{text-align:right;} .l{text-align:left;} .big{font-weight:700;font-size:15px;}
+        .items th{background:#f3f3f3;text-align:center;} .items td{text-align:center;}
+        .items td.l{text-align:left;} .items td.r{text-align:right;}
+        .items .sum td{background:#f8f8f8;font-weight:700;}
+        .card{border:1px solid #bcd;background:#eef5ff;border-radius:6px;padding:8px;font-size:13px;margin-bottom:10px;}
+        .foot{border:1px solid #444;text-align:center;padding:14px;font-size:13px;margin-top:6px;}
+        .atts{margin-top:10px;} .atts img{width:100%;max-height:230mm;object-fit:contain;border:1px solid #eee;margin-top:6px;page-break-inside:avoid;}
+        @page{margin:0;}
+      </style></head><body>${docs}
+      <script>window.onload=function(){var g=document.images,n=g.length,k=0;function d(){k++;if(k>=n)setTimeout(function(){window.print();},200);}if(n===0){window.print();return;}for(var i=0;i<n;i++){if(g[i].complete)d();else{g[i].onload=d;g[i].onerror=d;}}};<\/script>
+      </body></html>`;
+      const w = window.open('', '_blank');
+      if (!w) { alert('팝업이 차단되었습니다. 브라우저에서 이 사이트의 팝업을 허용한 뒤 다시 눌러주세요.'); return; }
+      w.document.write(html); w.document.close();
+    } catch {
+      alert('전체 인쇄 준비 중 오류가 발생했습니다.');
+    } finally { setExporting(false); }
+  }
+
   // 카드 매입 취소 → 환불(-) 처리 (항목별 부분취소 지원)
   function openCancelModal(approval: Approval) {
     const card = cards.find(c => c.id === approval.card_id);
@@ -1566,12 +1630,18 @@ export default function ApprovalContent() {
             </button>
           ))}
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
           {(isCeo || isAdmin) && (
-            <button onClick={exportTaxExcel} disabled={exporting}
-              className="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-green-300 text-white rounded-xl text-base font-medium">
-              {exporting ? '내보내는 중...' : '🧾 세무 제출용(승인) 내보내기'}
-            </button>
+            <>
+              <button onClick={exportTaxExcel} disabled={exporting}
+                className="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-green-300 text-white rounded-xl text-base font-medium">
+                {exporting ? '처리 중...' : '🧾 세무용 엑셀'}
+              </button>
+              <button onClick={printAllApproved} disabled={exporting}
+                className="px-4 py-2 bg-slate-700 hover:bg-slate-800 disabled:bg-slate-400 text-white rounded-xl text-base font-medium">
+                🖨️ 승인건 전체 PDF
+              </button>
+            </>
           )}
           <button onClick={() => { resetForm(); setView('form'); }}
             className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-base font-medium">
