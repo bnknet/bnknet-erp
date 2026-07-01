@@ -113,7 +113,7 @@ export default function SalesContent() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  const [period, setPeriod] = useState<Period>('month');
+  const [period, setPeriod] = useState<Period>('day');
   const [companyFilter, setCompanyFilter] = useState('전체');
   const [anchor, setAnchor] = useState(() => ymd(new Date())); // 조회 기준일 (지난달 등 과거 기간 조회용)
   const [rangeStart, setRangeStart] = useState(() => ymd(startOfMonth(new Date()))); // 기간조회 시작일
@@ -243,8 +243,9 @@ export default function SalesContent() {
       }
 
       // 일반/수기/사방넷
-      const hasCost = !!inv && inv.cost > 0;
-      const cost = hasCost ? inv!.cost * qty : 0;
+      // 재고에 등록된 상품이면 원가 유효(0원=무상/서비스 품목도 정상 원가로 인정). 재고 미등록만 원가 미확인.
+      const hasCost = !!inv;
+      const cost = hasCost ? (inv!.cost || 0) * qty : 0;
       const ff = lookupFee(feeMap, company, mall, amt);
       let unim = 0, ship = 0;
       const on = o.order_number || '';

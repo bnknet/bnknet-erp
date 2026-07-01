@@ -79,7 +79,8 @@ export function computeCostGap(
 
     const rep = matchProduct(o.collect_product || o.product_name || '').name;
     const inv = (o.company ? byKey.get(`${rep}|${o.company}`) : undefined) || byName.get(rep);
-    const hasCost = !!inv && inv.cost > 0;
+    // 재고에 등록돼 있으면 원가 확인된 것(0원=무상 품목도 정상). 재고 미등록만 원가 미확인으로 경고.
+    const hasCost = !!inv;
     if (!hasCost) {
       missingRevenue += amt;
       if (inv) editable.add(rep);
