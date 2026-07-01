@@ -678,7 +678,7 @@ export default function ApprovalContent() {
       }).join('');
 
       const html = `<!doctype html><html><head><meta charset="utf-8"><title>승인 지출결의서 ${apps.length}건</title><style>
-        *{box-sizing:border-box;font-family:'Noto Sans KR',Arial,sans-serif;}
+        *{box-sizing:border-box;font-family:'Noto Sans KR',Arial,sans-serif;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
         body{margin:0;} .doc{padding:14mm;page-break-after:always;}
         h2{text-align:center;letter-spacing:6px;font-size:19px;margin:0 0 6px;}
         .meta{text-align:center;color:#666;font-size:12px;margin-bottom:14px;}
