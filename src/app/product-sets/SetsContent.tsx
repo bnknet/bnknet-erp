@@ -6,13 +6,20 @@ import { getUser } from '@/lib/auth';
 
 interface BomRow { id: string; set_name: string; component_name: string; component_qty: number }
 interface InvOpt { product_name: string; company: string; cost_price: number }
+interface LogRow { id: string; action: string; set_name: string; detail?: string; changed_by?: string; created_at: string }
 
 const won = (n: number) => `${Math.round(n).toLocaleString('ko-KR')}원`;
+const compStr = (list: { component_name?: string; name?: string; component_qty?: number; qty?: number }[]) =>
+  list.map(c => `${c.component_name ?? c.name}×${c.component_qty ?? c.qty}`).join(', ');
 
 export default function SetsContent() {
   const me = getUser();
+  // 사용(조회·편집): 대표·실장·영업(강웅구)·재고담당(박정진·최영훈)
   const canEdit = ['ceo', 'admin', 'sales', 'inventory'].includes(me?.role || '');
+  // 로그 삭제: 대표·실장만
+  const canManageLog = ['ceo', 'admin'].includes(me?.role || '');
 
+  const [logs, setLogs] = useState<LogRow[]>([]);
   const [rows, setRows] = useState<BomRow[]>([]);
   const [invNames, setInvNames] = useState<string[]>([]);
   const [invCost, setInvCost] = useState<Map<string, number>>(new Map());
@@ -27,11 +34,13 @@ export default function SetsContent() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [bom, inv] = await Promise.all([
+      const [bom, inv, lg] = await Promise.all([
         supabaseFetchAll<BomRow>('/product_bom?select=id,set_name,component_name,component_qty&order=set_name.asc'),
         supabaseFetchAll<InvOpt>('/inventory?select=product_name,company,cost_price&order=product_name.asc'),
+        supabaseFetchAll<LogRow>('/bom_change_logs?select=id,action,set_name,detail,changed_by,created_at&order=created_at.desc&limit=200').catch(() => []),
       ]);
       setRows(Array.isArray(bom) ? bom : []);
+      setLogs(Array.isArray(lg) ? lg : []);
       const names = Array.from(new Set((inv || []).map(i => i.product_name).filter(Boolean))).sort();
       setInvNames(names);
       const cm = new Map<string, number>(); // 상품명 → 최저원가(참고용, 실제는 사업자별)
@@ -62,11 +71,27 @@ export default function SetsContent() {
   const formCostPreview = comps.reduce((s, c) => s + (invCost.get(c.name) || 0) * (Number(c.qty) || 0), 0);
   const unknownComps = comps.filter(c => c.name && !invNames.includes(c.name)).map(c => c.name);
 
+  async function logChange(action: string, setName: string, detail: string) {
+    try {
+      await supabaseFetch('/bom_change_logs', {
+        method: 'POST', headers: { Prefer: 'return=minimal' },
+        body: JSON.stringify({ action, set_name: setName, detail, changed_by: me?.name || '' }),
+      });
+    } catch { /* 로그 실패는 본 작업에 영향 주지 않음 */ }
+  }
+
   async function save() {
     const name = formName.trim();
     if (!name) { setMsg('세트명을 입력하세요.'); return; }
     const valid = comps.filter(c => c.name.trim() && (Number(c.qty) || 0) > 0);
     if (!valid.length) { setMsg('구성품 1개 이상(수량 1 이상)을 입력하세요.'); return; }
+    // 변경 로그 상세 (이전 → 이후)
+    const isEdit = !!editSet;
+    const oldComps = editSet ? compsOf(editSet) : [];
+    const newStr = compStr(valid);
+    const detail = isEdit
+      ? `${editSet !== name ? `이름변경: "${editSet}" → "${name}" · ` : ''}이전: [${compStr(oldComps)}] → 이후: [${newStr}]`
+      : `구성: [${newStr}]`;
     setSaving(true);
     try {
       // 기존 세트명 + 새 세트명 모두 정리 후 재삽입 (이름 변경 대응)
@@ -76,6 +101,7 @@ export default function SetsContent() {
         method: 'POST', headers: { Prefer: 'return=minimal' },
         body: JSON.stringify(valid.map(c => ({ set_name: name, component_name: c.name.trim(), component_qty: Number(c.qty) || 1 }))),
       });
+      await logChange(isEdit ? '수정' : '생성', name, detail);
       setEditSet(null);
       await load();
     } catch { setMsg('저장 중 오류가 발생했습니다.'); }
@@ -84,8 +110,26 @@ export default function SetsContent() {
 
   async function del(name: string) {
     if (!confirm(`"${name}" 세트 구성을 삭제할까요?`)) return;
+    const detail = `구성: [${compStr(compsOf(name))}]`;
     await supabaseFetch(`/product_bom?set_name=eq.${encodeURIComponent(name)}`, { method: 'DELETE' });
+    await logChange('삭제', name, detail);
     await load();
+  }
+
+  async function delLog(id: string) {
+    if (!canManageLog) return;
+    if (!confirm('이 로그를 삭제할까요? (대표·실장만 가능)')) return;
+    await supabaseFetch(`/bom_change_logs?id=eq.${id}`, { method: 'DELETE' });
+    setLogs(prev => prev.filter(l => l.id !== id));
+  }
+
+  if (!canEdit) {
+    return (
+      <div className="bg-amber-50 border border-amber-200 rounded-2xl px-5 py-8 text-center">
+        <div className="text-lg font-semibold text-amber-700">🔒 접근 권한이 없습니다</div>
+        <div className="text-sm text-amber-600 mt-1">세트 구성 관리는 대표·실장·재고/영업 담당자만 이용할 수 있습니다.</div>
+      </div>
+    );
   }
 
   return (
@@ -176,6 +220,33 @@ export default function SetsContent() {
                 </div>
               );
             })}
+          </div>
+        )}
+      </div>
+
+      {/* 변경 로그 */}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+        <div className="px-5 py-3 border-b border-gray-100 flex items-center justify-between">
+          <h2 className="font-semibold text-gray-700">변경 이력</h2>
+          <span className="text-xs text-gray-400">누가·언제·무엇을·어떻게 바꿨는지 기록{canManageLog ? ' · 삭제는 대표·실장만' : ''}</span>
+        </div>
+        {logs.length === 0 ? (
+          <div className="text-center py-8 text-gray-400 text-sm">변경 이력이 없습니다</div>
+        ) : (
+          <div className="divide-y divide-gray-50 max-h-96 overflow-y-auto">
+            {logs.map(l => (
+              <div key={l.id} className="px-5 py-3 flex items-start gap-3">
+                <span className={`text-xs px-2 py-0.5 rounded-md font-medium flex-shrink-0 ${l.action === '삭제' ? 'bg-red-50 text-red-600' : l.action === '수정' ? 'bg-amber-50 text-amber-600' : 'bg-green-50 text-green-600'}`}>{l.action}</span>
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm font-medium text-gray-800 truncate">{l.set_name}</div>
+                  {l.detail && <div className="text-xs text-gray-500 mt-0.5 break-words">{l.detail}</div>}
+                  <div className="text-xs text-gray-400 mt-0.5">{l.changed_by || '-'} · {l.created_at?.slice(0, 16).replace('T', ' ')}</div>
+                </div>
+                {canManageLog && (
+                  <button onClick={() => delLog(l.id)} className="text-xs text-gray-300 hover:text-red-500 flex-shrink-0">삭제</button>
+                )}
+              </div>
+            ))}
           </div>
         )}
       </div>
