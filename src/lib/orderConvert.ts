@@ -890,7 +890,9 @@ export function convertOrders(raw: RawOrderRow[]): ConvertedOrderRow[] {
     const optQty = extractQtyFromOption(collectOpt);
     const unitQty = optQty !== null ? optQty : nameQty;
     const finalQty = unitQty * collectQty;
-    const mappedName = applyProductMap(cleanName) || applyProductMap(collectName) || cleanName;
+    // 상품명 치환은 matchProduct로 통일 (정확 매칭 → 원문 → 띄어쓰기·쉼표 무시 폴백).
+    // 변환 저장되는 product_name이 재고/매출 매칭과 100% 동일 기준이 되도록.
+    const mappedName = matchProduct(collectName).name;
 
     return {
       ...row,
