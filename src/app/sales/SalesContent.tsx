@@ -38,7 +38,7 @@ type Period = 'day' | 'week' | 'month' | 'all' | 'range';
 
 const COMPANIES = ['전체', 'BNKNET', 'SJ글로벌', '더블아이', 'IX글로벌', '미분류'];
 
-// 영업이익(정석) 계산 상수
+// 공헌이익(정석) 계산 상수
 const UNIT_SHIPPING = 2300;  // 건당 택배 운임(과세·세금계산서 수취). 합구매는 주문당 1회만.
 const VAT_DIV = 1.1;         // 부가세 제거(공급가액 환산)
 
@@ -191,10 +191,10 @@ export default function SalesContent() {
       orderDeliveryMax.set(on, Math.max(orderDeliveryMax.get(on) || 0, df));
     }
 
-    // 주문 → 매출 인식용 가공 (취소 제외). 영업이익은 라인별로 미리 계산.
+    // 주문 → 매출 인식용 가공 (취소 제외). 공헌이익은 라인별로 미리 계산.
     // · 일반/수기/사방넷: 전 항목 부가세 제외(공급가액 기준)
     //   - 매출 = (상품금액 + 고객배송비) ÷ 1.1  (고객이 낸 배송비도 과세 매출 → 공급가액에 포함)
-    //   - 영업이익 = (상품금액 + 고객배송비 − 몰수수료 − 원가 − 실운임) ÷ 1.1
+    //   - 공헌이익 = (상품금액 + 고객배송비 − 몰수수료 − 원가 − 실운임) ÷ 1.1
     //   - 고객배송비·실운임은 합구매(같은 주문번호) 1회만. 배송비는 매출로 흡수, 비용엔 실제 택배비만.
     // · 도매(source='도매'): 입력값으로 확정 = (매출 − 원가(개당×수량) − 배송비)/1.1 (수수료 없음, 모두 부가세 포함 → ÷1.1).
     // amt = 상품 결제금액(부가세 포함, DB 원본). rev = 부가세 제외 매출(공급가액) — 화면 표시·집계용.
@@ -220,7 +220,7 @@ export default function SalesContent() {
       const mall = o.mall_name || '(몰 미상)';
 
       if (o.source === '과거') {
-        // 과거 실적: 엑셀의 매출·마진을 그대로 확정 (manual_cost = 매출 − 마진 → 영업이익 = 마진)
+        // 과거 실적: 엑셀의 매출·마진을 그대로 확정 (manual_cost = 매출 − 마진 → 공헌이익 = 마진)
         flt.push({
           date, amt, rev: amt / VAT_DIV, qty, rep, mall, company,
           profit: amt - (Number(o.manual_cost) || 0), profitKnown: true,
@@ -264,7 +264,7 @@ export default function SalesContent() {
       }
       // 매출(공급가액) = (상품금액 + 고객배송비) ÷ 1.1 — 배송비도 부가세 제외.
       const rev = (amt + ship) / VAT_DIV;
-      // 영업이익 = (상품금액 + 배송비 − 몰수수료 − 원가 − 실운임) ÷ 1.1 (전 항목 부가세 제외 통일).
+      // 공헌이익 = (상품금액 + 배송비 − 몰수수료 − 원가 − 실운임) ÷ 1.1 (전 항목 부가세 제외 통일).
       const profit = hasCost ? ((amt + ship - ff.fee) - cost - unim) / VAT_DIV : 0;
       flt.push({
         date, amt, rev, qty, rep, mall, company,
@@ -511,7 +511,7 @@ export default function SalesContent() {
         <div className="bg-red-50 border border-red-200 rounded-xl overflow-hidden">
           <button onClick={() => setShowCostPanel((v) => !v)} className="w-full flex items-center justify-between px-5 py-4 hover:bg-red-100/60 transition-colors text-left">
             <div>
-              <div className="text-base font-semibold text-red-600">⚠️ 원가 미입력 상품 {missingCount}건 — 영업이익에 반영되지 않았습니다</div>
+              <div className="text-base font-semibold text-red-600">⚠️ 원가 미입력 상품 {missingCount}건 — 공헌이익에 반영되지 않았습니다</div>
               <div className="text-sm text-red-400 mt-0.5">팔렸지만 재고에 원가가 없거나 등록 안 된 상품입니다. {showCostPanel ? '접기' : '눌러서 확인·입력하기'}</div>
             </div>
             <span className="text-red-400 text-lg">{showCostPanel ? '▲' : '▼'}</span>
@@ -582,10 +582,10 @@ export default function SalesContent() {
         </div>
       )}
 
-      {/* 수수료 미설정 몰 경고 (영업이익에 수수료 미반영) */}
+      {/* 수수료 미설정 몰 경고 (공헌이익에 수수료 미반영) */}
       {!loading && missingFee.length > 0 && (
         <div className="bg-amber-50 border border-amber-200 rounded-xl px-5 py-4">
-          <div className="text-base font-semibold text-amber-700">⚠️ 수수료율이 설정 안 된 판매몰 {missingFee.length}건 — 이 몰 매출엔 수수료가 빠져 영업이익이 실제보다 높게 잡힙니다</div>
+          <div className="text-base font-semibold text-amber-700">⚠️ 수수료율이 설정 안 된 판매몰 {missingFee.length}건 — 이 몰 매출엔 수수료가 빠져 공헌이익이 실제보다 높게 잡힙니다</div>
           <div className="text-sm text-amber-600 mt-0.5 mb-2">아래 (사업자·몰) 요율을 알려주시면 반영하겠습니다. (또는 Supabase <span className="font-mono">mall_fees</span> 표에 추가)</div>
           <div className="flex flex-wrap gap-2">
             {missingFee.map((m, i) => (
@@ -600,9 +600,9 @@ export default function SalesContent() {
       {/* KPI 카드 */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <KpiCard title={`매출 (${ranges.label})`} value={won(cur.rev)} delta={revDelta} prevLabel={ranges.prevLabel} accent="blue" loading={loading} />
-        <KpiCard title="영업이익" value={won(cur.prof)} delta={profDelta} prevLabel={ranges.prevLabel} accent="green" loading={loading}
+        <KpiCard title="공헌이익" value={won(cur.prof)} delta={profDelta} prevLabel={ranges.prevLabel} accent="green" loading={loading}
           sub={['부가세 제외', cur.fee > 0 ? `수수료 ${won(cur.fee)}` : '', cur.unim > 0 ? `운임 ${won(cur.unim)}` : '', missingCount > 0 ? '원가 미입력分 제외' : ''].filter(Boolean).map((s) => `※ ${s}`).join(' · ') || undefined} />
-        <KpiCard title="영업이익률" value={marginPct === null ? '-' : `${marginPct}%`} accent="violet" loading={loading}
+        <KpiCard title="공헌이익률" value={marginPct === null ? '-' : `${marginPct}%`} accent="violet" loading={loading}
           sub={cur.mrev > 0 && cur.mrev < cur.rev ? '※ 원가 확인된 매출 기준' : undefined} />
         <KpiCard title="주문 건수" value={`${cur.cnt.toLocaleString('ko-KR')}건`} accent="gray" loading={loading}
           sub={`판매수량 ${cur.qty.toLocaleString('ko-KR')}개`} />
@@ -643,7 +643,7 @@ export default function SalesContent() {
                 <thead>
                   <tr className="text-left text-sm text-gray-400 border-b">
                     <th className="py-2 pr-3">사업자</th><th className="py-2 pr-3 text-right">매출</th>
-                    <th className="py-2 pr-3 text-right">영업이익</th><th className="py-2 pr-3 text-right">이익률</th>
+                    <th className="py-2 pr-3 text-right">공헌이익</th><th className="py-2 pr-3 text-right">공헌이익률</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -669,7 +669,7 @@ export default function SalesContent() {
                 <thead>
                   <tr className="text-left text-sm text-gray-400 border-b">
                     <th className="py-2 pr-3">판매몰</th><th className="py-2 pr-3 text-right">매출</th>
-                    <th className="py-2 pr-3 text-right">영업이익</th><th className="py-2 pr-3 text-right">이익률</th>
+                    <th className="py-2 pr-3 text-right">공헌이익</th><th className="py-2 pr-3 text-right">공헌이익률</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -700,7 +700,7 @@ export default function SalesContent() {
               <thead>
                 <tr className="text-left text-sm text-gray-400 border-b">
                   <th className="py-2 pr-3">브랜드</th><th className="py-2 pr-3 text-right">매출</th>
-                  <th className="py-2 pr-3 text-right">영업이익</th><th className="py-2 pr-3 text-right">이익률</th>
+                  <th className="py-2 pr-3 text-right">공헌이익</th><th className="py-2 pr-3 text-right">공헌이익률</th>
                 </tr>
               </thead>
               <tbody>
@@ -721,8 +721,8 @@ export default function SalesContent() {
 
       <p className="text-sm text-gray-400">
         ※ 매출은 주문 변환·저장된 데이터(취소 제외)를 실시간 집계합니다. 모든 금액은 부가세 제외(공급가액) 기준입니다.
-        매출 = (상품금액 + 고객배송비) ÷ 1.1. 영업이익 = (상품금액 + 고객배송비 − 몰수수료 − 원가 − 실운임) ÷ 1.1.
-        고객배송비·실운임은 합구매(같은 주문번호) 주문당 1회만 반영. 실운임 건당 {UNIT_SHIPPING.toLocaleString('ko-KR')}원. 수수료율은 사업자·판매몰별이며 mall_fees에서 수정 가능. 마진율 = 영업이익 ÷ 매출.
+        매출 = (상품금액 + 고객배송비) ÷ 1.1. 공헌이익 = (상품금액 + 고객배송비 − 몰수수료 − 원가 − 실운임) ÷ 1.1.
+        고객배송비·실운임은 합구매(같은 주문번호) 주문당 1회만 반영. 실운임 건당 {UNIT_SHIPPING.toLocaleString('ko-KR')}원. 수수료율은 사업자·판매몰별이며 mall_fees에서 수정 가능. 공헌이익률 = 공헌이익 ÷ 매출.
       </p>
     </div>
   );

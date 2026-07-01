@@ -100,7 +100,7 @@ export default function SalesTargetContent() {
     rows.filter(r => r.company === company).reduce((s, r) => s + (r.target_amount || 0), 0);
   const companyYearActual = (company: string) =>
     Array.from({ length: 12 }, (_, i) => i + 1).reduce((s, m) => s + actualOf(company, m), 0);
-  // 목표 마진율 (월별 동일값 → 입력된 값 중 첫 값)
+  // 목표 공헌이익률 (월별 동일값 → 입력된 값 중 첫 값)
   const companyMargin = (company: string) => {
     const r = rows.find(r => r.company === company && r.target_margin != null);
     return r?.target_margin ?? null;
@@ -218,7 +218,7 @@ export default function SalesTargetContent() {
                       <div className="text-sm text-gray-400 mt-1">목표 {manwon(t)}</div>
                       <div className="text-sm text-gray-600">실적 <span className="font-medium">{manwon(a)}</span></div>
                       {companyMargin(c) != null && (
-                        <div className="text-sm text-violet-600 mt-0.5">목표 마진율 {companyMargin(c)}%</div>
+                        <div className="text-sm text-violet-600 mt-0.5">목표 공헌이익률 {companyMargin(c)}%</div>
                       )}
                     </div>
                   </div>
@@ -325,7 +325,7 @@ export default function SalesTargetContent() {
                   <tr>
                     <th className="px-4 py-3 text-left text-sm font-medium text-gray-500">월</th>
                     <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">목표 금액</th>
-                    <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">목표 마진율(%)</th>
+                    <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">목표 공헌이익률(%)</th>
                     <th className="px-4 py-3 text-right text-sm font-medium text-gray-500">실적 금액 (자동)</th>
                     <th className="px-4 py-3 text-center text-sm font-medium text-gray-500">달성률</th>
                   </tr>
@@ -371,7 +371,7 @@ export default function SalesTargetContent() {
               </table>
             </div>
           </div>
-          <p className="text-sm text-gray-400">💡 목표 금액·마진율 입력 후 칸 밖을 클릭하면 자동 저장됩니다. 실적은 주문 변환 매출(부가세 제외)에서 자동 집계되어 수정할 수 없습니다.</p>
+          <p className="text-sm text-gray-400">💡 목표 금액·공헌이익률 입력 후 칸 밖을 클릭하면 자동 저장됩니다. 실적은 주문 변환 매출(부가세 제외)에서 자동 집계되어 수정할 수 없습니다.</p>
         </div>
       )}
     </div>
