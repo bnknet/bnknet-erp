@@ -21,6 +21,8 @@ interface OrderRow {
   source?: string;
   manual_cost?: number;
   manual_shipping?: number;
+  shipping_method?: string; // '택배' | '직접수령' | '화물'
+  courier_count?: number;   // 택배 출고 건수(직접주문 입력값)
 }
 interface InvRow {
   product_name: string;
@@ -136,7 +138,7 @@ export default function SalesContent() {
     setLoading(true); setLoadError(null);
     try {
       const [ord, inv, fee] = await Promise.all([
-        supabaseFetchAll<OrderRow>('/orders?select=upload_date,mall_name,product_name,collect_product,quantity,amount,canceled,company,order_number,delivery_fee,source,manual_cost,manual_shipping&order=upload_date.asc'),
+        supabaseFetchAll<OrderRow>('/orders?select=upload_date,mall_name,product_name,collect_product,quantity,amount,canceled,company,order_number,delivery_fee,source,manual_cost,manual_shipping,shipping_method,courier_count&order=upload_date.asc'),
         supabaseFetchAll<InvRow>('/inventory?select=product_name,company,brand,cost_price'),
         supabaseFetchAll<MallFee>('/mall_fees?select=company,mall,rate'),
       ]);
@@ -389,9 +391,30 @@ export default function SalesContent() {
     }
     const byBrand = Array.from(brandMap.entries()).map(([name, v]) => ({ name, ...v })).sort((a, b) => b.sales - a.sales);
 
+    // 택배 출고 건수 (현재 기간·사업자 필터). 직접수령·화물·과거·도매 제외.
+    //  주문번호 단위로 집계(합구매·다품목 1주문=1택배 중복 방지):
+    //   · courier_count 입력값 있으면 그 값(직접주문), 없으면 주문번호당 1건
+    const orderParcels = new Map<string, number>();
+    let noKeyCourier = 0;
+    for (const o of orders) {
+      if (o.canceled) continue;
+      const d = o.upload_date || '';
+      if (d < ranges.curStart || d > ranges.curEnd) continue;
+      if (!cf(o.company || '미분류')) continue;
+      if (o.source === '과거' || o.source === '도매') continue;
+      if ((o.shipping_method || '택배') !== '택배') continue; // 직접수령·화물 제외
+      const explicit = o.courier_count != null ? Number(o.courier_count) || 0 : null;
+      const key = o.order_number ? `${o.company || ''}|${o.order_number}` : '';
+      if (!key) { noKeyCourier += explicit != null ? explicit : 1; continue; }
+      if (explicit != null) orderParcels.set(key, explicit);      // 명시값 우선
+      else if (!orderParcels.has(key)) orderParcels.set(key, 1);  // 기본 주문당 1택배
+    }
+    let curCourier = noKeyCourier;
+    for (const v of orderParcels.values()) curCourier += v;
+
     return {
       ranges,
-      cur: { rev: curRev, prof: curProf, mrev: curMrev, cnt: curCnt, qty: curQty, fee: curFee, unim: curUnim },
+      cur: { rev: curRev, prof: curProf, mrev: curMrev, cnt: curCnt, qty: curQty, fee: curFee, unim: curUnim, courier: curCourier },
       prev,
       trend, byMall, byCompany, byBrand, missingEditable, missingUnreg, missingFee,
       missingCount: missingEditable.length + missingUnreg.length,
@@ -604,8 +627,26 @@ export default function SalesContent() {
           sub={['부가세 제외', cur.fee > 0 ? `수수료 ${won(cur.fee)}` : '', cur.unim > 0 ? `운임 ${won(cur.unim)}` : '', missingCount > 0 ? '원가 미입력分 제외' : ''].filter(Boolean).map((s) => `※ ${s}`).join(' · ') || undefined} />
         <KpiCard title="공헌이익률" value={marginPct === null ? '-' : `${marginPct}%`} accent="violet" loading={loading}
           sub={cur.mrev > 0 && cur.mrev < cur.rev ? '※ 원가 확인된 매출 기준' : undefined} />
-        <KpiCard title="주문 건수" value={`${cur.cnt.toLocaleString('ko-KR')}건`} accent="gray" loading={loading}
-          sub={`판매수량 ${cur.qty.toLocaleString('ko-KR')}개`} />
+        {/* 주문 건수 + 택배 출고 건수 (한 칸을 둘로 분할) */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 flex items-stretch">
+          {loading ? (
+            <div className="w-full h-14 animate-pulse bg-gray-100 rounded" />
+          ) : (
+            <>
+              <div className="flex-1 min-w-0">
+                <div className="text-sm text-gray-400">주문 건수</div>
+                <div className="text-2xl font-bold text-gray-700 mt-0.5">{cur.cnt.toLocaleString('ko-KR')}건</div>
+                <div className="text-[11px] text-gray-400 mt-0.5">판매수량 {cur.qty.toLocaleString('ko-KR')}개</div>
+              </div>
+              <div className="w-px bg-gray-100 mx-3" />
+              <div className="flex-1 min-w-0">
+                <div className="text-sm text-gray-400">택배 출고</div>
+                <div className="text-2xl font-bold text-teal-600 mt-0.5">{cur.courier.toLocaleString('ko-KR')}건</div>
+                <div className="text-[11px] text-gray-400 mt-0.5">직접수령·화물 제외</div>
+              </div>
+            </>
+          )}
+        </div>
       </div>
 
       {/* 추이 그래프 */}

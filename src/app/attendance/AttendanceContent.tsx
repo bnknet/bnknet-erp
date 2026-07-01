@@ -24,10 +24,24 @@ interface AttendanceRecord {
   check_in_lng?: number;
   check_out_lat?: number;
   check_out_lng?: number;
+  check_in_device?: string;   // 'pc' | 'mobile'
+  check_out_device?: string;  // 'pc' | 'mobile'
   status: string;
   memo?: string;
   created_by?: string;
 }
+
+// 출퇴근을 누른 기기 표시 (PC / 모바일)
+function DeviceTag({ d }: { d?: string }) {
+  if (d !== 'pc' && d !== 'mobile') return null;
+  const mobile = d === 'mobile';
+  return (
+    <span className={`ml-1 text-[11px] px-1.5 py-0.5 rounded font-medium align-middle ${mobile ? 'bg-indigo-50 text-indigo-500' : 'bg-gray-100 text-gray-500'}`}>
+      {mobile ? '📱모바일' : '🖥PC'}
+    </span>
+  );
+}
+const deviceText = (d?: string) => d === 'mobile' ? '모바일' : d === 'pc' ? 'PC' : '';
 
 const COMPANIES = ['전체', '더블아이', 'BNKNET', 'SJ글로벌', 'IX글로벌'];
 const STATUS_LABELS: Record<string, { label: string; color: string }> = {
@@ -196,6 +210,7 @@ export default function AttendanceContent() {
           body: JSON.stringify({
             check_in: now, status,
             check_in_lat: pos.coords.latitude, check_in_lng: pos.coords.longitude,
+            check_in_device: isMobile ? 'mobile' : 'pc',
           }),
         });
       } else {
@@ -206,6 +221,7 @@ export default function AttendanceContent() {
             employee_name: me?.name, company: me?.company || 'BNKNET',
             work_date: today, check_in: now, status,
             check_in_lat: pos.coords.latitude, check_in_lng: pos.coords.longitude,
+            check_in_device: isMobile ? 'mobile' : 'pc',
           }),
         });
       }
@@ -228,6 +244,7 @@ export default function AttendanceContent() {
         body: JSON.stringify({
           check_out: now,
           check_out_lat: pos.coords.latitude, check_out_lng: pos.coords.longitude,
+          check_out_device: isMobile ? 'mobile' : 'pc',
         }),
       });
       await loadTodayRecord();
@@ -343,7 +360,9 @@ export default function AttendanceContent() {
       이름: r.employee_name,
       사업자: r.company,
       출근: formatTime(r.check_in),
+      출근기기: deviceText(r.check_in_device),
       퇴근: formatTime(r.check_out),
+      퇴근기기: deviceText(r.check_out_device),
       상태: STATUS_LABELS[r.status]?.label || r.status,
       메모: r.memo || '',
     }));
@@ -595,8 +614,8 @@ export default function AttendanceContent() {
                             <td className="px-4 py-3 text-gray-700">{r.work_date}</td>
                             <td className="px-4 py-3 font-medium text-gray-800">{r.employee_name}</td>
                             <td className="px-4 py-3 text-gray-500">{r.company}</td>
-                            <td className="px-4 py-3 text-blue-600 font-medium">{formatTime(r.check_in)}</td>
-                            <td className="px-4 py-3 text-orange-500 font-medium">{formatTime(r.check_out)}</td>
+                            <td className="px-4 py-3 text-blue-600 font-medium whitespace-nowrap">{formatTime(r.check_in)}<DeviceTag d={r.check_in_device} /></td>
+                            <td className="px-4 py-3 text-orange-500 font-medium whitespace-nowrap">{formatTime(r.check_out)}<DeviceTag d={r.check_out_device} /></td>
                             <td className="px-4 py-3 text-gray-600">{workHour}</td>
                             <td className="px-4 py-3">
                               <span className={`text-sm px-2 py-0.5 rounded-md font-medium ${st.color}`}>{st.label}</span>
@@ -642,8 +661,8 @@ export default function AttendanceContent() {
                         </div>
                         <div className="text-sm text-gray-400 mb-1">{r.work_date}</div>
                         <div className="flex items-center gap-4 text-base">
-                          <span className="text-blue-600 font-medium">출근 {formatTime(r.check_in)}</span>
-                          <span className="text-orange-500 font-medium">퇴근 {formatTime(r.check_out)}</span>
+                          <span className="text-blue-600 font-medium">출근 {formatTime(r.check_in)}<DeviceTag d={r.check_in_device} /></span>
+                          <span className="text-orange-500 font-medium">퇴근 {formatTime(r.check_out)}<DeviceTag d={r.check_out_device} /></span>
                           <span className="text-gray-500">{workHour}</span>
                         </div>
                         {canManageAtt && (
