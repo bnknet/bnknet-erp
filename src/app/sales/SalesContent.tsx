@@ -448,7 +448,7 @@ export default function SalesContent() {
       trend, byMall, byCompany, byBrand, missingEditable, missingUnreg, missingFee,
       missingCount: missingEditable.length + missingUnreg.length,
     };
-  }, [orders, inventory, fees, brandSales, period, companyFilter, anchor, rangeStart, rangeEnd]);
+  }, [orders, inventory, fees, brandSales, bomRows, period, companyFilter, anchor, rangeStart, rangeEnd]);
 
   const { ranges, cur, prev, trend, byMall, byCompany, byBrand, missingEditable, missingUnreg, missingFee, missingCount } = data;
   const marginPct = cur.mrev > 0 ? Math.round((cur.prof / cur.mrev) * 100) : null;
