@@ -838,13 +838,24 @@ export function applyProductMap(name: string): string {
   return PRODUCT_MAP[name] || name;
 }
 
+// 띄어쓰기·쉼표만 다른 변형(몰별 표기 차이)을 흡수하기 위한 정규화 인덱스.
+// 정확 매칭이 실패했을 때만 폴백으로 사용. (같은 정규화 키는 항상 같은 대표명 — 충돌 0 검증됨)
+const normKey = (s: string) => s.replace(/\s+/g, '').replace(/,/g, '');
+const PRODUCT_MAP_NORM: Record<string, string> = (() => {
+  const m: Record<string, string> = {};
+  for (const k in PRODUCT_MAP) { const nk = normKey(k); if (!(nk in m)) m[nk] = PRODUCT_MAP[k]; }
+  return m;
+})();
+
 // 수집상품명을 매칭데이터(PRODUCT_MAP) 기준 대표상품명으로 변환 + 매칭 여부 반환
 // 일자별 출고현황 집계용 — 매칭 안 된 상품은 별도 알림 처리
 export function matchProduct(collectName: string): { name: string; matched: boolean } {
   const raw = String(collectName || '').trim();
   if (!raw) return { name: '(상품명 없음)', matched: false };
   const [, cleanName] = extractQtyAndName(raw);
-  const mapped = PRODUCT_MAP[cleanName] || PRODUCT_MAP[raw];
+  // 1) 정확 매칭 → 2) 실패 시 띄어쓰기·쉼표 무시 폴백
+  const mapped = PRODUCT_MAP[cleanName] || PRODUCT_MAP[raw]
+    || PRODUCT_MAP_NORM[normKey(cleanName)] || PRODUCT_MAP_NORM[normKey(raw)];
   return { name: mapped || cleanName || raw, matched: !!mapped };
 }
 
