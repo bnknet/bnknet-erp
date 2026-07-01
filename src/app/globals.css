@@ -24,6 +24,8 @@ body {
 
 /* 인쇄 / PDF 저장 — 결재 문서(#approval-print)만 출력, 나머지 숨김 */
 @media print {
+  /* 배경색·음영(회색 라벨칸 등)을 인쇄에도 그대로 — 화면 폼과 동일하게 */
+  * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
   body * { visibility: hidden; }
   #approval-print, #approval-print * { visibility: visible; }
   #approval-print {
