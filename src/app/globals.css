@@ -21,3 +21,15 @@ body {
 * {
   box-sizing: border-box;
 }
+
+/* 인쇄 / PDF 저장 — 결재 문서(#approval-print)만 출력, 나머지 숨김 */
+@media print {
+  body * { visibility: hidden; }
+  #approval-print, #approval-print * { visibility: visible; }
+  #approval-print {
+    position: absolute; left: 0; top: 0; width: 100%;
+    padding: 0; margin: 0; box-shadow: none; border: none;
+  }
+  .no-print { display: none !important; }
+  @page { margin: 12mm; }
+}

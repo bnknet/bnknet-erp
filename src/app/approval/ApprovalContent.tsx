@@ -791,9 +791,13 @@ export default function ApprovalContent() {
 
     return (
       <div className="space-y-4">
-        <button onClick={() => setView('list')} className="text-base text-blue-600 hover:text-blue-700">← 목록으로</button>
+        <div className="flex items-center justify-between gap-2 no-print">
+          <button onClick={() => setView('list')} className="text-base text-blue-600 hover:text-blue-700">← 목록으로</button>
+          <button onClick={() => window.print()}
+            className="px-4 py-2 bg-slate-700 hover:bg-slate-800 text-white rounded-xl text-sm font-medium">🖨️ 인쇄 / PDF 저장</button>
+        </div>
 
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-4 sm:p-8 max-w-3xl mx-auto">
+        <div id="approval-print" className="bg-white rounded-2xl shadow-sm border border-gray-200 p-4 sm:p-8 max-w-3xl mx-auto">
           {/* 헤더 */}
           <div className="flex items-start justify-between gap-3 mb-6 flex-wrap">
             <div>
@@ -933,13 +937,20 @@ export default function ApprovalContent() {
               {/* 첨부파일 */}
               {selected.attachments && selected.attachments.length > 0 && (
                 <div className="border border-gray-200 rounded-xl p-4 mb-4">
-                  <div className="text-sm font-medium text-gray-600 mb-2">📎 첨부파일</div>
-                  <div className="space-y-1.5">
+                  <div className="text-sm font-medium text-gray-600 mb-2">📎 첨부파일 (영수증·증빙)</div>
+                  <div className="space-y-1.5 no-print">
                     {selected.attachments.map((f, i) => (
                       <a key={i} href={f.url} target="_blank" rel="noopener noreferrer"
                         className="flex items-center gap-2 text-sm text-blue-600 hover:underline">
                         <span>📄</span>{f.name}
                       </a>
+                    ))}
+                  </div>
+                  {/* 이미지 증빙은 인쇄/화면에 그대로 표시 (세무 보관용) */}
+                  <div className="mt-2 grid grid-cols-2 gap-2">
+                    {selected.attachments.filter(f => /\.(png|jpe?g|gif|webp|heic)$/i.test(f.url)).map((f, i) => (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img key={i} src={f.url} alt={f.name} className="w-full rounded-lg border border-gray-100 object-contain max-h-80" />
                     ))}
                   </div>
                 </div>
@@ -959,7 +970,7 @@ export default function ApprovalContent() {
             </div>
           )}
 
-          <div className="flex gap-3 justify-end mt-6 flex-wrap">
+          <div className="flex gap-3 justify-end mt-6 flex-wrap no-print">
             {myTurn && (
               <>
                 <button onClick={() => handleApprove(selected)}
