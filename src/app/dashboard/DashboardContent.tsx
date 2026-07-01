@@ -111,6 +111,35 @@ export default function DashboardContent() {
     })();
   }, [canSeeSnapAlert]);
 
+  // 대시보드 실데이터 — 사업자별 이번달 매출 / 최근 주문변환 / 미결재 문서
+  const [bizStats, setBizStats] = useState<Record<string, { rev: number; cnt: number }>>({});
+  const [recentUploads, setRecentUploads] = useState<{ uploader?: string; file_name?: string; saved_count?: number; row_count?: number; created_at?: string }[]>([]);
+  const [pendingApprovals, setPendingApprovals] = useState<{ id: string; doc_type?: string; company?: string; submitter_name?: string; total_amount?: number; created_at?: string }[]>([]);
+  useEffect(() => {
+    (async () => {
+      try {
+        const ms = monthStartStr();
+        const [ord, upsRes, appRes] = await Promise.all([
+          supabaseFetchAll<{ amount?: number; canceled?: boolean; company?: string }>(`/orders?select=amount,canceled,company&upload_date=gte.${ms}`),
+          supabaseFetch('/order_uploads?select=uploader,file_name,saved_count,row_count,created_at&order=created_at.desc&limit=5'),
+          supabaseFetch('/approvals?status=eq.pending&select=id,doc_type,company,submitter_name,total_amount,created_at&order=created_at.desc&limit=6'),
+        ]);
+        const bs: Record<string, { rev: number; cnt: number }> = {};
+        for (const o of ord) {
+          if (o.canceled) continue;
+          const c = o.company || '미분류';
+          if (!bs[c]) bs[c] = { rev: 0, cnt: 0 };
+          bs[c].rev += (Number(o.amount) || 0) / 1.1; // 부가세 제외
+          bs[c].cnt++;
+        }
+        setBizStats(bs);
+        const ups = await upsRes.json(); setRecentUploads(Array.isArray(ups) ? ups : []);
+        const apps = await appRes.json(); setPendingApprovals(Array.isArray(apps) ? apps : []);
+      } catch { /* 무시 */ }
+    })();
+  }, []);
+  const docLabel = (t?: string) => t === '카드구매' ? '매입품의서(카드구매)' : (t || '문서');
+
   async function resolveAlert(id: string) {
     try {
       await supabaseFetch(`/ship_alerts?id=eq.${id}`, {
@@ -176,15 +205,18 @@ export default function DashboardContent() {
 
       {/* 사업자별 현황 카드 */}
       <div>
-        <h3 className="text-base font-semibold text-gray-500 uppercase tracking-wider mb-3">사업자별 현황</h3>
+        <h3 className="text-base font-semibold text-gray-500 uppercase tracking-wider mb-3">사업자별 현황 <span className="normal-case text-gray-400">· 이번 달 매출(부가세 제외)</span></h3>
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          {companies.map((company) => (
-            <div key={company} className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
-              <div className="text-sm text-gray-400 mb-1">{company}</div>
-              <div className="text-lg font-bold text-gray-800">-</div>
-              <div className="text-sm text-gray-400 mt-1">데이터 준비 중</div>
-            </div>
-          ))}
+          {companies.map((company) => {
+            const s = bizStats[company];
+            return (
+              <a key={company} href="/sales" className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 hover:border-blue-300 transition-colors block">
+                <div className="text-sm text-gray-400 mb-1">{company}</div>
+                <div className={`text-lg font-bold ${s && s.rev > 0 ? 'text-gray-800' : 'text-gray-300'}`}>{won(s?.rev || 0)}</div>
+                <div className="text-sm text-gray-400 mt-1">{s ? `주문 ${s.cnt}건` : '이번 달 주문 없음'}</div>
+              </a>
+            );
+          })}
         </div>
       </div>
 
@@ -208,18 +240,36 @@ export default function DashboardContent() {
 
       {/* 최근 활동 (추후 실데이터 연결) */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
+        <a href="/orders" className="bg-white rounded-xl p-5 shadow-sm border border-gray-100 block hover:border-blue-200 transition-colors">
           <h3 className="font-semibold text-gray-700 mb-4">최근 주문 변환 이력</h3>
-          <div className="text-base text-gray-400 text-center py-8">
-            주문 변환 데이터가 없습니다
-          </div>
-        </div>
+          {recentUploads.length === 0 ? (
+            <div className="text-base text-gray-400 text-center py-8">주문 변환 데이터가 없습니다</div>
+          ) : (
+            <div className="space-y-2">
+              {recentUploads.map((u, i) => (
+                <div key={i} className="flex items-center justify-between text-sm border-b border-gray-50 pb-2 last:border-0">
+                  <div className="min-w-0 truncate"><span className="font-medium text-gray-700">{u.file_name || '파일'}</span> <span className="text-gray-400">· {u.uploader || '-'}</span></div>
+                  <div className="text-gray-400 whitespace-nowrap ml-2">{u.saved_count ?? 0}/{u.row_count ?? 0}건 · {(u.created_at || '').slice(0, 10)}</div>
+                </div>
+              ))}
+            </div>
+          )}
+        </a>
 
         <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
-          <h3 className="font-semibold text-gray-700 mb-4">미결재 문서</h3>
-          <div className="text-base text-gray-400 text-center py-8">
-            미결재 문서가 없습니다
-          </div>
+          <h3 className="font-semibold text-gray-700 mb-4">미결재 문서 {pendingApprovals.length > 0 && <span className="text-sm text-amber-600">({pendingApprovals.length})</span>}</h3>
+          {pendingApprovals.length === 0 ? (
+            <div className="text-base text-gray-400 text-center py-8">미결재 문서가 없습니다</div>
+          ) : (
+            <div className="space-y-2">
+              {pendingApprovals.map((a) => (
+                <a key={a.id} href="/approval" className="flex items-center justify-between text-sm border-b border-gray-50 pb-2 last:border-0 hover:bg-gray-50 rounded px-1">
+                  <div className="min-w-0 truncate"><span className="font-medium text-gray-700">{docLabel(a.doc_type)}</span> <span className="text-gray-400">· {a.submitter_name || '-'} · {a.company || ''}</span></div>
+                  <div className="text-gray-500 whitespace-nowrap ml-2">{a.total_amount ? won(a.total_amount) : ''}</div>
+                </a>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>
