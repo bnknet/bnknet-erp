@@ -278,6 +278,11 @@ export default function ApprovalContent() {
     ? computePaymentDate(purchaseBaseDate, selectedCard.billing_day, selectedCard.close_day)
     : '';
 
+  // IX글로벌 선택 시 정리인·영수자를 대표(방성훈)로 자동 지정
+  useEffect(() => {
+    if (company === 'IX글로벌') setOrganizer('방성훈');
+  }, [company]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // 카드구매 선택 시 지출일을 해당 카드 결제일로 자동 설정
   useEffect(() => {
     if (docType === '카드구매' && paymentDuePreview && spendDate !== paymentDuePreview) {
@@ -430,7 +435,8 @@ export default function ApprovalContent() {
         payload = {
           doc_type: docType, company,
           issue_date: issueDate, settle_date: settleDate, spend_date: spendDate,
-          organizer, processor, account,
+          // IX글로벌은 등록 직원이 없어 정리인·영수자를 대표(방성훈)로 고정 (작성자 무관)
+          organizer: company === 'IX글로벌' ? '방성훈' : organizer, processor, account,
           total_amount: total,
           status,
           submitter_name: me?.name || '',
