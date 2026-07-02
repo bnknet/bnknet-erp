@@ -213,6 +213,10 @@ export default function ApprovalContent() {
   const [purchaseVendor, setPurchaseVendor] = useState('');
   const [isPrepay, setIsPrepay] = useState(false); // 카드구매(false) / 선결제·한도복구(true)
   const [cards, setCards] = useState<Card[]>([]);
+  // 승인된 카드문서의 결제카드 교정 (카드 잘못 선택 시) — 대표·실장만
+  const [cardEditOpen, setCardEditOpen] = useState(false);
+  const [cardEditVal, setCardEditVal] = useState('');
+  const [cardEditSaving, setCardEditSaving] = useState(false);
   const [attachments, setAttachments] = useState<{ name: string; url: string }[]>([]);
   const [uploading, setUploading] = useState(false);
   const [items, setItems] = useState<ApprovalItem[]>(
@@ -389,6 +393,32 @@ export default function ApprovalContent() {
     const approval = { ...aData[0], items: Array.isArray(iData) ? iData : [] };
     setSelected(approval);
     setView('detail');
+  }
+
+  // 결제카드 교정 저장: card_id 변경 + 결제예정일 재계산 → 캘린더·한도는 결재문서 기준 실시간 계산이라 자동 반영
+  async function saveCardEdit() {
+    if (!selected) return;
+    const newCard = cards.find(c => c.id === cardEditVal);
+    if (!newCard) { alert('카드를 선택하세요.'); return; }
+    if (cardEditVal === selected.card_id) { setCardEditOpen(false); return; }
+    setCardEditSaving(true);
+    try {
+      // 결제예정일 재계산 규칙은 등록 시와 동일 (카드구매=발행일, 그 외=지출일 기준)
+      const baseDate = selected.doc_type === '카드구매' ? selected.issue_date : (selected.spend_date || selected.issue_date);
+      const paymentDue = computePaymentDate(baseDate, newCard.billing_day, newCard.close_day);
+      const res = await supabaseFetch(`/approvals?id=eq.${selected.id}`, {
+        method: 'PATCH', headers: { Prefer: 'return=minimal' },
+        body: JSON.stringify({ card_id: cardEditVal, payment_due_date: paymentDue, updated_at: new Date().toISOString() }),
+      });
+      if (!res.ok) { alert(`카드 수정 실패 (HTTP ${res.status})`); return; }
+      const oldName = cards.find(c => c.id === selected.card_id)?.card_name || '(이전 카드)';
+      await logCardChange('카드변경', `${selected.doc_type} ${selected.total_amount?.toLocaleString?.() || ''}원`,
+        `결제카드 ${oldName} → ${newCard.card_name} · 결제예정일 ${selected.payment_due_date || '-'} → ${paymentDue}`, me?.name || '').catch(() => {});
+      setCardEditOpen(false);
+      await loadDetail(selected.id);
+      await loadApprovals();
+    } catch (e) { alert('카드 수정 중 오류: ' + ((e as Error)?.message || e)); }
+    finally { setCardEditSaving(false); }
   }
 
   async function handleSave(submitNow = false) {
@@ -990,11 +1020,31 @@ export default function ApprovalContent() {
                       <span className="font-medium text-gray-700">💳 결제카드</span>
                       <span className="ml-2 text-gray-600">{cards.find(c => c.id === selected.card_id)?.card_name || '(삭제된 카드)'}</span>
                       {selected.purchase_vendor && <span className="ml-2 text-gray-400">· {selected.purchase_vendor}</span>}
+                      {selected.status === 'approved' && (isCeo || isAdmin) && !cardEditOpen && (
+                        <button onClick={() => { setCardEditVal(selected.card_id || ''); setCardEditOpen(true); }}
+                          className="ml-2 text-sm text-blue-600 hover:underline no-print">카드 수정</button>
+                      )}
                     </div>
                     {selected.payment_due_date && (
                       <div className="text-base text-blue-700">결제예정일 <span className="font-bold">{selected.payment_due_date}</span></div>
                     )}
                   </div>
+                  {cardEditOpen && (isCeo || isAdmin) && (
+                    <div className="mt-3 flex items-center gap-2 flex-wrap no-print bg-white border border-blue-200 rounded-lg p-2.5">
+                      <select value={cardEditVal} onChange={e => setCardEditVal(e.target.value)}
+                        className="flex-1 min-w-[220px] px-3 py-2 border border-gray-200 rounded-lg text-base">
+                        <option value="">카드 선택</option>
+                        {cards.map(c => (
+                          <option key={c.id} value={c.id}>[{c.card_type}] {c.card_name} {c.holder_name ? `· ${c.holder_name}` : ''}</option>
+                        ))}
+                      </select>
+                      <button onClick={saveCardEdit} disabled={cardEditSaving}
+                        className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white rounded-lg text-base font-medium">{cardEditSaving ? '저장 중...' : '저장'}</button>
+                      <button onClick={() => setCardEditOpen(false)}
+                        className="px-4 py-2 border border-gray-200 text-gray-600 rounded-lg text-base hover:bg-gray-50">취소</button>
+                      <p className="w-full text-xs text-gray-400">카드를 바꾸면 결제예정일이 새 카드 기준으로 재계산되고, 결제 캘린더·잔여한도에 자동 반영됩니다.</p>
+                    </div>
+                  )}
                   {(selected.purchase_status === 'canceled' || selected.purchase_status === 'partial') && (
                     <div className="mt-2 text-base text-red-600 font-medium">
                       ⚠️ {selected.purchase_status === 'canceled' ? '전체 취소됨' : '일부 항목 취소됨'} · 환불예정일 {selected.refund_due_date}
