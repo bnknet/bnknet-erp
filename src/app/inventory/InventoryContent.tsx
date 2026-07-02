@@ -104,6 +104,7 @@ export default function InventoryContent() {
   const [editId, setEditId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [activeTab, setActiveTab] = useState<'stock' | 'log' | 'snapshot' | 'outbound'>('stock');
+  const [logManualOnly, setLogManualOnly] = useState(true); // true: 수기 입출고만, false: 주문 자동출고 포함
 
   // 일자별 출고현황 (주문 데이터 집계)
   const outToday = new Date().toISOString().slice(0, 10);
@@ -163,16 +164,18 @@ export default function InventoryContent() {
   const [bulkValue, setBulkValue] = useState('');
   const [bulkSaving, setBulkSaving] = useState(false);
 
-  // 재고↔상품마스터 판매상태 동기화 (상품명 기준)
-  async function syncProductActive(productName: string, isActive: boolean) {
-    if (!productName) return;
+  // 재고↔상품마스터 동기화 (상품명 기준) — 판매상태·카테고리·브랜드
+  async function syncProductMaster(productName: string, fields: Record<string, unknown>) {
+    if (!productName || !Object.keys(fields).length) return;
     try {
       await supabaseFetch(`/products?name=eq.${encodeURIComponent(productName)}`, {
         method: 'PATCH', headers: { Prefer: 'return=minimal' },
-        body: JSON.stringify({ is_active: isActive }),
+        body: JSON.stringify(fields),
       });
     } catch { /* 매칭 상품 없으면 무시 */ }
   }
+  const syncProductActive = (productName: string, isActive: boolean) =>
+    syncProductMaster(productName, { is_active: isActive });
 
   // 일자별 재고 (스냅샷)
   const [snapDate, setSnapDate] = useState(todayDate());
@@ -222,10 +225,13 @@ export default function InventoryContent() {
     finally { setLoading(false); }
   }
 
-  async function loadLogs(inventoryId?: string) {
-    const query = inventoryId
+  async function loadLogs(inventoryId?: string, manualOnly = logManualOnly) {
+    // 전체 입출고 내역 탭에서는 기본적으로 '수기(담당자 직접) 입출고·조정'만 표시.
+    // 주문변환 자동출고/취소(order_id 존재)는 건수가 많아 밀리므로 토글로 숨김.
+    const base = inventoryId
       ? `/inventory_logs?inventory_id=eq.${inventoryId}&order=created_at.desc&limit=50`
-      : `/inventory_logs?order=created_at.desc&limit=100`;
+      : `/inventory_logs?order=created_at.desc&limit=200`;
+    const query = !inventoryId && manualOnly ? `${base}&order_id=is.null` : base;
     const res = await supabaseFetch(query);
     const data = await res.json();
     setLogs(Array.isArray(data) ? data : []);
@@ -264,8 +270,12 @@ export default function InventoryContent() {
         alert(`저장 실패: ${(err as any).message || res.status}`);
         return;
       }
-      // 판매상태를 상품마스터에도 동기화 (상품명 기준)
-      await syncProductActive(form.product_name, form.is_active);
+      // 판매상태·카테고리·브랜드를 상품마스터에도 동기화 (상품명 기준)
+      await syncProductMaster(form.product_name, {
+        is_active: form.is_active,
+        category: form.category || null,
+        brand: form.brand || null,
+      });
       setView('list');
       setEditId(null);
       setForm({ ...EMPTY_FORM });
@@ -420,10 +430,10 @@ export default function InventoryContent() {
           body: JSON.stringify({ [bulkField]: val, updated_at: new Date().toISOString() }),
         })
       ));
-      // 판매상태 변경 시 상품마스터에도 동기화
-      if (bulkField === 'is_active') {
+      // 판매상태·카테고리·브랜드 변경 시 상품마스터에도 동기화
+      if (bulkField === 'is_active' || bulkField === 'category' || bulkField === 'brand') {
         const names = items.filter(it => checkedIds.has(it.id)).map(it => it.product_name);
-        await Promise.all(names.map(n => syncProductActive(n, val as boolean)));
+        await Promise.all(names.map(n => syncProductMaster(n, { [bulkField]: val })));
       }
       setCheckedIds(new Set());
       setBulkValue('');
@@ -756,8 +766,23 @@ export default function InventoryContent() {
       ) : activeTab === 'log' ? (
         /* 입출고 내역 탭 */
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+            <div className="text-sm text-gray-500">
+              {logManualOnly ? '수기 입출고·조정만 표시 (주문 자동출고 제외)' : '전체 표시 (주문 자동출고 포함)'}
+            </div>
+            <button
+              onClick={() => { const next = !logManualOnly; setLogManualOnly(next); loadLogs(undefined, next); }}
+              className={`px-3 py-1.5 rounded-lg text-sm font-medium border transition-colors ${
+                logManualOnly ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
+              }`}
+            >
+              {logManualOnly ? '📝 수기만' : '📋 전체'}
+            </button>
+          </div>
           {logs.length === 0 ? (
-            <div className="text-center py-12 text-gray-400">입출고 내역이 없습니다</div>
+            <div className="text-center py-12 text-gray-400">
+              {logManualOnly ? '수기 입출고 내역이 없습니다' : '입출고 내역이 없습니다'}
+            </div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-base">
