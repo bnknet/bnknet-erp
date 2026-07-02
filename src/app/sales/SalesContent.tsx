@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { getUser } from '@/lib/auth';
 import { supabaseFetch, supabaseFetchAll } from '@/lib/supabase';
-import { matchProduct } from '@/lib/orderConvert';
+import { matchProduct, loadDbMatches } from '@/lib/orderConvert';
 import { buildFeeMap, lookupFee, normalizeMall, type MallFee } from '@/lib/mallFees';
 
 // ── 타입 ─────────────────────────────────────────────
@@ -138,6 +138,7 @@ export default function SalesContent() {
   async function loadAll() {
     setLoading(true); setLoadError(null);
     try {
+      await loadDbMatches(true); // 담당자 등록 매칭을 집계 전에 반영
       const [ord, inv, fee] = await Promise.all([
         supabaseFetchAll<OrderRow>('/orders?select=upload_date,mall_name,product_name,collect_product,quantity,amount,canceled,company,order_number,delivery_fee,source,manual_cost,manual_shipping,shipping_method,courier_count&order=upload_date.asc'),
         supabaseFetchAll<InvRow>('/inventory?select=product_name,company,brand,cost_price'),

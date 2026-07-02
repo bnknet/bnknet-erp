@@ -1,3 +1,5 @@
+import { supabaseFetchAll } from './supabase';
+
 // 상품명 매핑 테이블 (매칭데이터_07014.xls 기준, 820개)
 export const PRODUCT_MAP: Record<string, string> = {
   "(M) 닥터파이토 초임계 식물성 오메가3 (500mg X 60캡슐) 2박스, 60정": "닥터파이토 초임계 식물성 알티지 오메가3",
@@ -849,14 +851,51 @@ const PRODUCT_MAP_NORM: Record<string, string> = (() => {
   return m;
 })();
 
-// 수집상품명을 매칭데이터(PRODUCT_MAP) 기준 대표상품명으로 변환 + 매칭 여부 반환
+// ── 담당자가 ERP에서 직접 등록하는 런타임 매칭 (DB: product_matches) ──
+// 하드코딩 PRODUCT_MAP(검증된 820개)은 그대로 base로 두고, DB 매칭을 '덧씌워' 병합한다.
+// → 기존 매칭은 절대 깨지지 않고, 신규/수정만 DB로. DB 항목이 하드코딩보다 우선(담당자 교정 허용).
+let DB_MATCH: Record<string, string> = {};
+let DB_MATCH_NORM: Record<string, string> = {};
+let dbMatchesLoaded = false;
+
+export function setDbMatches(rows: { collect_name?: string; product_name?: string }[]): void {
+  const m: Record<string, string> = {};
+  const mn: Record<string, string> = {};
+  for (const r of rows) {
+    const cn = String(r.collect_name || '').trim();
+    const pn = String(r.product_name || '').trim();
+    if (!cn || !pn) continue;
+    m[cn] = pn;
+    const nk = normKey(cn);
+    if (!(nk in mn)) mn[nk] = pn;
+  }
+  DB_MATCH = m;
+  DB_MATCH_NORM = mn;
+  dbMatchesLoaded = true;
+}
+
+// 페이지 진입 시 1회 호출 → matchProduct가 DB 매칭까지 반영. 실패해도 하드코딩으로 정상 동작.
+export async function loadDbMatches(force = false): Promise<void> {
+  if (dbMatchesLoaded && !force) return;
+  try {
+    const rows = await supabaseFetchAll<{ collect_name: string; product_name: string }>(
+      '/product_matches?select=collect_name,product_name',
+    );
+    setDbMatches(rows);
+  } catch { /* 매칭 테이블 없거나 조회 실패해도 하드코딩 매칭으로 동작 */ }
+}
+
+// 수집상품명을 매칭데이터 기준 대표상품명으로 변환 + 매칭 여부 반환
 // 일자별 출고현황 집계용 — 매칭 안 된 상품은 별도 알림 처리
 export function matchProduct(collectName: string): { name: string; matched: boolean } {
   const raw = String(collectName || '').trim();
   if (!raw) return { name: '(상품명 없음)', matched: false };
   const [, cleanName] = extractQtyAndName(raw);
-  // 1) 정확 매칭 → 2) 실패 시 띄어쓰기·쉼표 무시 폴백
-  const mapped = PRODUCT_MAP[cleanName] || PRODUCT_MAP[raw]
+  // 우선순위: DB 정확 → 하드코딩 정확 → DB 정규화 → 하드코딩 정규화
+  const mapped =
+    DB_MATCH[cleanName] || DB_MATCH[raw]
+    || PRODUCT_MAP[cleanName] || PRODUCT_MAP[raw]
+    || DB_MATCH_NORM[normKey(cleanName)] || DB_MATCH_NORM[normKey(raw)]
     || PRODUCT_MAP_NORM[normKey(cleanName)] || PRODUCT_MAP_NORM[normKey(raw)];
   return { name: mapped || cleanName || raw, matched: !!mapped };
 }
