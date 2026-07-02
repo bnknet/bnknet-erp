@@ -66,7 +66,10 @@ interface UploadHistory {
   file_url?: string;
   row_count?: number;
   saved_count?: number;
+  ref_order_number?: string; // 직접등록 배치의 주문번호 (클릭 시 상세 조회용)
 }
+
+interface ChangeLog { id: string; action: string; detail?: string; changed_by?: string; created_at: string }
 
 export default function OrdersContent() {
   const me = getUser();
@@ -80,6 +83,11 @@ export default function OrdersContent() {
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [history, setHistory] = useState<UploadHistory[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
+  // 업로드 이력 상세 (직접등록·수정 내용 조회)
+  const [detailUpload, setDetailUpload] = useState<UploadHistory | null>(null);
+  const [detailOrders, setDetailOrders] = useState<OrderRow[]>([]);
+  const [detailLogs, setDetailLogs] = useState<ChangeLog[]>([]);
+  const [detailLoading, setDetailLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // 사업자 선택 + 재고 자동출고 경고
@@ -153,7 +161,7 @@ export default function OrdersContent() {
 
       await supabaseFetch('/order_uploads', {
         method: 'POST', headers: { Prefer: 'return=minimal' },
-        body: JSON.stringify({ uploader: me?.name || '', file_name: `[직접등록${isW ? '·도매' : ''}] ${mall} ${valid.length}건`, file_url: null, row_count: valid.length, saved_count: valid.length }),
+        body: JSON.stringify({ uploader: me?.name || '', file_name: `[직접등록${isW ? '·도매' : ''}] ${mall} ${valid.length}건`, file_url: null, row_count: valid.length, saved_count: valid.length, ref_order_number: orderNo }),
       });
 
       // 변경 이력: 등록 로그 (도매/직접) — 어떤 제품이 어떻게 등록됐는지 기록
@@ -698,6 +706,27 @@ export default function OrdersContent() {
     }
   }
 
+  // 업로드 이력의 직접등록 건 클릭 → 등록된 주문 상세 + 변경 이력(등록·수정) 조회
+  async function openUploadDetail(h: UploadHistory) {
+    if (!h.ref_order_number) return;
+    setDetailUpload(h); setDetailLoading(true); setDetailOrders([]); setDetailLogs([]);
+    try {
+      const ords = await supabaseFetchAll<OrderRow>(
+        `/orders?order_number=eq.${encodeURIComponent(h.ref_order_number)}` +
+        '&select=id,upload_date,order_number,recipient_name,mall_name,product_name,quantity,amount,canceled,source,company,manual_cost,manual_shipping&order=id.asc',
+      );
+      setDetailOrders(Array.isArray(ords) ? ords : []);
+      const ids = (ords || []).map(o => o.id);
+      if (ids.length) {
+        const logs = await supabaseFetchAll<ChangeLog>(
+          `/order_change_logs?order_id=in.(${ids.join(',')})&select=id,action,detail,changed_by,created_at&order=created_at.desc`,
+        );
+        setDetailLogs(Array.isArray(logs) ? logs : []);
+      }
+    } catch { /* 조회 실패 시 빈 상세 */ }
+    finally { setDetailLoading(false); }
+  }
+
   async function deleteUpload(id: string) {
     if (!confirm('이 업로드 이력을 삭제하시겠습니까? (저장된 주문 데이터는 유지됩니다)')) return;
     await supabaseFetch(`/order_uploads?id=eq.${id}`, { method: 'DELETE' });
@@ -1009,6 +1038,8 @@ export default function OrdersContent() {
                         <td className="py-2.5 px-3">
                           {h.file_url ? (
                             <a href={h.file_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">📎 {h.file_name || '파일'}</a>
+                          ) : h.ref_order_number ? (
+                            <button onClick={() => openUploadDetail(h)} className="text-blue-600 hover:underline text-left">📋 {h.file_name || '직접등록'} <span className="text-xs text-gray-400">· 상세보기</span></button>
                           ) : <span className="text-gray-400">{h.file_name || '-'}</span>}
                         </td>
                         <td className="py-2.5 px-3 text-center text-gray-500 text-sm">{h.saved_count}건 저장 / {h.row_count}건</td>
@@ -1034,6 +1065,8 @@ export default function OrdersContent() {
                     <div className="mt-1">
                       {h.file_url ? (
                         <a href={h.file_url} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-600 hover:underline">📎 {h.file_name || '파일'}</a>
+                      ) : h.ref_order_number ? (
+                        <button onClick={() => openUploadDetail(h)} className="text-sm text-blue-600 hover:underline text-left">📋 {h.file_name || '직접등록'} · 상세보기</button>
                       ) : <span className="text-sm text-gray-400">{h.file_name || '-'}</span>}
                     </div>
                     <div className="flex items-center justify-between mt-1">
@@ -1233,6 +1266,72 @@ export default function OrdersContent() {
                 🗑️ 이 주문 삭제 (재고 복구 + 매출 제외)
               </button>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* 업로드 이력 상세 모달 (직접등록 건 클릭) */}
+      {detailUpload && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4 overflow-y-auto" onClick={() => setDetailUpload(null)}>
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6 my-8" onClick={e => e.stopPropagation()}>
+            <div className="flex items-start justify-between mb-1">
+              <h3 className="text-lg font-bold text-gray-800">직접등록 상세</h3>
+              <button onClick={() => setDetailUpload(null)} className="text-gray-400 text-lg">✕</button>
+            </div>
+            <p className="text-sm text-gray-500 mb-4">
+              {detailUpload.file_name} · 주문번호 {detailUpload.ref_order_number}
+              <span className="text-gray-400"> · 등록 {new Date(detailUpload.uploaded_at).toLocaleString('ko-KR', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })} · {detailUpload.uploader}</span>
+            </p>
+
+            {detailLoading ? (
+              <div className="text-center py-8 text-gray-400">불러오는 중...</div>
+            ) : detailOrders.length === 0 ? (
+              <div className="text-center py-8 text-gray-400">이 주문은 삭제되었거나 조회할 수 없습니다.</div>
+            ) : (
+              <>
+                {/* 등록된 품목(현재 상태) */}
+                <div className="text-sm font-medium text-gray-600 mb-1.5">등록 품목 <span className="text-gray-400">(현재 상태)</span></div>
+                <div className="border border-gray-100 rounded-lg divide-y divide-gray-50 mb-4">
+                  {detailOrders.map(o => {
+                    const isW = o.source === '도매';
+                    return (
+                      <div key={o.id} className="px-3 py-2 text-sm">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className={`font-medium ${o.canceled ? 'line-through text-gray-400' : 'text-gray-800'}`}>{o.product_name}</span>
+                          <span className="text-gray-500 whitespace-nowrap">{o.quantity}개 · {(o.amount || 0).toLocaleString()}원</span>
+                        </div>
+                        <div className="text-xs text-gray-400 mt-0.5">
+                          {o.mall_name}{o.recipient_name ? ` · ${o.recipient_name}` : ''}
+                          {isW ? ` · 원가(개당) ${(o.manual_cost || 0).toLocaleString()} · 배송비 ${(o.manual_shipping || 0).toLocaleString()}` : ''}
+                          {o.canceled ? ' · ⚠️ 취소됨' : ''}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* 변경 이력 (등록·수정) */}
+                <div className="text-sm font-medium text-gray-600 mb-1.5">변경 이력 (등록·수정)</div>
+                {detailLogs.length === 0 ? (
+                  <div className="text-sm text-gray-400">이력 없음</div>
+                ) : (
+                  <div className="max-h-52 overflow-y-auto space-y-1.5 border border-gray-100 rounded-lg p-2">
+                    {detailLogs.map(l => (
+                      <div key={l.id} className="text-xs">
+                        <span className={`px-1.5 py-0.5 rounded font-medium ${l.action === '수정' ? 'bg-amber-50 text-amber-600' : l.action === '삭제' ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-600'}`}>{l.action}</span>
+                        <span className="text-gray-400 ml-1">{l.changed_by} · {l.created_at?.slice(0, 16).replace('T', ' ')}</span>
+                        {l.detail && <div className="text-gray-600 mt-0.5 break-words">{l.detail}</div>}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
+
+            <div className="flex justify-end mt-5">
+              <button onClick={() => setDetailUpload(null)}
+                className="px-5 py-2.5 border border-gray-200 text-gray-600 rounded-xl text-base hover:bg-gray-50">닫기</button>
+            </div>
           </div>
         </div>
       )}
