@@ -1303,7 +1303,7 @@ export default function OrdersContent() {
             {/* 도매 마진 미리보기 */}
             {mType === 'wholesale' && (
               <div className="bg-violet-50 border border-violet-200 rounded-xl px-4 py-3 text-base text-violet-700">
-                예상 마진(확정 저장): <b>{mWholesaleMargin.toLocaleString('ko-KR')}원</b> <span className="text-sm text-violet-500">= (매출 − 원가(개당×수량) − 배송비) ÷ 1.1. 부가세 포함 금액으로 입력하세요. 이 값으로 확정됩니다.</span>
+                예상 마진(확정 저장): <b className="text-red-600 text-lg">{mWholesaleMargin.toLocaleString('ko-KR')}원</b> <span className="text-sm text-violet-500">= (매출 − 원가(개당×수량) − 배송비) ÷ 1.1. 부가세 포함 금액으로 입력하세요. 이 값으로 확정됩니다.</span>
               </div>
             )}
 
