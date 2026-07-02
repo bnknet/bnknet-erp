@@ -40,6 +40,7 @@ interface Approval {
   final_approver_status: string;
   final_approver_at?: string;
   rejection_reason?: string;
+  approval_note?: string;
   created_at: string;
   attachments?: { name: string; url: string }[];
   // 카드 매입 전용 필드 (지출결의서)
@@ -197,6 +198,9 @@ export default function ApprovalContent() {
   // 반려 모달
   const [showRejectModal, setShowRejectModal] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
+  // 승인 모달 (선택적 지시/요청사항 메모 — 미입력해도 승인됨)
+  const [showApproveModal, setShowApproveModal] = useState(false);
+  const [approveNote, setApproveNote] = useState('');
 
   // 문서 종류
   const [docType, setDocType] = useState<DocType>('지출결의서');
@@ -529,7 +533,7 @@ export default function ApprovalContent() {
     return isCeo || (approval.company === 'IX글로벌' && isAdmin);
   }
 
-  async function handleApprove(approval: Approval) {
+  async function handleApprove(approval: Approval, note?: string) {
     const now = new Date().toISOString();
     const hasStep2 = APPROVAL_LINES[approval.company]?.length === 3;
     let patch: Record<string, unknown> = {};
@@ -545,10 +549,18 @@ export default function ApprovalContent() {
     }
 
     if (Object.keys(patch).length === 0) return; // 권한 없음/이미 처리됨 → 무시(안전장치)
+    // 승인 지시/요청사항(선택) — 있으면 기존 메모에 승인자명과 함께 누적
+    const trimmed = (note || '').trim();
+    if (trimmed) {
+      const line = `[${me?.name || '승인자'}] ${trimmed}`;
+      patch.approval_note = approval.approval_note ? `${approval.approval_note}\n${line}` : line;
+    }
     await supabaseFetch(`/approvals?id=eq.${approval.id}`, {
       method: 'PATCH', headers: { Prefer: 'return=minimal' },
       body: JSON.stringify(patch),
     });
+    setShowApproveModal(false);
+    setApproveNote('');
     // 승인 후 상세로 빠지지 않고 목록으로 → '내 결재 대기'에서 다음 건 바로 처리
     setView('list');
     await loadApprovals();
@@ -938,6 +950,13 @@ export default function ApprovalContent() {
             </div>
           )}
 
+          {selected.approval_note && (
+            <div className="mb-4 bg-green-50 border border-green-200 rounded-xl px-4 py-3">
+              <div className="text-sm text-green-500 font-medium mb-1">✅ 승인 지시·요청사항</div>
+              <div className="text-base text-green-800 whitespace-pre-wrap">{selected.approval_note}</div>
+            </div>
+          )}
+
           {/* 휴가신청서 내용 */}
           {isVacation ? (
             <div className="border border-gray-400">
@@ -1093,7 +1112,7 @@ export default function ApprovalContent() {
           <div className="flex gap-3 justify-end mt-6 flex-wrap no-print">
             {myTurn && (
               <>
-                <button onClick={() => handleApprove(selected)}
+                <button onClick={() => { setApproveNote(''); setShowApproveModal(true); }}
                   className="px-5 py-2 bg-green-600 hover:bg-green-700 text-white rounded-xl text-base font-medium">승인</button>
                 <button onClick={() => setShowRejectModal(true)}
                   className="px-5 py-2 bg-red-500 hover:bg-red-600 text-white rounded-xl text-base font-medium">반려</button>
@@ -1172,6 +1191,24 @@ export default function ApprovalContent() {
                   className="flex-1 px-5 py-2.5 bg-orange-500 hover:bg-orange-600 text-white rounded-xl text-base font-medium">취소 확정</button>
                 <button onClick={() => setShowCancelModal(false)}
                   className="px-5 py-2.5 border border-gray-200 text-gray-600 rounded-xl text-base hover:bg-gray-50">닫기</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {showApproveModal && (
+          <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6">
+              <h3 className="text-lg font-bold text-gray-800 mb-1">승인</h3>
+              <p className="text-sm text-gray-400 mb-3">지시·요청사항이 있으면 적어주세요. (선택 — 비워도 승인됩니다)</p>
+              <textarea value={approveNote} onChange={(e) => setApproveNote(e.target.value)}
+                placeholder="예: 다음부터 견적서 첨부 부탁드립니다 / 이번 건만 예외 승인 등" rows={4}
+                className="w-full px-4 py-3 border border-gray-200 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-green-400 resize-none" />
+              <div className="flex gap-3 mt-4">
+                <button onClick={() => handleApprove(selected, approveNote)}
+                  className="px-5 py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-xl text-base font-medium flex-1">승인 확인</button>
+                <button onClick={() => { setShowApproveModal(false); setApproveNote(''); }}
+                  className="px-5 py-2.5 border border-gray-200 text-gray-600 rounded-xl text-base hover:bg-gray-50">취소</button>
               </div>
             </div>
           </div>
