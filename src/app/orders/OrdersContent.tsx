@@ -406,12 +406,30 @@ export default function OrdersContent() {
     } catch (e) { alert('❌ 재출고 중 오류: ' + ((e as Error)?.message || e)); }
   }
 
+  // 주문 삭제(재고 복구 포함): 삭제 전 cancel_orders로 차감했던 재고를 원자적으로 복구한 뒤 행 삭제.
+  // (cancel_orders는 이미 취소된 건은 건너뛰므로 이중복구 없음) 매출은 행이 사라지면서 자동 제외.
+  async function deleteOrdersWithRestore(ids: string[]): Promise<boolean> {
+    try {
+      const res = await supabaseFetch('/rpc/cancel_orders', {
+        method: 'POST', headers: { Prefer: 'return=representation' },
+        body: JSON.stringify({ p_order_ids: ids, p_reason: '주문 삭제(재고 복구)', p_by: me?.name || '' }),
+      });
+      if (!res.ok) { alert(`❌ 재고 복구에 실패해 삭제를 중단했습니다 (HTTP ${res.status}). 재고 정합성 보호를 위해 아무 것도 변경하지 않았습니다.`); return false; }
+    } catch { alert('❌ 재고 복구 중 오류로 삭제를 중단했습니다.'); return false; }
+    const del = await supabaseFetch(`/orders?id=in.(${ids.join(',')})`, { method: 'DELETE' });
+    if (!del.ok) { alert(`❌ 주문 삭제 실패 (HTTP ${del.status}). 재고는 이미 복구되었으니, 필요 시 취소 해제 후 다시 시도하세요.`); return false; }
+    return true;
+  }
+
   async function deleteSelectedOrders() {
     if (orderChecked.size === 0) { alert('삭제할 주문을 선택하세요.'); return; }
-    if (!confirm(`선택한 ${orderChecked.size}건을 완전히 삭제하시겠습니까? (복구 불가)`)) return;
+    if (!confirm(`선택한 ${orderChecked.size}건을 완전히 삭제하시겠습니까?\n· 차감했던 재고는 자동 복구됩니다\n· 매출·공헌이익에서도 제외됩니다\n(삭제된 주문은 복구 불가)`)) return;
     const ids = Array.from(orderChecked);
-    await supabaseFetch(`/orders?id=in.(${ids.join(',')})`, { method: 'DELETE' });
-    await searchOrders();
+    if (await deleteOrdersWithRestore(ids)) {
+      setOrderChecked(new Set());
+      await searchOrders();
+      await refreshUndeductedCount();
+    }
   }
 
   async function handleFile(file: File) {
@@ -1198,6 +1216,23 @@ export default function OrdersContent() {
               <button onClick={() => setEditOrder(null)}
                 className="px-5 py-2.5 border border-gray-200 text-gray-600 rounded-xl text-base hover:bg-gray-50">닫기</button>
             </div>
+            {canDelete && (
+              <button onClick={async () => {
+                if (!editOrder) return;
+                if (!confirm(`이 주문을 완전히 삭제할까요?\n${editOrder.product_name} · ${Number(editOrder.amount || 0).toLocaleString()}원\n· 차감했던 재고는 자동 복구되고 매출에서도 제외됩니다 (복구 불가)`)) return;
+                setEditSaving(true);
+                try {
+                  if (await deleteOrdersWithRestore([editOrder.id])) {
+                    setEditOrder(null);
+                    await searchOrders();
+                    await refreshUndeductedCount();
+                  }
+                } finally { setEditSaving(false); }
+              }}
+                className="w-full mt-2 px-5 py-2.5 border border-red-200 text-red-600 rounded-xl text-base font-medium hover:bg-red-50">
+                🗑️ 이 주문 삭제 (재고 복구 + 매출 제외)
+              </button>
+            )}
           </div>
         </div>
       )}
