@@ -298,11 +298,20 @@ export default function InventoryContent() {
 
       if (after < 0) { alert('재고가 부족합니다.'); setSaving(false); return; }
 
-      await supabaseFetch(`/inventory?id=eq.${selected.id}`, {
+      // 재고 수량 변경 — 성공 여부 반드시 확인 (실패 시 로그도 남기지 않고 중단)
+      const patchRes = await supabaseFetch(`/inventory?id=eq.${selected.id}`, {
         method: 'PATCH',
-        headers: { Prefer: 'return=minimal' },
+        headers: { Prefer: 'return=representation' },
         body: JSON.stringify({ quantity: after, updated_at: new Date().toISOString() }),
       });
+      const patched = await patchRes.json().catch(() => null);
+      if (!patchRes.ok || !Array.isArray(patched) || patched.length === 0) {
+        alert(`재고 수량 변경에 실패했습니다 (HTTP ${patchRes.status}). 재고가 차감/증가되지 않았습니다.\n권한·정책 문제이거나 해당 재고가 삭제됐을 수 있습니다.`);
+        setSaving(false);
+        return;
+      }
+      // DB에 실제 반영된 값 사용 (혹시 모를 불일치 방지)
+      const finalQty = Number(patched[0]?.quantity ?? after);
 
       await supabaseFetch('/inventory_logs', {
         method: 'POST',
@@ -313,13 +322,13 @@ export default function InventoryContent() {
           type: moveForm.type,
           quantity: qty,
           before_qty: before,
-          after_qty: after,
+          after_qty: finalQty,
           reason: moveForm.reason,
           created_by: me?.name || '',
         }),
       });
 
-      setSelected({ ...selected, quantity: after });
+      setSelected({ ...selected, quantity: finalQty });
       setMoveForm({ type: '입고', quantity: 0, reason: '' });
       setView('detail');
       await loadItems();
@@ -349,10 +358,14 @@ export default function InventoryContent() {
       }
       // 2) 재고 수량 원복 (연결된 재고가 있을 때만)
       if (log.inventory_id) {
-        await supabaseFetch(`/inventory?id=eq.${log.inventory_id}`, {
-          method: 'PATCH', headers: { Prefer: 'return=minimal' },
+        const revRes = await supabaseFetch(`/inventory?id=eq.${log.inventory_id}`, {
+          method: 'PATCH', headers: { Prefer: 'return=representation' },
           body: JSON.stringify({ quantity: log.before_qty, updated_at: new Date().toISOString() }),
         });
+        const reverted = await revRes.json().catch(() => null);
+        if (!revRes.ok || !Array.isArray(reverted) || reverted.length === 0) {
+          alert(`로그는 삭제됐지만 재고 수량 원복에 실패했습니다 (HTTP ${revRes.status}). 재고를 직접 확인/보정하세요.`);
+        }
       }
       if (selected && log.inventory_id === selected.id) {
         setSelected({ ...selected, quantity: log.before_qty });
