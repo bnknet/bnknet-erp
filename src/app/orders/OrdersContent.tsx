@@ -19,6 +19,17 @@ const COMPANY_OPTIONS = [
 // 직접 등록 시 판매몰 선택지 (정규 몰명 — 수수료표와 일치)
 const MALL_OPTIONS = ['스마트스토어', 'G마켓', '옥션', '11번가', '쿠팡', '토스', '쿠팡로켓그로스', 'SSG', 'Hmall', '롯데온', '인터파크', '카카오스토어', '자사몰Npay', '자사몰직접결제'];
 
+// 수량 치환이 시스템이 못 잡는 표기(개입/매/병/팩/1+1 등)를 감지 → 담당자 검수용.
+// 현재 인식 단위는 개/박스/포/세트뿐. 아래 표기는 수량이 과소/과대될 수 있어 눈으로 확인 필요.
+const QTY_RISK_UNIT = /[0-9]\s*(개입|매|병|팩|셋트|묶음|입)/;
+const QTY_RISK_PLUS = /[0-9]\s*\+\s*[0-9]/; // 1+1, 2+1 등 증정
+function qtyRiskReason(row: Record<string, unknown>): string {
+  const s = `${String(row['★수집상품명'] ?? row['수집상품명'] ?? '')} ${String(row['★수집옵션'] ?? row['수집옵션'] ?? '')}`;
+  if (QTY_RISK_PLUS.test(s)) return '1+1 등 증정 표기 — 수량 확인';
+  if (QTY_RISK_UNIT.test(s)) return '개입/매/병/팩 등 미인식 단위 — 수량 확인';
+  return '';
+}
+
 interface InvItem { id: string; product_name: string; company: string; cost_price?: number; quantity?: number }
 interface ManualLine { key: number; invId: string; productName: string; qty: number; amount: number; cost: number; shipping: number }
 const todayStr = () => new Date().toISOString().slice(0, 10);
@@ -432,9 +443,11 @@ export default function OrdersContent() {
       setResultData(converted);
       const bundleCount = converted.filter((r) => r._is_bundle).length;
       const productCount = new Set(converted.map((r) => r['상품명']).filter(Boolean)).size;
+      const qtyWarnCount = converted.filter((r) => qtyRiskReason(r as Record<string, unknown>)).length;
       setStatus({
-        type: 'success',
-        msg: `✅ 변환 완료 — 총 ${converted.length}건 / 합구매 ${bundleCount}건 / 상품 ${productCount}종`,
+        type: qtyWarnCount ? 'error' : 'success',
+        msg: `✅ 변환 완료 — 총 ${converted.length}건 / 합구매 ${bundleCount}건 / 상품 ${productCount}종`
+          + (qtyWarnCount ? ` · ⚠️ 수량 확인 필요 ${qtyWarnCount}건 (아래 노란 행 확인 후 송장 출력)` : ''),
       });
     } catch {
       setStatus({ type: 'error', msg: '❌ 파일 처리 중 오류가 발생했습니다' });
@@ -618,6 +631,17 @@ export default function OrdersContent() {
         if (warn.negative.length) {
           const d = warn.negative.slice(0, 20).map(n => (typeof n === 'string' ? n : JSON.stringify(n))).join(', ');
           alerts.push({ company, kind: 'negative', detail: `재고 부족(마이너스) ${warn.negative.length}건: ${d}`, order_count: warn.negative.length, created_by: me?.name || '' });
+        }
+        // 수량표기 확인 필요(개입/매/병/팩/1+1 등 미인식 단위) — 송장 수량 오출고 방지 안전망
+        const qtyRiskRows = resultData.filter((r) => qtyRiskReason(r as Record<string, unknown>));
+        if (qtyRiskRows.length) {
+          const seen = new Map<string, number>();
+          for (const r of qtyRiskRows) {
+            const nm = String((r as Record<string, unknown>)['상품명'] || '(상품명 없음)');
+            seen.set(nm, (seen.get(nm) || 0) + 1);
+          }
+          const d = Array.from(seen.entries()).slice(0, 20).map(([n, c]) => `${n}(${c}건)`).join(', ');
+          alerts.push({ company, kind: 'qty_check', detail: `수량표기 확인 필요 ${qtyRiskRows.length}건 — 개입/매/병/팩/1+1 등 미인식 단위. 송장 수량이 실제 포장수량과 맞는지 확인: ${d}`, order_count: qtyRiskRows.length, created_by: me?.name || '' });
         }
         if (alerts.length) {
           await supabaseFetch('/ship_alerts', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify(alerts) });
@@ -869,15 +893,24 @@ export default function OrdersContent() {
                     </tr>
                   </thead>
                   <tbody>
-                    {resultData.slice(0, 50).map((row, i) => (
-                      <tr key={i} className="border-b border-gray-50 hover:bg-gray-50">
+                    {resultData.slice(0, 50).map((row, i) => {
+                      const risk = qtyRiskReason(row as Record<string, unknown>);
+                      return (
+                      <tr key={i} className={`border-b border-gray-50 ${risk ? 'bg-yellow-50 hover:bg-yellow-100' : 'hover:bg-gray-50'}`}>
                         <td className="py-2 px-3 whitespace-nowrap">
                           <span className="bg-blue-100 text-blue-700 text-sm px-2 py-0.5 rounded-md">
                             {String(row['몰명'] || '-')}
                           </span>
                         </td>
-                        <td className="py-2 px-3 text-gray-700">{row['상품명']}</td>
-                        <td className="py-2 px-3 text-center text-gray-600">{row['수량(주문수량*EA)']}</td>
+                        <td className="py-2 px-3 text-gray-700">
+                          {row['상품명']}
+                          {risk && (
+                            <span className="block text-xs text-yellow-700 mt-0.5" title={risk}>⚠️ {risk}</span>
+                          )}
+                        </td>
+                        <td className={`py-2 px-3 text-center ${risk ? 'text-yellow-800 font-bold' : 'text-gray-600'}`}>
+                          {risk && <span className="mr-1">⚠️</span>}{row['수량(주문수량*EA)']}
+                        </td>
                         <td className="py-2 px-3 text-right text-gray-700 font-medium">
                           ₩{(Number(row['금액']) || 0).toLocaleString()}
                         </td>
@@ -889,7 +922,8 @@ export default function OrdersContent() {
                           )}
                         </td>
                       </tr>
-                    ))}
+                      );
+                    })}
                   </tbody>
                 </table>
                 {resultData.length > 50 && (
