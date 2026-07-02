@@ -561,13 +561,25 @@ export default function OrdersContent() {
       try {
         if (uploadedFile) fileUrl = await supabaseUpload('orders', safeStorageKey(uploadedFile.name), uploadedFile);
       } catch { /* 파일 업로드 실패해도 저장은 진행 */ }
-      await supabaseFetch('/order_uploads', {
-        method: 'POST', headers: { Prefer: 'return=minimal' },
+      const upRes = await supabaseFetch('/order_uploads', {
+        method: 'POST', headers: { Prefer: 'return=representation' },
         body: JSON.stringify({
           uploader: me?.name || '', file_name: fileName || uploadedFile?.name || '',
           file_url: fileUrl || null, row_count: rows.length, saved_count: newRows.length,
         }),
       });
+      // 이 업로드로 저장된 주문에 upload_id 연결 → 업로드 이력 삭제 시 주문·재고·매출 원복 가능
+      try {
+        const up = await upRes.json();
+        const uploadId = Array.isArray(up) ? up[0]?.id : up?.id;
+        const savedIds = saved.map((o) => o.id).filter(Boolean);
+        if (uploadId && savedIds.length) {
+          await supabaseFetch(`/orders?id=in.(${savedIds.join(',')})`, {
+            method: 'PATCH', headers: { Prefer: 'return=minimal' },
+            body: JSON.stringify({ upload_id: uploadId }),
+          });
+        }
+      } catch { /* upload_id 컬럼 미적용 시 무시(연결만 생략) */ }
 
       // ── 재고 자동출고 ────────────────────────────────────────
       // 상품명(대표명) + 사업자로 재고 매칭 → 못 찾으면 경고(자동출고 안 함, 안전장치)
@@ -727,10 +739,30 @@ export default function OrdersContent() {
     finally { setDetailLoading(false); }
   }
 
-  async function deleteUpload(id: string) {
-    if (!confirm('이 업로드 이력을 삭제하시겠습니까? (저장된 주문 데이터는 유지됩니다)')) return;
-    await supabaseFetch(`/order_uploads?id=eq.${id}`, { method: 'DELETE' });
+  async function deleteUpload(h: UploadHistory) {
+    // 이 업로드로 저장된 주문 찾기 (파일업로드=upload_id / 직접등록=order_number)
+    const idset = new Set<string>();
+    if (h.ref_order_number) {
+      try {
+        const r = await supabaseFetchAll<{ id: string }>(`/orders?select=id&order_number=eq.${encodeURIComponent(h.ref_order_number)}`);
+        (r || []).forEach((o) => idset.add(o.id));
+      } catch { /* 무시 */ }
+    }
+    try {
+      const r = await supabaseFetchAll<{ id: string }>(`/orders?select=id&upload_id=eq.${h.id}`);
+      (r || []).forEach((o) => idset.add(o.id));
+    } catch { /* upload_id 컬럼 미적용/미연결 시 무시 */ }
+    const linkedIds = Array.from(idset);
+
+    if (linkedIds.length) {
+      if (!confirm(`이 업로드로 저장된 주문 ${linkedIds.length}건을 함께 삭제하고 원상복구할까요?\n· 차감했던 재고 자동 복구\n· 매출·공헌이익에서 제외\n(삭제된 주문은 복구 불가)`)) return;
+      if (!(await deleteOrdersWithRestore(linkedIds))) return; // 실패 시 이력도 보존
+    } else {
+      if (!confirm('이 업로드 이력을 삭제하시겠습니까?\n(연결된 주문을 찾지 못해 이력만 삭제됩니다 — 주문 데이터는 유지)')) return;
+    }
+    await supabaseFetch(`/order_uploads?id=eq.${h.id}`, { method: 'DELETE' });
     await loadHistory();
+    await refreshUndeductedCount();
   }
 
   function handleTabChange(t: Tab) {
@@ -1045,7 +1077,7 @@ export default function OrdersContent() {
                         <td className="py-2.5 px-3 text-center text-gray-500 text-sm">{h.saved_count}건 저장 / {h.row_count}건</td>
                         {canDelete && (
                           <td className="py-2.5 px-3 text-right">
-                            <button onClick={() => deleteUpload(h.id)} className="text-sm text-gray-400 hover:text-red-500">삭제</button>
+                            <button onClick={() => deleteUpload(h)} className="text-sm text-gray-400 hover:text-red-500">삭제</button>
                           </td>
                         )}
                       </tr>
@@ -1071,7 +1103,7 @@ export default function OrdersContent() {
                     </div>
                     <div className="flex items-center justify-between mt-1">
                       <span className="text-xs text-gray-500">{h.saved_count}건 저장 / {h.row_count}건</span>
-                      {canDelete && <button onClick={() => deleteUpload(h.id)} className="text-xs text-red-500">삭제</button>}
+                      {canDelete && <button onClick={() => deleteUpload(h)} className="text-xs text-red-500">삭제</button>}
                     </div>
                   </div>
                 ))}
