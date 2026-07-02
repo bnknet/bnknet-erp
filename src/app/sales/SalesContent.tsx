@@ -506,10 +506,15 @@ export default function SalesContent() {
             </button>
           ))}
         </div>
-        <select value={companyFilter} onChange={(e) => setCompanyFilter(e.target.value)}
-          className="px-3 py-2 rounded-lg border border-gray-200 text-base bg-white">
-          {COMPANIES.map((c) => <option key={c} value={c}>{c}</option>)}
-        </select>
+        {/* 사업자별 필터 버튼 — 누르면 그 사업자 매출만 분리 조회 */}
+        <div className="flex flex-wrap gap-1 bg-gray-100 rounded-lg p-1">
+          {COMPANIES.map((c) => (
+            <button key={c} onClick={() => setCompanyFilter(c)}
+              className={`px-3 py-1.5 rounded-md text-base font-medium transition-colors ${companyFilter === c ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
+              {c}
+            </button>
+          ))}
+        </div>
 
         {/* 기간 이동 (지난달·특정일 조회) — 누적·기간조회는 제외 */}
         {period !== 'all' && period !== 'range' && (
