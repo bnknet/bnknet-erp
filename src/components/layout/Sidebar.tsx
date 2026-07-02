@@ -32,6 +32,7 @@ const menuItems: MenuGroup[] = [
       { href: '/inventory', label: '재고 관리', icon: '🏭' },
       { href: '/products', label: '상품 마스터', icon: '🛍️' },
       { href: '/product-sets', label: '세트 구성', icon: '🎁', roles: ['ceo', 'admin', 'sales', 'inventory'] },
+      { href: '/product-matches', label: '상품 매칭', icon: '🔗', roles: ['ceo', 'admin', 'sales', 'inventory'] },
     ],
   },
   {

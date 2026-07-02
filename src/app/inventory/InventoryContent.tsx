@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { supabaseFetch, supabaseFetchAll } from '@/lib/supabase';
 import { getUser } from '@/lib/auth';
-import { matchProduct } from '@/lib/orderConvert';
+import { matchProduct, loadDbMatches } from '@/lib/orderConvert';
 import * as XLSX from 'xlsx';
 
 // 큰 금액 축약 (모바일 통계용): 6.9억 / 688만 등
@@ -117,6 +117,7 @@ export default function InventoryContent() {
   async function loadOutbound(from: string, to: string) {
     setOutLoading(true);
     try {
+      await loadDbMatches(true); // 담당자 등록 매칭 반영
       // PostgREST는 한 번에 최대 1000건만 반환 → 1000건씩 모두 가져오기(페이지네이션)
       type Row = { product_name?: string; collect_product?: string; quantity?: number; canceled?: boolean };
       const data: Row[] = [];

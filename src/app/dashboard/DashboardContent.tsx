@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { getUser } from '@/lib/auth';
 import { supabaseFetch, supabaseFetchAll } from '@/lib/supabase';
 import { computeCostGap, type CostGapSummary, type MiniOrder, type MiniInv } from '@/lib/salesStats';
-import { matchProduct } from '@/lib/orderConvert';
+import { matchProduct, loadDbMatches } from '@/lib/orderConvert';
 
 const companies = ['BNKNET', 'SJ글로벌', '더블아이', 'IX글로벌'];
 
@@ -71,6 +71,7 @@ export default function DashboardContent() {
     if (!canSeeSnapAlert) return;
     (async () => {
       try {
+        await loadDbMatches(true);
         const ms = monthStartStr();
         const today = dStr(new Date());
         const [ord, inv, bom] = await Promise.all([
@@ -120,6 +121,7 @@ export default function DashboardContent() {
     if (!canSeeSnapAlert) return;
     (async () => {
       try {
+        await loadDbMatches(true);
         const rows = await supabaseFetchAll<{ collect_product?: string; product_name?: string; company?: string; source?: string }>(
           '/orders?stock_deducted=eq.false&canceled=eq.false&select=collect_product,product_name,company,source',
         );
@@ -212,8 +214,14 @@ export default function DashboardContent() {
               </div>
               <div className="text-sm text-orange-600 mt-0.5 break-words">{a.detail}{a.created_at ? ` · ${a.created_at.slice(0, 16).replace('T', ' ')}` : ''}</div>
             </a>
-            <button onClick={() => resolveAlert(a.id)}
-              className="flex-shrink-0 px-3 py-1.5 text-sm bg-white border border-orange-300 rounded-lg text-orange-600 hover:bg-orange-100">확인</button>
+            <div className="flex-shrink-0 flex items-center gap-2">
+              {(a.kind === 'unknown_product' || a.kind === 'unmatched') && (
+                <a href="/product-matches" onClick={(e) => e.stopPropagation()}
+                  className="px-3 py-1.5 text-sm bg-white border border-blue-300 rounded-lg text-blue-600 hover:bg-blue-50 whitespace-nowrap">🔗 매칭 추가</a>
+              )}
+              <button onClick={() => resolveAlert(a.id)}
+                className="px-3 py-1.5 text-sm bg-white border border-orange-300 rounded-lg text-orange-600 hover:bg-orange-100">확인</button>
+            </div>
           </div>
         </div>
       ))}

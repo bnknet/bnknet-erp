@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { convertOrders, buildSupabaseRows, matchProduct, type ConvertedOrderRow, type RawOrderRow } from '@/lib/orderConvert';
+import { convertOrders, buildSupabaseRows, matchProduct, loadDbMatches, type ConvertedOrderRow, type RawOrderRow } from '@/lib/orderConvert';
 import { supabaseFetch, supabaseFetchAll, supabaseUpload, safeStorageKey } from '@/lib/supabase';
 import { getUser } from '@/lib/auth';
 
@@ -314,6 +314,7 @@ export default function OrdersContent() {
 
   // 마운트 시 미차감 건수 로드 (변환 탭이 기본이라 배너/버튼 노출용)
   useEffect(() => { if (canRegister) refreshUndeductedCount(); }, [canRegister]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { loadDbMatches(); }, []); // 담당자 등록 매칭을 미리 로드(변환·재고매칭에 반영)
 
   // 도매 주문 수정 모달 열기 (+ 변경 이력 로드)
   async function openEditOrder(o: OrderRow) {
@@ -439,6 +440,7 @@ export default function OrdersContent() {
       const headerRow = (XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' })[0] as unknown[]) || [];
       setHeaderOrder(headerRow.map((h) => String(h)).filter((h) => h !== ''));
 
+      await loadDbMatches(true); // 담당자가 추가한 최신 매칭 반영 후 변환
       const converted = convertOrders(raw);
       setResultData(converted);
       const bundleCount = converted.filter((r) => r._is_bundle).length;
@@ -849,7 +851,8 @@ export default function OrdersContent() {
                     <div className="text-base font-semibold text-red-600">⚠️ 재고 자동출고 안 된 상품 {shipWarn.unmatched.length}종 — 담당자 확인 필요</div>
                     <div className="text-sm text-red-400 mt-0.5 mb-2">
                       선택한 사업자 재고에서 이 상품들을 못 찾았습니다(미등록/이름 불일치). 주문·매출은 저장됐지만 <b>재고는 차감 안 됨</b> →
-                      <a href="/inventory" className="underline ml-1">재고 관리</a>에서 등록·이름 확인 후 수동 출고하세요. 해결 후 실장님께 보고.
+                      <a href="/inventory" className="underline ml-1">재고 관리</a>에서 등록·이름 확인 후 수동 출고하세요.
+                      신상품 매칭이 없으면 <a href="/product-matches" className="underline text-blue-600 ml-1">🔗 상품 매칭</a>에서 추가하세요. 해결 후 실장님께 보고.
                     </div>
                     <div className="flex flex-wrap gap-2">
                       {shipWarn.unmatched.map((m) => (
