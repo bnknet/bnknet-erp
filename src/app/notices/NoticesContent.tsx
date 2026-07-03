@@ -13,6 +13,15 @@ interface Notice {
   created_at: string;
 }
 
+interface Comment {
+  id: string;
+  notice_id: string;
+  author_id: string | null;
+  author_name: string;
+  content: string;
+  created_at: string;
+}
+
 type View = 'list' | 'detail' | 'write';
 
 export default function NoticesContent() {
@@ -28,6 +37,11 @@ export default function NoticesContent() {
   const [form, setForm] = useState({ title: '', content: '', is_pinned: false });
   const [saving, setSaving] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
+
+  // 댓글
+  const [comments, setComments] = useState<Comment[]>([]);
+  const [commentText, setCommentText] = useState('');
+  const [commentSaving, setCommentSaving] = useState(false);
 
   useEffect(() => { loadNotices(); }, []);
 
@@ -81,6 +95,46 @@ export default function NoticesContent() {
   function openDetail(n: Notice) {
     setSelected(n);
     setView('detail');
+    setCommentText('');
+    loadComments(n.id);
+  }
+
+  async function loadComments(noticeId: string) {
+    try {
+      const res = await supabaseFetch(`/notice_comments?notice_id=eq.${noticeId}&order=created_at.asc`);
+      const data = await res.json();
+      setComments(Array.isArray(data) ? data : []);
+    } catch { setComments([]); }
+  }
+
+  async function addComment() {
+    if (!selected || !commentText.trim()) return;
+    setCommentSaving(true);
+    try {
+      await supabaseFetch('/notice_comments', {
+        method: 'POST',
+        headers: { Prefer: 'return=minimal' },
+        body: JSON.stringify({
+          notice_id: selected.id,
+          content: commentText.trim(),
+          author_name: user?.name || '직원',
+          author_id: user?.id || null,
+        }),
+      });
+      setCommentText('');
+      await loadComments(selected.id);
+    } finally { setCommentSaving(false); }
+  }
+
+  async function deleteComment(c: Comment) {
+    if (!confirm('댓글을 삭제하시겠습니까?')) return;
+    await supabaseFetch(`/notice_comments?id=eq.${c.id}`, { method: 'DELETE' });
+    if (selected) await loadComments(selected.id);
+  }
+
+  // 본인 댓글 또는 대표·실장이면 삭제 가능
+  function canDeleteComment(c: Comment) {
+    return isAdmin || (!!user?.id && c.author_id === user.id);
   }
 
   function openWrite(n?: Notice) {
@@ -96,6 +150,10 @@ export default function NoticesContent() {
 
   function formatDate(s: string) {
     return new Date(s).toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' });
+  }
+
+  function formatDateTime(s: string) {
+    return new Date(s).toLocaleString('ko-KR', { month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' });
   }
 
   // 목록
@@ -188,6 +246,53 @@ export default function NoticesContent() {
         </div>
         <div className="text-gray-700 leading-relaxed whitespace-pre-wrap border-t border-gray-100 pt-5">
           {selected.content}
+        </div>
+
+        {/* 댓글 */}
+        <div className="border-t border-gray-100 mt-6 pt-5">
+          <h3 className="text-base font-semibold text-gray-700 mb-4">댓글 {comments.length > 0 && <span className="text-blue-600">{comments.length}</span>}</h3>
+
+          {comments.length > 0 && (
+            <ul className="space-y-3 mb-5">
+              {comments.map((c) => (
+                <li key={c.id} className="bg-gray-50 rounded-xl px-4 py-3">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-sm font-medium text-gray-700">{c.author_name}</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-gray-400">{formatDateTime(c.created_at)}</span>
+                      {canDeleteComment(c) && (
+                        <button
+                          onClick={() => deleteComment(c)}
+                          className="text-xs text-gray-400 hover:text-red-500 transition-colors"
+                        >
+                          삭제
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  <p className="text-base text-gray-700 whitespace-pre-wrap break-words">{c.content}</p>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          <div className="flex gap-2 items-end">
+            <textarea
+              value={commentText}
+              onChange={(e) => setCommentText(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) addComment(); }}
+              placeholder="댓글을 입력하세요 (Ctrl/⌘+Enter 등록)"
+              rows={2}
+              className="flex-1 px-3 py-2 border border-gray-200 rounded-xl text-base text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+            />
+            <button
+              onClick={addComment}
+              disabled={commentSaving || !commentText.trim()}
+              className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white rounded-xl font-medium text-base transition-colors whitespace-nowrap flex-shrink-0"
+            >
+              {commentSaving ? '등록 중' : '등록'}
+            </button>
+          </div>
         </div>
       </div>
     </div>

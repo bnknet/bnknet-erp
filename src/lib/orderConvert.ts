@@ -868,6 +868,11 @@ export function setDbMatches(rows: { collect_name?: string; product_name?: strin
     m[cn] = pn;
     const nk = normKey(cn);
     if (!(nk in mn)) mn[nk] = pn;
+    // 수량 꼬리표(", 2개(2개)" 등)가 collect_name에 남아있어도 매칭되게 —
+    // 꼬리표 제거한 정규화 키로도 인덱싱. (몰 알림엔 수량표기가 붙는데 실제 주문명엔 없어서 못 찾던 문제)
+    const [, cnClean] = extractQtyAndName(cn);
+    const nkc = normKey(cnClean);
+    if (nkc && !(nkc in mn)) mn[nkc] = pn;
   }
   DB_MATCH = m;
   DB_MATCH_NORM = mn;
