@@ -22,6 +22,11 @@ interface Comment {
   created_at: string;
 }
 
+// 직급이 비어있을 때 role로 대체 표시 (HR과 동일 라벨)
+const ROLE_LABELS: Record<string, string> = {
+  ceo: '대표', admin: '실장', manager: '실장', sales: '매출 담당', inventory: '재고·주문 담당', md: 'MD',
+};
+
 type View = 'list' | 'detail' | 'write';
 
 export default function NoticesContent() {
@@ -42,8 +47,43 @@ export default function NoticesContent() {
   const [comments, setComments] = useState<Comment[]>([]);
   const [commentText, setCommentText] = useState('');
   const [commentSaving, setCommentSaving] = useState(false);
+  const [commentCounts, setCommentCounts] = useState<Record<string, number>>({}); // notice_id → 댓글 수
+  const [empById, setEmpById] = useState<Record<string, { position: string; role: string }>>({});
+  const [empByName, setEmpByName] = useState<Record<string, { position: string; role: string }>>({});
 
-  useEffect(() => { loadNotices(); }, []);
+  useEffect(() => { loadNotices(); loadCommentCounts(); loadEmployees(); }, []);
+
+  async function loadCommentCounts() {
+    try {
+      const res = await supabaseFetch('/notice_comments?select=notice_id');
+      const data = await res.json();
+      const counts: Record<string, number> = {};
+      if (Array.isArray(data)) for (const r of data) counts[r.notice_id] = (counts[r.notice_id] || 0) + 1;
+      setCommentCounts(counts);
+    } catch { /* 테이블 없거나 조회 실패해도 목록은 정상 */ }
+  }
+
+  async function loadEmployees() {
+    try {
+      const res = await supabaseFetch('/employees?select=id,name,position,role');
+      const data = await res.json();
+      const byId: Record<string, { position: string; role: string }> = {};
+      const byName: Record<string, { position: string; role: string }> = {};
+      if (Array.isArray(data)) for (const e of data) {
+        const v = { position: e.position || '', role: e.role || '' };
+        if (e.id) byId[e.id] = v;
+        if (e.name) byName[e.name] = v;
+      }
+      setEmpById(byId); setEmpByName(byName);
+    } catch { /* 직급 조회 실패해도 이름은 정상 표시 */ }
+  }
+
+  // 작성자 직급: employees.position 우선, 없으면 role 라벨
+  function authorTitle(c: Comment): string {
+    const emp = (c.author_id && empById[c.author_id]) || empByName[c.author_name];
+    if (!emp) return '';
+    return (emp.position && emp.position.trim()) || ROLE_LABELS[emp.role] || '';
+  }
 
   async function loadNotices() {
     setLoading(true);
@@ -123,6 +163,7 @@ export default function NoticesContent() {
       });
       setCommentText('');
       await loadComments(selected.id);
+      await loadCommentCounts();
     } finally { setCommentSaving(false); }
   }
 
@@ -130,6 +171,7 @@ export default function NoticesContent() {
     if (!confirm('댓글을 삭제하시겠습니까?')) return;
     await supabaseFetch(`/notice_comments?id=eq.${c.id}`, { method: 'DELETE' });
     if (selected) await loadComments(selected.id);
+    await loadCommentCounts();
   }
 
   // 본인 댓글 또는 대표·실장이면 삭제 가능
@@ -198,7 +240,14 @@ export default function NoticesContent() {
                       ? <span className="bg-red-100 text-red-600 text-sm px-2 py-0.5 rounded-md font-semibold whitespace-nowrap">공지</span>
                       : <span className="text-gray-300 text-sm whitespace-nowrap">일반</span>}
                   </td>
-                  <td className="py-3.5 px-5 text-gray-700 font-medium text-base">{n.title}</td>
+                  <td className="py-3.5 px-5 text-gray-700 font-medium text-base">
+                    <span className="inline-flex items-center gap-1.5 flex-wrap">
+                      {n.title}
+                      {commentCounts[n.id] > 0 && (
+                        <span className="text-xs text-blue-600 bg-blue-50 rounded-full px-2 py-0.5 font-semibold whitespace-nowrap">💬 {commentCounts[n.id]}</span>
+                      )}
+                    </span>
+                  </td>
                   <td className="py-3.5 px-5 text-gray-400 text-base whitespace-nowrap hidden sm:table-cell">{n.author_name}</td>
                   <td className="py-3.5 px-5 text-gray-400 text-base whitespace-nowrap hidden sm:table-cell">{formatDate(n.created_at)}</td>
                 </tr>
@@ -257,7 +306,10 @@ export default function NoticesContent() {
               {comments.map((c) => (
                 <li key={c.id} className="bg-gray-50 rounded-xl px-4 py-3">
                   <div className="flex items-center justify-between mb-1">
-                    <span className="text-sm font-medium text-gray-700">{c.author_name}</span>
+                    <span className="text-sm font-medium text-gray-700">
+                      {c.author_name}
+                      {authorTitle(c) && <span className="text-gray-400 font-normal"> · {authorTitle(c)}</span>}
+                    </span>
                     <div className="flex items-center gap-2">
                       <span className="text-xs text-gray-400">{formatDateTime(c.created_at)}</span>
                       {canDeleteComment(c) && (
