@@ -425,6 +425,17 @@ export default function SalesContent() {
     }
     const byBrand = Array.from(brandMap.entries()).map(([name, v]) => ({ name, ...v })).sort((a, b) => b.sales - a.sales);
 
+    // 상품별 매출 — 대표상품명(matchProduct) 기준. 현재 기간·사업자 필터. 수량/매출/공헌이익
+    const productMap = new Map<string, { qty: number; sales: number; margin: number }>();
+    for (const r of flt) {
+      if (r.isPast || !r.rep) continue;
+      if (r.date < ranges.curStart || r.date > ranges.curEnd) continue;
+      if (!cf(r.company)) continue;
+      const e = productMap.get(r.rep) || { qty: 0, sales: 0, margin: 0 };
+      e.qty += r.qty; e.sales += r.rev; e.margin += r.profit; productMap.set(r.rep, e);
+    }
+    const byProduct = Array.from(productMap.entries()).map(([name, v]) => ({ name, ...v })).sort((a, b) => b.qty - a.qty);
+
     // 택배 출고 건수 (현재 기간·사업자 필터). 직접수령·화물·과거·도매 제외.
     //  주문번호 단위로 집계(합구매·다품목 1주문=1택배 중복 방지):
     //   · courier_count 입력값 있으면 그 값(직접주문), 없으면 주문번호당 1건
@@ -450,12 +461,12 @@ export default function SalesContent() {
       ranges,
       cur: { rev: curRev, prof: curProf, mrev: curMrev, cnt: curCnt, qty: curQty, fee: curFee, unim: curUnim, courier: curCourier },
       prev,
-      trend, byMall, byCompany, byBrand, missingEditable, missingUnreg, missingFee,
+      trend, byMall, byCompany, byBrand, byProduct, missingEditable, missingUnreg, missingFee,
       missingCount: missingEditable.length + missingUnreg.length,
     };
   }, [orders, inventory, fees, brandSales, bomRows, period, companyFilter, anchor, rangeStart, rangeEnd]);
 
-  const { ranges, cur, prev, trend, byMall, byCompany, byBrand, missingEditable, missingUnreg, missingFee, missingCount } = data;
+  const { ranges, cur, prev, trend, byMall, byCompany, byBrand, byProduct, missingEditable, missingUnreg, missingFee, missingCount } = data;
   const marginPct = cur.mrev > 0 ? Math.round((cur.prof / cur.mrev) * 100) : null;
   const trendMax = Math.max(1, ...trend.map((t) => t.rev));
 
@@ -797,6 +808,43 @@ export default function SalesContent() {
               </tbody>
             </table>
             {byBrand.length > 30 && <p className="text-sm text-gray-400 text-center mt-3">상위 30개 표시 (전체 {byBrand.length}개)</p>}
+          </div>
+        )}
+      </div>
+
+      {/* 상품별 매출 — 대표상품명 기준(어떤 제품이 몇 개 나갔나) */}
+      <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="font-semibold text-gray-700">상품별 매출</h3>
+          <span className="text-sm text-gray-400">
+            {companyFilter === '전체' ? '전 사업자' : companyFilter} · 대표상품명 기준 · {ranges.label}
+          </span>
+        </div>
+        {byProduct.length === 0 ? <Empty /> : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-base">
+              <thead>
+                <tr className="text-left text-sm text-gray-400 border-b">
+                  <th className="py-2 pr-3">상품명</th>
+                  <th className="py-2 pr-3 text-right">수량</th>
+                  <th className="py-2 pr-3 text-right">매출</th>
+                  <th className="py-2 pr-3 text-right">공헌이익</th>
+                  <th className="py-2 pr-3 text-right">공헌이익률</th>
+                </tr>
+              </thead>
+              <tbody>
+                {byProduct.slice(0, 100).map((p) => (
+                  <tr key={p.name} className="border-b border-gray-50">
+                    <td className="py-2 pr-3 font-medium text-gray-700">{p.name}</td>
+                    <td className="py-2 pr-3 text-right text-gray-800 font-medium">{p.qty.toLocaleString('ko-KR')}개</td>
+                    <td className="py-2 pr-3 text-right text-gray-700">{won(p.sales)}</td>
+                    <td className="py-2 pr-3 text-right text-gray-500">{won(p.margin)}</td>
+                    <td className="py-2 pr-3 text-right text-gray-500">{p.sales > 0 ? `${Math.round((p.margin / p.sales) * 100)}%` : '-'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {byProduct.length > 100 && <p className="text-sm text-gray-400 text-center mt-3">상위 100개 표시 (전체 {byProduct.length}개)</p>}
           </div>
         )}
       </div>
