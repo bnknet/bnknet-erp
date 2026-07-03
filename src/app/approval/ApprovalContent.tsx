@@ -420,6 +420,20 @@ export default function ApprovalContent() {
     } catch { /* 로그 실패는 본 작업에 영향 없음 */ }
   }
 
+  // 승인 철회: 내가 승인한 단계를, 다음 결재자(대표)가 처리하기 전이면 되돌려 재결재 대기로
+  async function retractApproval(approval: Approval) {
+    if (!(isAdmin && approval.status === 'pending' && approval.approver1_status === 'approved')) return;
+    if (!confirm('내 승인을 철회하고 다시 결재 대기 상태로 되돌릴까요?\n(대표님 결재 전에만 가능. 되돌린 뒤 반려하거나 수정 요청할 수 있어요)')) return;
+    await supabaseFetch(`/approvals?id=eq.${approval.id}`, {
+      method: 'PATCH', headers: { Prefer: 'return=minimal' },
+      body: JSON.stringify({ approver1_status: 'pending', approver1_at: null, updated_at: new Date().toISOString() }),
+    });
+    const label = approval.doc_type === '휴가신청서' ? approval.doc_type : `${approval.doc_type} ${approval.total_amount?.toLocaleString?.() || ''}원`;
+    await logApproval(approval.id, '승인철회', `${label} · 실장 승인 철회 → 재결재 대기`);
+    await loadApprovals();
+    await loadDetail(approval.id); // 상세 갱신 → 승인/반려 버튼 다시 노출
+  }
+
   // 상신자 본인이 결재중 문서를 상신 취소 (기록 유지)
   async function cancelSubmission(approval: Approval) {
     if (approval.submitter_name !== me?.name) return;
@@ -943,6 +957,8 @@ export default function ApprovalContent() {
     // 상신자 본인: 반려/결재중 문서를 수정해 재상신, 결재중 문서는 상신 취소 가능
     const canResubmit = isSubmitter && (selected.status === 'rejected' || selected.status === 'pending');
     const canCancelSubmission = isSubmitter && selected.status === 'pending';
+    // 실장이 이미 승인했고 대표 결재 전이면 승인 철회 가능
+    const canRetract = isAdmin && selected.status === 'pending' && selected.approver1_status === 'approved';
     const canDelete = (isCeo || selected.submitter_name === me?.name) && ['draft', 'rejected'].includes(selected.status);
 
     const isVacation = selected.doc_type === '휴가신청서';
@@ -1182,6 +1198,10 @@ export default function ApprovalContent() {
                 <button onClick={() => setShowRejectModal(true)}
                   className="px-5 py-2 bg-red-500 hover:bg-red-600 text-white rounded-xl text-base font-medium">반려</button>
               </>
+            )}
+            {canRetract && (
+              <button onClick={() => retractApproval(selected)}
+                className="px-5 py-2 border border-amber-300 text-amber-700 rounded-xl text-base font-medium hover:bg-amber-50">승인 철회</button>
             )}
             {canResubmit && (
               <button onClick={() => openResubmit(selected)}
