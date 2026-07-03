@@ -404,20 +404,24 @@ export default function SalesContent() {
     const missingUnreg = Array.from(missUnreg.entries()).map(([name, v]) => ({ name, ...v })).sort((a, b) => b.rev - a.rev);
     const missingFee = Array.from(missFee.values()).sort((a, b) => b.rev - a.rev);
 
-    // 브랜드별 매출 (전 사업자 합산 — 사업자 필터 무관). 과거=brand_sales, 현재=주문×재고 브랜드
+    // 브랜드별 매출 — 사업자 필터 반영. 현재=주문×재고 브랜드(사업자별 정확), 과거=brand_sales(사업자 구분 없음)
     const brandMap = new Map<string, { sales: number; margin: number }>();
     for (const r of flt) {
       if (r.isPast || !r.brand) continue;
       if (r.date < ranges.curStart || r.date > ranges.curEnd) continue;
+      if (!cf(r.company)) continue; // 선택 사업자만
       const e = brandMap.get(r.brand) || { sales: 0, margin: 0 };
       e.sales += r.rev; e.margin += r.profit; brandMap.set(r.brand, e);
     }
-    for (const b of brandSales) {
-      const d = b.period_date || '';
-      if (d < ranges.curStart || d > ranges.curEnd) continue;
-      const e = brandMap.get(b.brand) || { sales: 0, margin: 0 };
-      // 과거 브랜드 매출은 부가세 포함 → ÷1.1. 마진은 파일 값(이미 부가세 제외) 그대로.
-      e.sales += (Number(b.sales) || 0) / VAT_DIV; e.margin += Number(b.margin) || 0; brandMap.set(b.brand, e);
+    // 과거 브랜드 실적은 사업자 구분이 없어, 특정 사업자 선택 시엔 제외(전체일 때만 합산)
+    if (companyFilter === '전체') {
+      for (const b of brandSales) {
+        const d = b.period_date || '';
+        if (d < ranges.curStart || d > ranges.curEnd) continue;
+        const e = brandMap.get(b.brand) || { sales: 0, margin: 0 };
+        // 과거 브랜드 매출은 부가세 포함 → ÷1.1. 마진은 파일 값(이미 부가세 제외) 그대로.
+        e.sales += (Number(b.sales) || 0) / VAT_DIV; e.margin += Number(b.margin) || 0; brandMap.set(b.brand, e);
+      }
     }
     const byBrand = Array.from(brandMap.entries()).map(([name, v]) => ({ name, ...v })).sort((a, b) => b.sales - a.sales);
 
@@ -764,11 +768,13 @@ export default function SalesContent() {
         </div>
       </div>
 
-      {/* 브랜드별 매출 (전 사업자 합산 — 사업자 필터 무관) */}
+      {/* 브랜드별 매출 (사업자 필터 반영) */}
       <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
         <div className="flex items-center justify-between mb-4">
           <h3 className="font-semibold text-gray-700">브랜드별 매출</h3>
-          <span className="text-sm text-gray-400">전 사업자 합산 · {ranges.label}</span>
+          <span className="text-sm text-gray-400">
+            {companyFilter === '전체' ? '전 사업자 합산' : `${companyFilter} · 현재분만(과거 브랜드실적 제외)`} · {ranges.label}
+          </span>
         </div>
         {byBrand.length === 0 ? <Empty /> : (
           <div className="overflow-x-auto">
