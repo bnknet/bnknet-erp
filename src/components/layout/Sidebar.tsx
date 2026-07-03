@@ -47,7 +47,7 @@ const menuItems: MenuGroup[] = [
   {
     group: '인사·조직',
     items: [
-      { href: '/hr', label: '인사 관리', icon: '👥' },
+      { href: '/hr', label: '인사 관리', icon: '👥', roles: ['ceo', 'admin'] },
       { href: '/attendance', label: '출·퇴근', icon: '⏰' },
     ],
   },
