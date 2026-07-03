@@ -1037,7 +1037,7 @@ export default function ApprovalContent() {
                   <div className="flex items-center justify-between flex-wrap gap-2">
                     <div className="text-base">
                       <span className="font-medium text-gray-700">💳 결제카드</span>
-                      <span className="ml-2 text-gray-600">{cards.find(c => c.id === selected.card_id)?.card_name || '(삭제된 카드)'}</span>
+                      <span className="ml-2 text-gray-600">{(() => { const c = cards.find(x => x.id === selected.card_id); return c ? `${c.holder_name ? c.holder_name + ' · ' : ''}${c.card_name}` : '(삭제된 카드)'; })()}</span>
                       {selected.purchase_vendor && <span className="ml-2 text-gray-400">· {selected.purchase_vendor}</span>}
                       {selected.status === 'approved' && (isCeo || isAdmin) && !cardEditOpen && (
                         <button onClick={() => { setCardEditVal(selected.card_id || ''); setCardEditOpen(true); }}
@@ -1778,6 +1778,7 @@ export default function ApprovalContent() {
                         <span className={`text-sm px-2 py-0.5 rounded-md font-medium ${STATUS_MAP[a.status]?.color}`}>
                           {STATUS_MAP[a.status]?.label}
                         </span>
+                        {a.approval_note && <span title="승인 지시·요청사항 있음" className="ml-1.5">📝</span>}
                       </td>
                       <td className="px-4 py-3 text-right" onClick={e => e.stopPropagation()}>
                         {isMyTurn(a) && (
@@ -1798,6 +1799,7 @@ export default function ApprovalContent() {
                   <div className="flex items-center justify-between gap-2 mb-1.5">
                     <div className="flex items-center gap-2 min-w-0">
                       <span className="font-bold text-gray-800 text-[15px]">{a.doc_type}</span>
+                      {a.approval_note && <span title="승인 지시·요청사항 있음">📝</span>}
                       <span className="text-sm text-gray-400 truncate">{a.company}</span>
                     </div>
                     <span className={`text-sm px-2 py-0.5 rounded-md font-medium flex-shrink-0 ${STATUS_MAP[a.status]?.color}`}>
