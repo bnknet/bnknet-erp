@@ -83,6 +83,7 @@ const STATUS_MAP: Record<string, { label: string; color: string }> = {
   pending:  { label: '결재중',   color: 'bg-yellow-100 text-yellow-700' },
   approved: { label: '승인완료', color: 'bg-green-100 text-green-700' },
   rejected: { label: '반려',     color: 'bg-red-100 text-red-700' },
+  canceled: { label: '상신취소', color: 'bg-gray-100 text-gray-500' },
 };
 
 const VACATION_TYPES = [
@@ -201,6 +202,8 @@ export default function ApprovalContent() {
   // 승인 모달 (선택적 지시/요청사항 메모 — 미입력해도 승인됨)
   const [showApproveModal, setShowApproveModal] = useState(false);
   const [approveNote, setApproveNote] = useState('');
+  // 결재 변경 이력 (수정재상신·상신취소) — 대표·실장 전용
+  const [approvalLogs, setApprovalLogs] = useState<{ id: string; action: string; detail?: string; changed_by?: string; created_at: string }[]>([]);
 
   // 문서 종류
   const [docType, setDocType] = useState<DocType>('지출결의서');
@@ -397,6 +400,39 @@ export default function ApprovalContent() {
     const approval = { ...aData[0], items: Array.isArray(iData) ? iData : [] };
     setSelected(approval);
     setView('detail');
+    // 변경 이력은 대표·실장만 조회
+    if (isCeo || isAdmin) {
+      try {
+        const lg = await supabaseFetch(`/approval_logs?approval_id=eq.${id}&select=id,action,detail,changed_by,created_at&order=created_at.desc`);
+        const data = await lg.json();
+        setApprovalLogs(Array.isArray(data) ? data : []);
+      } catch { setApprovalLogs([]); }
+    } else { setApprovalLogs([]); }
+  }
+
+  // 결재 변경 이력 기록 (수정재상신·상신취소 등) — 대표·실장 전용 조회
+  async function logApproval(approvalId: string, action: string, detail: string) {
+    try {
+      await supabaseFetch('/approval_logs', {
+        method: 'POST', headers: { Prefer: 'return=minimal' },
+        body: JSON.stringify({ approval_id: approvalId, action, detail, changed_by: me?.name || '' }),
+      });
+    } catch { /* 로그 실패는 본 작업에 영향 없음 */ }
+  }
+
+  // 상신자 본인이 결재중 문서를 상신 취소 (기록 유지)
+  async function cancelSubmission(approval: Approval) {
+    if (approval.submitter_name !== me?.name) return;
+    if (approval.status !== 'pending') { alert('결재중인 문서만 상신 취소할 수 있습니다.'); return; }
+    const reason = (prompt('상신 취소 사유를 입력하세요 (선택)', '잘못 상신') || '상신 취소').trim();
+    await supabaseFetch(`/approvals?id=eq.${approval.id}`, {
+      method: 'PATCH', headers: { Prefer: 'return=minimal' },
+      body: JSON.stringify({ status: 'canceled', canceled_at: new Date().toISOString(), updated_at: new Date().toISOString() }),
+    });
+    const label = approval.doc_type === '휴가신청서' ? approval.doc_type : `${approval.doc_type} ${approval.total_amount?.toLocaleString?.() || ''}원`;
+    await logApproval(approval.id, '상신취소', `${label} · 사유: ${reason}`);
+    setView('list');
+    await loadApprovals();
   }
 
   // 결제카드 교정 저장: card_id 변경 + 결제예정일 재계산 → 캘린더·한도는 결재문서 기준 실시간 계산이라 자동 반영
@@ -522,6 +558,12 @@ export default function ApprovalContent() {
             }))),
           });
         }
+      }
+
+      // 기존 문서를 수정해 다시 상신한 경우 이력 기록(대표·실장 조회용)
+      if (editId && submitNow && approvalId) {
+        const label = docType === '휴가신청서' ? docType : `${docType} ${total.toLocaleString()}원`;
+        await logApproval(approvalId, '수정재상신', `${label} (내용 수정 후 재상신 — 결재라인 초기화)`);
       }
 
       resetForm();
@@ -897,7 +939,10 @@ export default function ApprovalContent() {
         ];
 
     const myTurn = isMyTurn(selected);
-    const canResubmit = selected.status === 'rejected' && selected.submitter_name === me?.name;
+    const isSubmitter = selected.submitter_name === me?.name;
+    // 상신자 본인: 반려/결재중 문서를 수정해 재상신, 결재중 문서는 상신 취소 가능
+    const canResubmit = isSubmitter && (selected.status === 'rejected' || selected.status === 'pending');
+    const canCancelSubmission = isSubmitter && selected.status === 'pending';
     const canDelete = (isCeo || selected.submitter_name === me?.name) && ['draft', 'rejected'].includes(selected.status);
 
     const isVacation = selected.doc_type === '휴가신청서';
@@ -1111,6 +1156,24 @@ export default function ApprovalContent() {
             </div>
           )}
 
+          {/* 변경 이력 — 대표·실장만 노출 (수정재상신·상신취소) */}
+          {(isCeo || isAdmin) && approvalLogs.length > 0 && (
+            <div className="mt-5 border border-gray-200 rounded-xl p-4 no-print">
+              <div className="text-sm font-medium text-gray-600 mb-2">🔒 변경 이력 <span className="text-xs text-gray-400">(대표·실장 전용)</span></div>
+              <div className="space-y-1.5 max-h-44 overflow-y-auto">
+                {approvalLogs.map(l => (
+                  <div key={l.id} className="text-xs flex items-start gap-2">
+                    <span className={`px-1.5 py-0.5 rounded font-medium flex-shrink-0 ${l.action === '상신취소' ? 'bg-orange-50 text-orange-600' : 'bg-blue-50 text-blue-600'}`}>{l.action}</span>
+                    <div className="min-w-0">
+                      {l.detail && <span className="text-gray-600 break-words">{l.detail}</span>}
+                      <div className="text-gray-400">{l.changed_by} · {l.created_at?.slice(0, 16).replace('T', ' ')}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div className="flex gap-3 justify-end mt-6 flex-wrap no-print">
             {myTurn && (
               <>
@@ -1122,7 +1185,13 @@ export default function ApprovalContent() {
             )}
             {canResubmit && (
               <button onClick={() => openResubmit(selected)}
-                className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-base font-medium">수정 후 재상신</button>
+                className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-base font-medium">
+                {selected.status === 'pending' ? '수정 (재상신)' : '수정 후 재상신'}
+              </button>
+            )}
+            {canCancelSubmission && (
+              <button onClick={() => cancelSubmission(selected)}
+                className="px-5 py-2 border border-orange-200 text-orange-600 rounded-xl text-base hover:bg-orange-50">상신 취소</button>
             )}
             {/* 카드 매입 취소/철회 (승인된 카드 결제건, 항목별 부분취소) */}
             {selected.doc_type !== '휴가신청서' && selected.card_id && selected.status === 'approved' &&
