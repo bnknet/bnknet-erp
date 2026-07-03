@@ -59,10 +59,13 @@ export default function MatchesContent() {
     } catch { /* 로그 실패는 본 작업에 영향 주지 않음 */ }
   }
 
-  // 알림에 붙는 수량 꼬리표 "(N개)"는 실제 수집상품명이 아님 → 저장 시 자동 제거
-  const QTY_TAIL = /\s*\(\s*\d+\s*개\s*\)\s*$/;
-  const collectClean = formCollect.trim().replace(QTY_TAIL, '').trim();
-  const hasQtyTail = QTY_TAIL.test(formCollect.trim());
+  // 알림에 붙는 수량 꼬리표("(N개)", ", N개", ", N개(N개)")는 실제 수집상품명이 아님 → 저장 시 자동 제거
+  const stripQtyTail = (s: string) => s.trim()
+    .replace(/\s*\(\s*\d+\s*개\s*\)\s*$/, '') // 끝의 (N개)
+    .replace(/\s*,\s*\d+\s*개\s*$/, '')        // 끝의 , N개
+    .trim();
+  const collectClean = stripQtyTail(formCollect);
+  const hasQtyTail = collectClean !== formCollect.trim();
 
   // 미리보기: 입력한 수집상품명이 현재 어떻게 매칭되는지(하드코딩 기준). 신규 매칭 판단 도움.
   const preview = useMemo(() => {
@@ -146,7 +149,7 @@ export default function MatchesContent() {
               className="w-full px-3 py-2 border border-gray-200 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-blue-400" />
             <p className="text-xs text-gray-400 mt-1">주문 파일의 ‘★수집상품명’ 값을 그대로 붙여넣으세요. (수량 표기 포함/미포함 모두 인식)</p>
             {hasQtyTail && (
-              <p className="text-xs text-amber-600 mt-1">⚠️ 끝의 <b>(N개)</b>는 알림의 수량 표시예요 — 저장 시 자동으로 제거하고 <b>“{collectClean}”</b> 로 등록합니다.</p>
+              <p className="text-xs text-amber-600 mt-1">⚠️ 끝의 수량 표기(<b>(N개)</b>·<b>, N개</b>)는 알림의 표시일 뿐이에요 — 저장 시 자동으로 떼고 <b>“{collectClean}”</b> 로 등록합니다.</p>
             )}
             {preview && (
               <p className={`text-xs mt-1 ${preview.matched ? 'text-green-600' : 'text-amber-600'}`}>
