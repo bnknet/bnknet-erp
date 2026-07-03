@@ -128,8 +128,11 @@ export default function OrdersContent() {
   function addLine() { setMLines((ls) => [...ls, { key: Math.max(0, ...ls.map((l) => l.key)) + 1, invId: '', productName: '', qty: 1, amount: 0, cost: 0, shipping: 0 }]); }
   function removeLine(key: number) { setMLines((ls) => (ls.length > 1 ? ls.filter((l) => l.key !== key) : ls)); }
 
-  // 도매 마진 미리보기 = (매출 − 원가(개당×수량) − 배송비) ÷ 1.1  (모두 부가세 포함 입력)
-  const mWholesaleMargin = Math.round(mLines.reduce((s, l) => s + (l.amount - l.cost * l.qty - l.shipping), 0) / 1.1);
+  // 도매 예상 공헌이익 = (매출 − 원가(개당×수량) − 배송비) ÷ 1.1  (모두 부가세 포함 입력)
+  //   공헌이익률 = 공헌이익 ÷ 매출 (부가세 제외 기준, ÷1.1 상쇄되어 net÷매출과 동일)
+  const mWhole = mLines.reduce((a, l) => { a.amt += l.amount; a.net += (l.amount - l.cost * l.qty - l.shipping); return a; }, { amt: 0, net: 0 });
+  const mWholesaleMargin = Math.round(mWhole.net / 1.1);
+  const mWholesaleRate = mWhole.amt > 0 ? Math.round((mWhole.net / mWhole.amt) * 100) : null;
 
   async function handleManualSave() {
     if (!canRegister) { alert('주문 등록 권한이 없습니다 (재고·주문담당/대표/실장).'); return; }
@@ -1466,10 +1469,12 @@ export default function OrdersContent() {
               <button onClick={addLine} className="px-3 py-1.5 text-blue-600 text-sm font-medium hover:bg-blue-50 rounded-lg">+ 품목 추가</button>
             </div>
 
-            {/* 도매 마진 미리보기 */}
+            {/* 도매 예상 공헌이익 미리보기 */}
             {mType === 'wholesale' && (
               <div className="bg-violet-50 border border-violet-200 rounded-xl px-4 py-3 text-base text-violet-700">
-                예상 마진(확정 저장): <b className="text-red-600 text-lg">{mWholesaleMargin.toLocaleString('ko-KR')}원</b> <span className="text-sm text-violet-500">= (매출 − 원가(개당×수량) − 배송비) ÷ 1.1. 부가세 포함 금액으로 입력하세요. 이 값으로 확정됩니다.</span>
+                예상 공헌이익(확정 저장): <b className="text-red-600 text-lg">{mWholesaleMargin.toLocaleString('ko-KR')}원</b>
+                {mWholesaleRate !== null && <span className="ml-2">· 예상 공헌이익률 <b className="text-red-600">{mWholesaleRate}%</b></span>}
+                <span className="block text-sm text-violet-500 mt-0.5">= (매출 − 원가(개당×수량) − 배송비) ÷ 1.1. 공헌이익률 = 공헌이익 ÷ 매출. 부가세 포함 금액으로 입력하세요. 이 값으로 확정됩니다.</span>
               </div>
             )}
 
