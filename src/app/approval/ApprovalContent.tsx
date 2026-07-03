@@ -188,6 +188,13 @@ export default function ApprovalContent() {
   const [exporting, setExporting] = useState(false);
   // 승인권자(대표·실장)는 기본으로 '내 결재 대기'만 보이게 → 바로바로 연속 결재
   const [filterStatus, setFilterStatus] = useState(isCeo || isAdmin ? 'myturn' : 'all');
+  // 상세 조회 필터 + 표시 건수 (기본 10건)
+  const [filterCompany, setFilterCompany] = useState('전체');
+  const [filterDocType, setFilterDocType] = useState('전체');
+  const [filterSubmitter, setFilterSubmitter] = useState('');
+  const [filterFrom, setFilterFrom] = useState('');
+  const [filterTo, setFilterTo] = useState('');
+  const [listLimit, setListLimit] = useState(10);
 
   // 연차 현황
   const [leaveRows, setLeaveRows] = useState<LeaveRow[]>([]);
@@ -1808,11 +1815,22 @@ export default function ApprovalContent() {
 
   // ─── 목록 ───
   const myTurnCount = approvals.filter(isMyTurn).length;
-  const shown = filterStatus === 'myturn'
+  const statusFiltered = filterStatus === 'myturn'
     ? approvals.filter(isMyTurn)
     : filterStatus === 'all'
       ? approvals
       : approvals.filter((a) => a.status === filterStatus);
+  // 사업자·문서종류·작성자·발의일 상세 필터
+  const filtered = statusFiltered.filter((a) => {
+    if (filterCompany !== '전체' && a.company !== filterCompany) return false;
+    if (filterDocType !== '전체' && a.doc_type !== filterDocType) return false;
+    if (filterSubmitter && !(a.submitter_name || '').includes(filterSubmitter)) return false;
+    if (filterFrom && (a.issue_date || '') < filterFrom) return false;
+    if (filterTo && (a.issue_date || '') > filterTo) return false;
+    return true;
+  });
+  const shown = filtered.slice(0, listLimit); // 표시 건수 제한 (기본 10)
+  const hasDetailFilter = filterCompany !== '전체' || filterDocType !== '전체' || !!filterSubmitter || !!filterFrom || !!filterTo;
   return (
     <div className="space-y-4">
       {/* 상단 탭 */}
@@ -1867,12 +1885,48 @@ export default function ApprovalContent() {
         </div>
       </div>
 
+      {/* 상세 조회 필터 (사업자·문서종류·작성자·발의일 + 표시 건수) */}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 px-4 py-3 flex flex-wrap items-center gap-2">
+        <select value={filterCompany} onChange={(e) => setFilterCompany(e.target.value)}
+          className="px-3 py-2 rounded-lg border border-gray-200 text-base bg-white">
+          {['전체', '더블아이', 'BNKNET', 'SJ글로벌', 'IX글로벌'].map((c) => <option key={c} value={c}>{c === '전체' ? '사업자 전체' : c}</option>)}
+        </select>
+        <select value={filterDocType} onChange={(e) => setFilterDocType(e.target.value)}
+          className="px-3 py-2 rounded-lg border border-gray-200 text-base bg-white">
+          {['전체', '지출결의서', '카드구매', '휴가신청서'].map((d) => <option key={d} value={d}>{d === '전체' ? '문서종류 전체' : d}</option>)}
+        </select>
+        <input value={filterSubmitter} onChange={(e) => setFilterSubmitter(e.target.value)}
+          placeholder="작성자"
+          className="px-3 py-2 rounded-lg border border-gray-200 text-base bg-white w-28" />
+        <div className="flex items-center gap-1">
+          <span className="text-sm text-gray-400">발의일</span>
+          <input type="date" value={filterFrom} onChange={(e) => setFilterFrom(e.target.value)}
+            className="px-2 py-2 rounded-lg border border-gray-200 text-base bg-white" />
+          <span className="text-gray-400">~</span>
+          <input type="date" value={filterTo} onChange={(e) => setFilterTo(e.target.value)}
+            className="px-2 py-2 rounded-lg border border-gray-200 text-base bg-white" />
+        </div>
+        <div className="flex items-center gap-1 ml-auto">
+          <span className="text-sm text-gray-400">표시</span>
+          <select value={listLimit} onChange={(e) => setListLimit(Number(e.target.value))}
+            className="px-3 py-2 rounded-lg border border-gray-200 text-base bg-white">
+            {[10, 30, 50, 100].map((n) => <option key={n} value={n}>{n}건</option>)}
+            <option value={100000}>전체</option>
+          </select>
+          {hasDetailFilter && (
+            <button onClick={() => { setFilterCompany('전체'); setFilterDocType('전체'); setFilterSubmitter(''); setFilterFrom(''); setFilterTo(''); }}
+              className="px-3 py-2 rounded-lg border border-gray-200 text-sm text-gray-500 hover:bg-gray-50">초기화</button>
+          )}
+        </div>
+        <div className="w-full text-sm text-gray-400">총 {filtered.length}건{filtered.length > shown.length ? ` · 상위 ${shown.length}건 표시 (표시 건수를 늘려 더 보기)` : ' 표시'}</div>
+      </div>
+
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
         {loading ? (
           <div className="text-center py-12 text-gray-400">불러오는 중...</div>
         ) : shown.length === 0 ? (
           <div className="text-center py-12 text-gray-400">
-            {filterStatus === 'myturn' ? '내가 결재할 문서가 없습니다' : '결재 문서가 없습니다'}
+            {hasDetailFilter ? '조건에 맞는 문서가 없습니다' : filterStatus === 'myturn' ? '내가 결재할 문서가 없습니다' : '결재 문서가 없습니다'}
           </div>
         ) : (
           <>
