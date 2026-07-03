@@ -591,7 +591,20 @@ export default function ApprovalContent() {
     return isCeo || (approval.company === 'IX글로벌' && isAdmin);
   }
 
+  // 매입품의서(카드구매 매입)는 결재일자(settle_date)에 도달해야 승인 가능
+  //  → 그 전까지 담당자가 카드사 확정 매입금액을 확인·수정 (청구할인 등 영업일 지연 반영)
+  function approvalDateReady(approval: Approval): boolean {
+    if (approval.doc_type === '카드구매' && !approval.is_card_payment && approval.settle_date) {
+      return today() >= approval.settle_date;
+    }
+    return true;
+  }
+
   async function handleApprove(approval: Approval, note?: string) {
+    if (!approvalDateReady(approval)) {
+      alert(`이 매입품의서는 결재일자(${approval.settle_date}) 이후에 승인할 수 있습니다.\n그 전까지 담당자가 카드사 확정 매입금액을 확인·수정합니다.`);
+      return;
+    }
     const now = new Date().toISOString();
     const hasStep2 = APPROVAL_LINES[approval.company]?.length === 3;
     let patch: Record<string, unknown> = {};
@@ -627,6 +640,10 @@ export default function ApprovalContent() {
   // 목록에서 바로 승인 (상세 진입 없이 연속 결재)
   async function quickApprove(approval: Approval, e: React.MouseEvent) {
     e.stopPropagation();
+    if (!approvalDateReady(approval)) {
+      alert(`이 매입품의서는 결재일자(${approval.settle_date}) 이후에 승인할 수 있습니다.`);
+      return;
+    }
     const label = approval.doc_type === '휴가신청서'
       ? `${VACATION_TYPES.find(v => v.value === approval.vacation_type)?.label || ''} ${approval.vacation_days}일`
       : `${approval.total_amount.toLocaleString()}원`;
@@ -1193,8 +1210,14 @@ export default function ApprovalContent() {
           <div className="flex gap-3 justify-end mt-6 flex-wrap no-print">
             {myTurn && (
               <>
-                <button onClick={() => { setApproveNote(''); setShowApproveModal(true); }}
-                  className="px-5 py-2 bg-green-600 hover:bg-green-700 text-white rounded-xl text-base font-medium">승인</button>
+                {approvalDateReady(selected) ? (
+                  <button onClick={() => { setApproveNote(''); setShowApproveModal(true); }}
+                    className="px-5 py-2 bg-green-600 hover:bg-green-700 text-white rounded-xl text-base font-medium">승인</button>
+                ) : (
+                  <span className="px-4 py-2 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-xl">
+                    결재일자 {selected.settle_date} 이후 승인 가능 (담당자 금액 확인 대기)
+                  </span>
+                )}
                 <button onClick={() => setShowRejectModal(true)}
                   className="px-5 py-2 bg-red-500 hover:bg-red-600 text-white rounded-xl text-base font-medium">반려</button>
               </>
@@ -1527,6 +1550,13 @@ export default function ApprovalContent() {
                 </div>
               ))}
             </div>
+
+            {docType === '카드구매' && !isPrepay && (
+              <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-4">
+                💡 <b>결재</b> 날짜 = 카드사 매입금액이 확정되는 날(청구할인 등 반영, 보통 영업일 며칠 뒤).
+                실장·대표는 이 <b>결재일자 이후에만 승인</b>할 수 있어, 그 전까지 담당자가 정확한 금액으로 수정할 수 있습니다.
+              </p>
+            )}
 
             <div className="border border-gray-400 mb-1">
               <div className="flex bg-gray-50 border-b border-gray-400 text-base font-medium text-center">
@@ -1875,9 +1905,10 @@ export default function ApprovalContent() {
                         {a.approval_note && <span title="승인 지시·요청사항 있음" className="ml-1.5">📝</span>}
                       </td>
                       <td className="px-4 py-3 text-right" onClick={e => e.stopPropagation()}>
-                        {isMyTurn(a) && (
-                          <button onClick={(e) => quickApprove(a, e)}
-                            className="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium">✓ 승인</button>
+                        {isMyTurn(a) && (approvalDateReady(a)
+                          ? <button onClick={(e) => quickApprove(a, e)}
+                              className="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium">✓ 승인</button>
+                          : <span className="text-xs text-amber-600 whitespace-nowrap">결재일 {a.settle_date}~</span>
                         )}
                       </td>
                     </tr>
@@ -1910,8 +1941,12 @@ export default function ApprovalContent() {
                   </div>
                   {isMyTurn(a) && (
                     <div className="mt-2.5 flex items-center gap-2" onClick={e => e.stopPropagation()}>
-                      <button onClick={(e) => quickApprove(a, e)}
-                        className="flex-1 px-3 py-2 bg-green-600 active:bg-green-700 text-white rounded-lg text-base font-bold">✓ 승인</button>
+                      {approvalDateReady(a) ? (
+                        <button onClick={(e) => quickApprove(a, e)}
+                          className="flex-1 px-3 py-2 bg-green-600 active:bg-green-700 text-white rounded-lg text-base font-bold">✓ 승인</button>
+                      ) : (
+                        <span className="flex-1 text-sm text-amber-600">결재일 {a.settle_date} 이후 승인 가능</span>
+                      )}
                       <span className="text-sm text-gray-400">탭하면 상세</span>
                     </div>
                   )}
