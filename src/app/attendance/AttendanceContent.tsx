@@ -96,8 +96,8 @@ export default function AttendanceContent() {
   const [accuracy, setAccuracy] = useState<number | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
 
-  // 목록 필터
-  const [dateFrom, setDateFrom] = useState(firstOfMonth);
+  // 목록 필터 — 기본 조회는 오늘(필요 시 기간을 넓혀서 조회)
+  const [dateFrom, setDateFrom] = useState(today);
   const [dateTo, setDateTo] = useState(today);
   const [filterCompany, setFilterCompany] = useState('전체');
   const [filterName, setFilterName] = useState('');
