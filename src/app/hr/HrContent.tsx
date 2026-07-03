@@ -15,6 +15,8 @@ interface Employee {
   hire_date?: string;
   status: string;
   salary?: number;
+  pay_day?: string;      // 급여일 (예: '25', '10', '말일')
+  salary_bank?: string;  // 급여 통장 (은행 + 계좌)
 }
 
 const ROLE_LABELS: Record<string, string> = {
@@ -42,6 +44,7 @@ const EMPTY_FORM = {
   name: '', email: '', password_hash: 'bnknet1234',
   role: 'inventory', company: 'BNKNET',
   phone: '', birth_date: '', hire_date: '', status: 'active', position: '', salary: '',
+  pay_day: '', salary_bank: '',
 };
 
 type View = 'list' | 'detail' | 'form';
@@ -63,7 +66,7 @@ export default function HrContent() {
   async function loadEmployees() {
     setLoading(true);
     try {
-      const res = await supabaseFetch('/employees?order=created_at.asc&select=id,name,email,role,company,phone,birth_date,hire_date,status,salary');
+      const res = await supabaseFetch('/employees?order=created_at.asc&select=id,name,email,role,company,phone,birth_date,hire_date,status,salary,pay_day,salary_bank');
       const data = await res.json();
       setEmployees(Array.isArray(data) ? data : []);
     } catch { setEmployees([]); }
@@ -85,6 +88,7 @@ export default function HrContent() {
             birth_date: form.birth_date || null, hire_date: form.hire_date || null,
             position: (form as any).position || null,
             salary: form.salary ? Number(String(form.salary).replace(/[^0-9]/g, '')) : null,
+            pay_day: form.pay_day || null, salary_bank: form.salary_bank || null,
             status: form.status, updated_at: new Date().toISOString(),
           }),
         });
@@ -100,6 +104,7 @@ export default function HrContent() {
             birth_date: form.birth_date || null,
             hire_date: form.hire_date || null,
             salary: form.salary ? Number(String(form.salary).replace(/[^0-9]/g, '')) : null,
+            pay_day: form.pay_day || null, salary_bank: form.salary_bank || null,
             status: form.status,
           }),
         });
@@ -135,6 +140,7 @@ export default function HrContent() {
         hire_date: emp.hire_date || '', status: emp.status,
         position: (emp as any).position || '',
         salary: emp.salary != null ? String(emp.salary) : '',
+        pay_day: emp.pay_day || '', salary_bank: emp.salary_bank || '',
       });
       setEditId(emp.id);
     } else {
@@ -293,6 +299,8 @@ export default function HrContent() {
             { label: '근속 기간', value: calcTenure(selected.hire_date) },
             { label: '소속 사업자', value: selected.company },
             { label: '연봉', value: won(selected.salary) },
+            { label: '급여일', value: selected.pay_day ? (/^\d+$/.test(selected.pay_day) ? `${selected.pay_day}일` : selected.pay_day) : '-' },
+            { label: '급여 통장', value: selected.salary_bank || '-' },
           ].map((item) => (
             <div key={item.label} className="bg-gray-50 rounded-xl px-4 py-3">
               <div className="text-sm text-gray-400 mb-1">{item.label}</div>
@@ -360,6 +368,28 @@ export default function HrContent() {
               value={form.salary ? Number(String(form.salary).replace(/[^0-9]/g, '')).toLocaleString('ko-KR') : ''}
               onChange={(e) => setForm({ ...form, salary: e.target.value.replace(/[^0-9]/g, '') })}
               placeholder="예: 42,000,000"
+              className="w-full px-4 py-3 border border-gray-200 rounded-xl text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+
+          <div>
+            <label className="block text-base font-medium text-gray-700 mb-1.5">급여일</label>
+            <input
+              type="text"
+              value={form.pay_day}
+              onChange={(e) => setForm({ ...form, pay_day: e.target.value })}
+              placeholder="예: 25 또는 말일"
+              className="w-full px-4 py-3 border border-gray-200 rounded-xl text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+
+          <div className="sm:col-span-2">
+            <label className="block text-base font-medium text-gray-700 mb-1.5">급여 통장 (은행 + 계좌)</label>
+            <input
+              type="text"
+              value={form.salary_bank}
+              onChange={(e) => setForm({ ...form, salary_bank: e.target.value })}
+              placeholder="예: 국민은행 818502-04-202430"
               className="w-full px-4 py-3 border border-gray-200 rounded-xl text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
