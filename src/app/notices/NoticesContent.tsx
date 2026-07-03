@@ -17,8 +17,8 @@ type View = 'list' | 'detail' | 'write';
 
 export default function NoticesContent() {
   const user = getUser();
-  // 공지 등록·수정·삭제 = 대표·실장
-  const isAdmin = user?.role === 'ceo' || user?.role === 'admin';
+  // 공지 등록·수정·삭제 = 대표·실장 + MD(손사빈 과장)
+  const isAdmin = user?.role === 'ceo' || user?.role === 'admin' || user?.role === 'md';
 
   const [view, setView] = useState<View>('list');
   const [notices, setNotices] = useState<Notice[]>([]);
