@@ -386,8 +386,17 @@ export default function OrdersContent() {
       const targets = undeducted.filter(o => o.source !== '과거' && o.source !== '도매'); // 사방넷/일반/수기만
       if (!targets.length) { alert('재출고할 미차감 주문이 없습니다.'); return; }
       const inv = await supabaseFetchAll<{ id: string; product_name: string; company: string }>('/inventory?select=id,product_name,company');
+      // 대표명↔재고 매칭: 정확 일치 → 실패 시 띄어쓰기·쉼표 무시(정규화) 폴백. (등록했는데 한 칸 차이로 못 찾던 문제 해결)
+      const nk = (s: string) => s.replace(/\s+/g, '').replace(/,/g, '');
       const invMap = new Map<string, string>();
-      for (const it of inv) { if (!it.product_name) continue; const k = `${it.product_name}|${it.company || ''}`; if (!invMap.has(k)) invMap.set(k, it.id); }
+      const invMapNorm = new Map<string, string>();
+      for (const it of inv) {
+        if (!it.product_name) continue;
+        const co = it.company || '';
+        const k = `${it.product_name}|${co}`; if (!invMap.has(k)) invMap.set(k, it.id);
+        const nkey = `${nk(it.product_name)}|${co}`; if (!invMapNorm.has(nkey)) invMapNorm.set(nkey, it.id);
+      }
+      const findInv = (name: string, company: string) => invMap.get(`${name}|${company}`) ?? invMapNorm.get(`${nk(name)}|${company}`);
       // 세트 구성표 (세트명 → 구성품·수량)
       const bom = await supabaseFetchAll<{ set_name: string; component_name: string; component_qty: number }>('/product_bom?select=set_name,component_name,component_qty');
       const bomMap = new Map<string, { component_name: string; component_qty: number }[]>();
@@ -404,7 +413,7 @@ export default function OrdersContent() {
           const comps: Record<string, unknown>[] = [];
           let allFound = true;
           for (const b of set) {
-            const cid = invMap.get(`${b.component_name}|${o.company || ''}`);
+            const cid = findInv(b.component_name, o.company || '');
             if (!cid) { allFound = false; break; }
             comps.push({ inventory_id: cid, product_name: b.component_name, quantity: qty * b.component_qty });
           }
@@ -412,7 +421,7 @@ export default function OrdersContent() {
           else { unmatchedCnt++; unmatchedNames.add(`${rep} (${o.company || '사업자미상'})`); }
           continue;
         }
-        const invId = invMap.get(`${rep}|${o.company || ''}`);
+        const invId = findInv(rep, o.company || '');
         if (invId) moves.push({ order_id: o.id, inventory_id: invId, quantity: qty, product_name: rep, company: o.company || '', created_by: me?.name || '' });
         else { unmatchedCnt++; unmatchedNames.add(`${rep} (${o.company || '사업자미상'})`); }
       }
@@ -604,12 +613,17 @@ export default function OrdersContent() {
         const inv = await supabaseFetchAll<{ id: string; product_name: string; company: string; quantity: number }>(
           '/inventory?select=id,product_name,company,quantity',
         );
-        const invMap = new Map<string, string>(); // `${상품명}|${사업자}` → inventory_id
+        // 대표명↔재고: 정확 일치 → 실패 시 띄어쓰기·쉼표 무시 폴백
+        const nk = (s: string) => s.replace(/\s+/g, '').replace(/,/g, '');
+        const invMap = new Map<string, string>();     // `${상품명}|${사업자}` → id
+        const invMapNorm = new Map<string, string>(); // 정규화 키 → id
         for (const it of inv) {
           if (!it.product_name) continue;
-          const key = `${it.product_name}|${it.company || ''}`;
-          if (!invMap.has(key)) invMap.set(key, it.id);
+          const co = it.company || '';
+          const key = `${it.product_name}|${co}`; if (!invMap.has(key)) invMap.set(key, it.id);
+          const nkey = `${nk(it.product_name)}|${co}`; if (!invMapNorm.has(nkey)) invMapNorm.set(nkey, it.id);
         }
+        const findInv = (name: string) => invMap.get(`${name}|${company}`) ?? invMapNorm.get(`${nk(name)}|${company}`);
         // 세트 구성표
         const bom = await supabaseFetchAll<{ set_name: string; component_name: string; component_qty: number }>('/product_bom?select=set_name,component_name,component_qty');
         const bomMap = new Map<string, { component_name: string; component_qty: number }[]>();
@@ -633,7 +647,7 @@ export default function OrdersContent() {
             const comps: Record<string, unknown>[] = [];
             let allFound = true;
             for (const b of set) {
-              const cid = invMap.get(`${b.component_name}|${company}`);
+              const cid = findInv(b.component_name);
               if (!cid) { allFound = false; break; }
               comps.push({ inventory_id: cid, product_name: b.component_name, quantity: qty * b.component_qty });
             }
@@ -641,7 +655,7 @@ export default function OrdersContent() {
             else { const m = missMap.get(rep) || { cnt: 0, qty: 0 }; m.cnt++; m.qty += qty; missMap.set(rep, m); }
             continue;
           }
-          const invId = invMap.get(`${rep}|${company}`);
+          const invId = findInv(rep);
           if (invId) {
             moves.push({ order_id: o.id, inventory_id: invId, quantity: qty, product_name: rep, company, created_by: me?.name || '' });
           } else {
