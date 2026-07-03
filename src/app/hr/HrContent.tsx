@@ -14,6 +14,7 @@ interface Employee {
   birth_date?: string;
   hire_date?: string;
   status: string;
+  salary?: number;
 }
 
 const ROLE_LABELS: Record<string, string> = {
@@ -40,7 +41,7 @@ const ROLES = ['ceo', 'admin', 'manager', 'sales', 'inventory', 'md'];
 const EMPTY_FORM = {
   name: '', email: '', password_hash: 'bnknet1234',
   role: 'inventory', company: 'BNKNET',
-  phone: '', birth_date: '', hire_date: '', status: 'active', position: '',
+  phone: '', birth_date: '', hire_date: '', status: 'active', position: '', salary: '',
 };
 
 type View = 'list' | 'detail' | 'form';
@@ -62,7 +63,7 @@ export default function HrContent() {
   async function loadEmployees() {
     setLoading(true);
     try {
-      const res = await supabaseFetch('/employees?order=created_at.asc&select=id,name,email,role,company,phone,birth_date,hire_date,status');
+      const res = await supabaseFetch('/employees?order=created_at.asc&select=id,name,email,role,company,phone,birth_date,hire_date,status,salary');
       const data = await res.json();
       setEmployees(Array.isArray(data) ? data : []);
     } catch { setEmployees([]); }
@@ -83,6 +84,7 @@ export default function HrContent() {
             company: form.company, phone: form.phone || null,
             birth_date: form.birth_date || null, hire_date: form.hire_date || null,
             position: (form as any).position || null,
+            salary: form.salary ? Number(String(form.salary).replace(/[^0-9]/g, '')) : null,
             status: form.status, updated_at: new Date().toISOString(),
           }),
         });
@@ -97,6 +99,7 @@ export default function HrContent() {
             phone: form.phone || null,
             birth_date: form.birth_date || null,
             hire_date: form.hire_date || null,
+            salary: form.salary ? Number(String(form.salary).replace(/[^0-9]/g, '')) : null,
             status: form.status,
           }),
         });
@@ -131,6 +134,7 @@ export default function HrContent() {
         phone: emp.phone || '', birth_date: emp.birth_date || '',
         hire_date: emp.hire_date || '', status: emp.status,
         position: (emp as any).position || '',
+        salary: emp.salary != null ? String(emp.salary) : '',
       });
       setEditId(emp.id);
     } else {
@@ -155,6 +159,16 @@ export default function HrContent() {
 
   const active = employees.filter((e) => e.status === 'active');
   const inactive = employees.filter((e) => e.status === 'inactive');
+
+  const won = (n?: number) => (n != null ? `${Number(n).toLocaleString('ko-KR')}원` : '-');
+
+  // 접근 제한 — 인사 관리는 대표·실장만
+  if (!isAdmin) return (
+    <div className="bg-amber-50 border border-amber-200 rounded-2xl px-5 py-8 text-center">
+      <div className="text-lg font-semibold text-amber-700">🔒 접근 권한이 없습니다</div>
+      <div className="text-sm text-amber-600 mt-1">인사 관리는 대표·실장만 이용할 수 있습니다.</div>
+    </div>
+  );
 
   // 목록
   if (view === 'list') return (
@@ -278,6 +292,7 @@ export default function HrContent() {
             { label: '입사일', value: formatDate(selected.hire_date) },
             { label: '근속 기간', value: calcTenure(selected.hire_date) },
             { label: '소속 사업자', value: selected.company },
+            { label: '연봉', value: won(selected.salary) },
           ].map((item) => (
             <div key={item.label} className="bg-gray-50 rounded-xl px-4 py-3">
               <div className="text-sm text-gray-400 mb-1">{item.label}</div>
@@ -335,6 +350,18 @@ export default function HrContent() {
             >
               {ROLES.map((r) => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
             </select>
+          </div>
+
+          <div>
+            <label className="block text-base font-medium text-gray-700 mb-1.5">연봉 (원)</label>
+            <input
+              type="text"
+              inputMode="numeric"
+              value={form.salary ? Number(String(form.salary).replace(/[^0-9]/g, '')).toLocaleString('ko-KR') : ''}
+              onChange={(e) => setForm({ ...form, salary: e.target.value.replace(/[^0-9]/g, '') })}
+              placeholder="예: 42,000,000"
+              className="w-full px-4 py-3 border border-gray-200 rounded-xl text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
           </div>
 
           {!editId && (
