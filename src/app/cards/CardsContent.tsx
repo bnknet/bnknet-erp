@@ -297,6 +297,12 @@ export default function CardsContent() {
   function nextMonthFn() { if (month === 11) { setYear(year + 1); setMonth(0); } else setMonth(month + 1); setSelectedDay(null); }
 
   const cardName = (id: string) => cards.find(c => c.id === id)?.card_name || '(삭제된 카드)';
+  // 담당자(홀더) + 카드명 — 어떤 담당자의 어떤 카드인지 명확히
+  const cardLabel = (id: string) => {
+    const c = cards.find(x => x.id === id);
+    if (!c) return '(삭제된 카드)';
+    return `${c.holder_name ? c.holder_name + ' · ' : ''}${c.card_name}`;
+  };
   const todayStr = ymd(new Date());
 
   // ── 한도 현황 계산 ──
@@ -761,7 +767,7 @@ export default function CardsContent() {
                         <td className="py-2">
                           <span className={`text-xs px-2 py-0.5 rounded-md font-medium ${e.type === 'refund' ? 'bg-red-50 text-red-500' : e.type === 'prepay' ? 'bg-green-50 text-green-600' : 'bg-blue-50 text-blue-600'}`}>{e.type === 'refund' ? '환불' : e.type === 'prepay' ? '선결제' : '매입'}</span>
                         </td>
-                        <td className="py-2 text-gray-600">{cardName(e.cardId)}</td>
+                        <td className="py-2 text-gray-600">{cardLabel(e.cardId)}</td>
                         <td className="py-2 text-gray-500">{e.purchase.company}</td>
                         <td className={`py-2 text-right font-medium ${e.amount < 0 ? 'text-red-500' : 'text-gray-700'}`}>{won(e.amount)}원</td>
                       </tr>
@@ -830,7 +836,7 @@ export default function CardsContent() {
                           {e.type === 'refund' ? '환불' : e.type === 'prepay' ? '선결제' : '매입'}
                         </span>
                       </td>
-                      <td className="py-2 text-gray-600">{cardName(e.cardId)}</td>
+                      <td className="py-2 text-gray-600">{cardLabel(e.cardId)}</td>
                       <td className="py-2 text-gray-500">{e.purchase.company}</td>
                       <td className="py-2 text-gray-500">{e.purchase.organizer}</td>
                       <td className="py-2 text-gray-500">{e.purchase.purchase_vendor || '-'}</td>
@@ -860,8 +866,8 @@ export default function CardsContent() {
 
       {/* 결제 내역 상세 모달 */}
       {detailEvent && (
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4 overflow-y-auto" onClick={() => setDetailEvent(null)}>
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6 my-8" onClick={e => e.stopPropagation()}>
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-start justify-center p-4 overflow-y-auto" onClick={() => setDetailEvent(null)}>
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6 my-6 max-h-[92vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
             <div className="flex items-start justify-between mb-4">
               <div>
                 <span className={`text-xs px-2 py-0.5 rounded-md font-medium ${detailEvent.type === 'refund' ? 'bg-red-50 text-red-500' : detailEvent.type === 'prepay' ? 'bg-green-50 text-green-600' : 'bg-blue-50 text-blue-600'}`}>
@@ -874,7 +880,7 @@ export default function CardsContent() {
 
             <div className="grid grid-cols-2 gap-3 text-sm mb-4">
               {[
-                { l: '결제카드', v: cardName(detailEvent.cardId) },
+                { l: '결제카드', v: cardLabel(detailEvent.cardId) },
                 { l: '사업자', v: detailEvent.purchase.company },
                 { l: '담당', v: detailEvent.purchase.organizer },
                 { l: '구매처', v: detailEvent.purchase.purchase_vendor || '-' },
@@ -895,6 +901,7 @@ export default function CardsContent() {
                 <div className="w-16 px-2 py-2 text-right">수량</div>
                 <div className="w-28 px-3 py-2 text-right">금액</div>
               </div>
+              <div className="max-h-[42vh] overflow-y-auto">
               {detailItems.length === 0 ? (
                 <div className="text-center py-4 text-sm text-gray-400">상세 품목이 없습니다</div>
               ) : detailItems.map((it, i) => (
@@ -913,6 +920,7 @@ export default function CardsContent() {
                   <div className="w-28 px-3 py-2 text-right text-gray-700">{it.amount ? it.amount.toLocaleString() : '-'}</div>
                 </div>
               ))}
+              </div>
               <div className="flex border-t border-gray-200 bg-gray-50 text-sm font-bold">
                 {canManage && detailEvent.type === 'charge' && <div className="w-8 px-2 py-2" />}
                 <div className="flex-1 px-3 py-2 text-gray-600">합계</div>
