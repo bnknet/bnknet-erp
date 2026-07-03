@@ -209,6 +209,8 @@ export default function OrdersContent() {
   const [orderChecked, setOrderChecked] = useState<Set<string>>(new Set());
   const [orderLoading, setOrderLoading] = useState(false);
   const [undeductedCount, setUndeductedCount] = useState<number | null>(null); // 재고 미차감 실주문 건수(상시 감시)
+  const [undeductedList, setUndeductedList] = useState<{ id: string; product: string; company: string; qty: number; matched: boolean }[]>([]);
+  const [showUndeducted, setShowUndeducted] = useState(false); // 배너 클릭 시 상세 표시
   // 도매 주문 수정
   const [editOrder, setEditOrder] = useState<OrderRow | null>(null);
   const [editForm, setEditForm] = useState({ invId: '', qty: 1, amount: 0, cost: 0, shipping: 0 });
@@ -313,14 +315,20 @@ export default function OrdersContent() {
   }
 
   // 미차감 주문 재고 재출고 — 자동출고 실패분 일괄 복구 (재변환 없이)
-  // 재고 미차감 실주문 건수 집계 (과거·도매 제외) — 관리 탭 상시 경고용
+  // 재고 미차감 실주문 집계 (과거·도매 제외) — 상시 경고 + 상세 목록
   async function refreshUndeductedCount() {
     try {
-      const rows = await supabaseFetchAll<{ source?: string }>(
-        '/orders?stock_deducted=eq.false&canceled=eq.false&select=source',
+      await loadDbMatches(true); // 최신 매칭 반영해 매칭여부 판정
+      const rows = await supabaseFetchAll<{ id: string; collect_product?: string; product_name?: string; company?: string; quantity?: number; source?: string }>(
+        '/orders?stock_deducted=eq.false&canceled=eq.false&select=id,collect_product,product_name,company,quantity,source',
       );
-      setUndeductedCount(rows.filter(o => o.source !== '과거' && o.source !== '도매').length);
-    } catch { setUndeductedCount(null); }
+      const targets = rows.filter(o => o.source !== '과거' && o.source !== '도매');
+      setUndeductedCount(targets.length);
+      setUndeductedList(targets.map(o => {
+        const m = matchProduct(o.collect_product || o.product_name || '');
+        return { id: o.id, product: m.name, company: o.company || '', qty: Number(o.quantity) || 0, matched: m.matched };
+      }));
+    } catch { setUndeductedCount(null); setUndeductedList([]); }
   }
 
   // 마운트 시 미차감 건수 로드 (변환 탭이 기본이라 배너/버튼 노출용)
@@ -371,6 +379,7 @@ export default function OrdersContent() {
     if (!canRegister) { alert('권한이 없습니다.'); return; }
     if (!confirm('재고 자동출고가 안 된 주문들을 다시 출고 처리합니다.\n(이미 차감된 건은 건너뜁니다) 진행할까요?')) return;
     try {
+      await loadDbMatches(true); // 방금 추가한 매칭까지 반영해 재출고
       const undeducted = await supabaseFetchAll<{ id: string; collect_product?: string; product_name?: string; quantity?: number; company?: string; source?: string }>(
         '/orders?stock_deducted=eq.false&canceled=eq.false&select=id,collect_product,product_name,quantity,company,source',
       );
@@ -385,6 +394,7 @@ export default function OrdersContent() {
       for (const b of bom) { const a = bomMap.get(b.set_name) || []; a.push({ component_name: b.component_name, component_qty: Number(b.component_qty) || 1 }); bomMap.set(b.set_name, a); }
       const moves: Record<string, unknown>[] = [];
       let unmatchedCnt = 0;
+      const unmatchedNames = new Set<string>();
       for (const o of targets) {
         const rep = matchProduct(o.collect_product || o.product_name || '').name;
         const qty = Number(o.quantity) || 0;
@@ -399,14 +409,15 @@ export default function OrdersContent() {
             comps.push({ inventory_id: cid, product_name: b.component_name, quantity: qty * b.component_qty });
           }
           if (allFound) moves.push({ order_id: o.id, company: o.company || '', created_by: me?.name || '', components: comps });
-          else unmatchedCnt++;
+          else { unmatchedCnt++; unmatchedNames.add(`${rep} (${o.company || '사업자미상'})`); }
           continue;
         }
         const invId = invMap.get(`${rep}|${o.company || ''}`);
         if (invId) moves.push({ order_id: o.id, inventory_id: invId, quantity: qty, product_name: rep, company: o.company || '', created_by: me?.name || '' });
-        else unmatchedCnt++;
+        else { unmatchedCnt++; unmatchedNames.add(`${rep} (${o.company || '사업자미상'})`); }
       }
-      if (!moves.length) { alert(`매칭되는 재고가 없어 재출고할 게 없습니다. (미매칭 ${unmatchedCnt}건)`); return; }
+      const unmatchedDetail = unmatchedNames.size ? `\n\n미매칭 상세:\n· ${Array.from(unmatchedNames).slice(0, 15).join('\n· ')}\n\n→ 해당 사업자 재고에 이 상품명이 등록돼 있는지 확인하세요. (매칭은 됐어도 그 사업자 재고에 없으면 차감 불가)` : '';
+      if (!moves.length) { alert(`재출고할 게 없습니다. 매칭되는 재고가 없어요. (미매칭 ${unmatchedCnt}건)${unmatchedDetail}`); return; }
       const res = await supabaseFetch('/rpc/ship_orders', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ p_moves: moves }) });
       const txt = await res.text();
       if (!res.ok) { alert(`❌ 재출고 실패 (HTTP ${res.status})\n\n원인: ${txt}`); return; }
@@ -839,10 +850,27 @@ export default function OrdersContent() {
         <div className="space-y-4">
           {/* 미차감 재고 알림 + 재출고 (변환 탭에서 바로 처리) */}
           {canRegister && !!undeductedCount && (
-            <div className="bg-red-50 border border-red-200 rounded-2xl px-5 py-4 flex items-center justify-between gap-3 flex-wrap">
-              <div className="text-base text-red-700">🚨 재고 미차감 주문 <b>{undeductedCount}건</b> — 재고에 아직 반영 안 됨 (매출은 정상 집계)</div>
-              <button onClick={reshipUndeducted}
-                className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded-lg text-sm font-bold whitespace-nowrap">🔄 미차감분 재고 재출고</button>
+            <div className="bg-red-50 border border-red-200 rounded-2xl px-5 py-4">
+              <div className="flex items-center justify-between gap-3 flex-wrap">
+                <button onClick={() => setShowUndeducted(v => !v)} className="text-base text-red-700 text-left hover:underline">
+                  🚨 재고 미차감 주문 <b>{undeductedCount}건</b> — 재고에 아직 반영 안 됨 (매출은 정상 집계) <span className="text-sm text-red-400">· {showUndeducted ? '접기 ▲' : '어떤 건지 보기 ▼'}</span>
+                </button>
+                <button onClick={reshipUndeducted}
+                  className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded-lg text-sm font-bold whitespace-nowrap">🔄 미차감분 재고 재출고</button>
+              </div>
+              {showUndeducted && (
+                <div className="mt-3 border-t border-red-200 pt-3 space-y-1.5">
+                  {undeductedList.map(u => (
+                    <div key={u.id} className="flex items-center justify-between gap-2 text-sm">
+                      <span className="text-gray-700">{u.product} <span className="text-gray-400">· {u.company || '사업자미상'} · {u.qty}개</span></span>
+                      {u.matched
+                        ? <span className="text-amber-600 whitespace-nowrap">매칭됨 · 재고 등록/재출고 필요</span>
+                        : <span className="text-red-500 whitespace-nowrap">⚠️ 상품 매칭 필요</span>}
+                    </div>
+                  ))}
+                  <p className="text-xs text-gray-400 pt-1">매칭·재고 등록 후 위 <b>재출고</b> 버튼을 누르면 재고가 차감됩니다.</p>
+                </div>
+              )}
             </div>
           )}
           <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
