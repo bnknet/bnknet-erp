@@ -850,17 +850,26 @@ const PRODUCT_MAP_NORM: Record<string, string> = (() => {
   for (const k in PRODUCT_MAP) { const nk = normKey(k); if (!(nk in m)) m[nk] = PRODUCT_MAP[k]; }
   return m;
 })();
+// 대표상품명(값) 정규화 인덱스 — 입력이 이미 대표명이면 자기 자신으로 매칭.
+// (직접주문·수기 등 캐논명이 그대로 들어오면 수집명 목록엔 없어서 미매칭되던 문제 해결)
+const PRODUCT_MAP_VAL_NORM: Record<string, string> = (() => {
+  const m: Record<string, string> = {};
+  for (const k in PRODUCT_MAP) { const v = PRODUCT_MAP[k]; const nk = normKey(v); if (nk && !(nk in m)) m[nk] = v; }
+  return m;
+})();
 
 // ── 담당자가 ERP에서 직접 등록하는 런타임 매칭 (DB: product_matches) ──
 // 하드코딩 PRODUCT_MAP(검증된 820개)은 그대로 base로 두고, DB 매칭을 '덧씌워' 병합한다.
 // → 기존 매칭은 절대 깨지지 않고, 신규/수정만 DB로. DB 항목이 하드코딩보다 우선(담당자 교정 허용).
 let DB_MATCH: Record<string, string> = {};
 let DB_MATCH_NORM: Record<string, string> = {};
+let DB_MATCH_VAL_NORM: Record<string, string> = {}; // 대표명(값) 정규화 → 자기매칭용
 let dbMatchesLoaded = false;
 
 export function setDbMatches(rows: { collect_name?: string; product_name?: string }[]): void {
   const m: Record<string, string> = {};
   const mn: Record<string, string> = {};
+  const mvn: Record<string, string> = {};
   for (const r of rows) {
     const cn = String(r.collect_name || '').trim();
     const pn = String(r.product_name || '').trim();
@@ -873,9 +882,13 @@ export function setDbMatches(rows: { collect_name?: string; product_name?: strin
     const [, cnClean] = extractQtyAndName(cn);
     const nkc = normKey(cnClean);
     if (nkc && !(nkc in mn)) mn[nkc] = pn;
+    // 대표명(값)도 정규화 인덱싱 → 입력이 이미 대표명이면 자기 자신으로 매칭
+    const nkv = normKey(pn);
+    if (nkv && !(nkv in mvn)) mvn[nkv] = pn;
   }
   DB_MATCH = m;
   DB_MATCH_NORM = mn;
+  DB_MATCH_VAL_NORM = mvn;
   dbMatchesLoaded = true;
 }
 
@@ -901,7 +914,10 @@ export function matchProduct(collectName: string): { name: string; matched: bool
     DB_MATCH[cleanName] || DB_MATCH[raw]
     || PRODUCT_MAP[cleanName] || PRODUCT_MAP[raw]
     || DB_MATCH_NORM[normKey(cleanName)] || DB_MATCH_NORM[normKey(raw)]
-    || PRODUCT_MAP_NORM[normKey(cleanName)] || PRODUCT_MAP_NORM[normKey(raw)];
+    || PRODUCT_MAP_NORM[normKey(cleanName)] || PRODUCT_MAP_NORM[normKey(raw)]
+    // 최후 폴백: 입력이 이미 대표상품명이면 자기 자신으로 매칭(직접주문·수기 캐논명)
+    || DB_MATCH_VAL_NORM[normKey(cleanName)] || DB_MATCH_VAL_NORM[normKey(raw)]
+    || PRODUCT_MAP_VAL_NORM[normKey(cleanName)] || PRODUCT_MAP_VAL_NORM[normKey(raw)];
   return { name: mapped || cleanName || raw, matched: !!mapped };
 }
 
