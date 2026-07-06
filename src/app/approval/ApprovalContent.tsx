@@ -727,6 +727,28 @@ export default function ApprovalContent() {
     await loadApprovals();
   }
 
+  // 대표 최종 반려: 승인완료된 건을 대표가 되돌려 반려 → 상신자가 수정 후 재상신
+  // (예: 첨부 파일 형식 오류로 다시 올려야 할 때). 카드 매입이면 반려로 한도 차감 해제됨.
+  async function rejectFinalApproved() {
+    if (!selected || !isCeo || selected.status !== 'approved') return;
+    if (!rejectReason.trim()) { alert('반려 사유를 입력해주세요.'); return; }
+    const now = new Date().toISOString();
+    const hasStep2 = APPROVAL_LINES[selected.company]?.length === 3;
+    const patch: Record<string, unknown> = hasStep2
+      ? { status: 'rejected', rejection_reason: rejectReason, approver2_status: 'rejected', approver2_at: now }
+      : { status: 'rejected', rejection_reason: rejectReason, approver1_status: 'rejected', approver1_at: now };
+    await supabaseFetch(`/approvals?id=eq.${selected.id}`, {
+      method: 'PATCH', headers: { Prefer: 'return=minimal' },
+      body: JSON.stringify(patch),
+    });
+    const label = selected.doc_type === '휴가신청서' ? selected.doc_type : `${selected.doc_type} ${selected.total_amount?.toLocaleString?.() || ''}원`;
+    await logApproval(selected.id, '최종반려', `${label} · 승인완료 → 대표 반려 · 사유: ${rejectReason}`);
+    setShowRejectModal(false);
+    setRejectReason('');
+    setView('list');
+    await loadApprovals();
+  }
+
   function openResubmit(approval: Approval) {
     if (approval.doc_type === '휴가신청서') {
       setDocType('휴가신청서');
@@ -1304,6 +1326,11 @@ export default function ApprovalContent() {
               <button onClick={() => retractApproval(selected)}
                 className="px-5 py-2 border border-amber-300 text-amber-700 rounded-xl text-base font-medium hover:bg-amber-50">승인 철회</button>
             )}
+            {/* 대표: 승인완료 건 반려로 되돌리기 (파일 재첨부 등 재상신 필요 시) */}
+            {isCeo && selected.status === 'approved' && (
+              <button onClick={() => setShowRejectModal(true)}
+                className="px-5 py-2 bg-red-500 hover:bg-red-600 text-white rounded-xl text-base font-medium">결재 취소(반려)</button>
+            )}
             {canResubmit && (
               <button onClick={() => openResubmit(selected)}
                 className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-base font-medium">
@@ -1417,11 +1444,14 @@ export default function ApprovalContent() {
           <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
             <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6">
               <h3 className="text-lg font-bold text-gray-800 mb-4">반려 사유</h3>
+              {selected.status === 'approved' && (
+                <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-3">승인완료된 건을 <b>반려로 되돌립니다.</b> 상신자가 수정(파일 재첨부 등) 후 다시 올릴 수 있어요.{selected.card_id ? ' (카드 매입이면 한도 차감이 해제됩니다)' : ''}</p>
+              )}
               <textarea value={rejectReason} onChange={(e) => setRejectReason(e.target.value)}
                 placeholder="반려 사유를 입력해주세요" rows={4}
                 className="w-full px-4 py-3 border border-gray-200 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-red-400 resize-none" />
               <div className="flex gap-3 mt-4">
-                <button onClick={() => handleReject(selected)}
+                <button onClick={() => (selected.status === 'approved' ? rejectFinalApproved() : handleReject(selected))}
                   className="px-5 py-2.5 bg-red-500 hover:bg-red-600 text-white rounded-xl text-base font-medium flex-1">반려 확인</button>
                 <button onClick={() => { setShowRejectModal(false); setRejectReason(''); }}
                   className="px-5 py-2.5 border border-gray-200 text-gray-600 rounded-xl text-base hover:bg-gray-50">취소</button>
