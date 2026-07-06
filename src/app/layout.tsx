@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Noto_Sans_KR } from "next/font/google";
 import "./globals.css";
 import PwaRegister from "@/components/PwaRegister";
+import UpdateBanner from "@/components/UpdateBanner";
 
 const notoSansKR = Noto_Sans_KR({
   variable: "--font-noto-sans-kr",
@@ -47,6 +48,7 @@ export default function RootLayout({
     >
       <body className="min-h-full flex flex-col font-sans antialiased">
         <PwaRegister />
+        <UpdateBanner />
         {children}
       </body>
     </html>
