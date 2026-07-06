@@ -346,6 +346,10 @@ export default function CardsContent() {
   const totalLimit = visibleGroups.reduce((s, g) => s + g.limit, 0);
   const totalUsed = visibleGroups.reduce((s, g) => s + g.used, 0);
 
+  // 폰에서 엑셀 없이 바로 보는 표 뷰 (엑셀 앱 호환 문제 회피 — 화면 + 인쇄/PDF)
+  const [tableView, setTableView] = useState<{ title: string; subtitle?: string; headers: string[]; rows: string[][] } | null>(null);
+  const fmtWon = (n: number) => (Number(n) || 0).toLocaleString('ko-KR') + '원';
+
   function exportExcel() {
     const rows = filteredEvents
       .slice()
@@ -386,6 +390,73 @@ export default function CardsContent() {
     XLSX.utils.book_append_sheet(wb, ws, '카드구매내역');
     XLSX.writeFile(wb, `카드구매내역_세무_${todayStr}.xlsx`);
   }
+
+  // 📄 보기 — 카드 결제예정을 폰에서 바로 (엑셀 앱 불필요)
+  function viewSchedule() {
+    const rows = filteredEvents.slice().sort((a, b) => a.date.localeCompare(b.date)).map(e => [
+      e.date,
+      e.type === 'charge' ? '매입' : e.type === 'prepay' ? '선결제' : '환불',
+      cardName(e.cardId),
+      e.purchase.company,
+      e.purchase.organizer,
+      e.purchase.purchase_vendor || '',
+      fmtWon(e.amount),
+    ]);
+    if (!rows.length) { alert('해당 월 결제예정 내역이 없습니다.'); return; }
+    setTableView({ title: `카드 결제예정 · ${year}년 ${month + 1}월`, subtitle: `${rows.length}건`, headers: ['결제예정일', '구분', '카드', '사업자', '담당', '구매처', '금액'], rows });
+  }
+
+  // 📄 보기 — 카드 구매내역(세무)을 폰에서 바로
+  function viewPurchase() {
+    const rows = purchases.slice().sort((a, b) => (a.spend_date || '').localeCompare(b.spend_date || '')).map(p => [
+      p.spend_date || '',
+      p.company,
+      cardName(p.card_id),
+      p.purchase_vendor || '',
+      p.organizer || '',
+      fmtWon(p.total_amount),
+      p.payment_due_date || '',
+      p.purchase_status === 'canceled' ? '취소' : p.purchase_status === 'partial' ? '부분취소' : '정상',
+    ]);
+    if (!rows.length) { alert('카드 구매내역이 없습니다.'); return; }
+    setTableView({ title: '카드 구매내역 (세무)', subtitle: `${rows.length}건 · ${todayStr}`, headers: ['구매일', '사업자', '카드', '구매처', '담당', '금액', '결제예정일', '상태'], rows });
+  }
+
+  // 폰에서 바로 보이는 표 모달 (+ 인쇄/PDF). 엑셀이 안 열리는 기기 대응.
+  const tableViewModal = tableView && (
+    <div className="fixed inset-0 bg-black/40 z-[60] flex items-end sm:items-center justify-center sm:p-4">
+      <div className="bg-white w-full sm:max-w-3xl rounded-t-2xl sm:rounded-2xl shadow-xl max-h-[92vh] flex flex-col">
+        <div className="no-print flex items-center justify-between gap-2 px-4 py-3 border-b border-gray-100">
+          <div className="min-w-0">
+            <div className="font-bold text-gray-800 truncate">{tableView.title}</div>
+            {tableView.subtitle && <div className="text-xs text-gray-400">{tableView.subtitle}</div>}
+          </div>
+          <div className="flex gap-2 flex-shrink-0">
+            <button onClick={() => window.print()} className="px-3 py-1.5 text-sm bg-slate-700 hover:bg-slate-800 text-white rounded-lg whitespace-nowrap">🖨️ 인쇄·PDF</button>
+            <button onClick={() => setTableView(null)} className="px-3 py-1.5 text-sm border border-gray-200 text-gray-600 rounded-lg">닫기</button>
+          </div>
+        </div>
+        <div id="card-view-print" className="overflow-auto p-4">
+          <div className="hidden print:block text-lg font-bold mb-2">{tableView.title} <span className="text-sm font-normal text-gray-500">{tableView.subtitle}</span></div>
+          <table className="w-full text-sm border-collapse">
+            <thead>
+              <tr className="bg-gray-50">
+                {tableView.headers.map(h => <th key={h} className="border border-gray-300 px-2 py-1.5 text-left whitespace-nowrap font-semibold text-gray-600">{h}</th>)}
+              </tr>
+            </thead>
+            <tbody>
+              {tableView.rows.map((r, i) => (
+                <tr key={i}>
+                  {r.map((c, j) => <td key={j} className={`border border-gray-200 px-2 py-1.5 whitespace-nowrap text-gray-700 ${tableView.headers[j] === '금액' ? 'text-right tabular-nums' : ''}`}>{c}</td>)}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <style>{`@media print { body * { visibility: hidden !important; } #card-view-print, #card-view-print * { visibility: visible !important; } #card-view-print { position: absolute; left: 0; top: 0; width: 100%; padding: 0 !important; } .no-print { display: none !important; } }`}</style>
+    </div>
+  );
 
   // ── 카드 폼 모달 ──
   const cardFormModal = showForm && (
@@ -543,6 +614,8 @@ export default function CardsContent() {
           </div>
           <div className="flex items-center justify-between gap-2 flex-wrap">
             <p className="text-xs text-gray-400">💡 잔여한도(실시간) = 6/30 잔여 기준값에서 시작 · 카드구매 결재 −차감 / 선결제 결재 +복구. (6/30 기준값은 카드 수정에서 확인·변경)</p>
+            <button onClick={viewPurchase}
+              className="px-3 py-1.5 text-sm border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50 whitespace-nowrap">📄 구매내역 보기</button>
             <button onClick={exportPurchaseExcel}
               className="px-3 py-1.5 text-sm border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50 whitespace-nowrap">📊 카드 구매내역 엑셀 (세무용)</button>
           </div>
@@ -705,7 +778,10 @@ export default function CardsContent() {
               <button onClick={() => { setYear(now.getFullYear()); setMonth(now.getMonth()); }}
                 className="ml-1 px-2 py-1 text-sm border border-gray-200 rounded-lg text-gray-500 hover:bg-gray-50">오늘</button>
             </div>
-            <button onClick={exportExcel} className="px-3 py-1.5 text-sm border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50">📊 엑셀</button>
+            <div className="flex gap-2">
+              <button onClick={viewSchedule} className="px-3 py-1.5 text-sm border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50 whitespace-nowrap">📄 보기</button>
+              <button onClick={exportExcel} className="px-3 py-1.5 text-sm border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50">📊 엑셀</button>
+            </div>
           </div>
 
           {/* 사업자(카드종류)별 필터 */}
@@ -863,6 +939,7 @@ export default function CardsContent() {
       )}
 
       {cardFormModal}
+      {tableViewModal}
 
       {/* 결제 내역 상세 모달 */}
       {detailEvent && (
