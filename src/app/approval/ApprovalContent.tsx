@@ -164,6 +164,14 @@ const DOC_TYPE_LABELS: Record<DocType, string> = {
   '휴가신청서': '휴가신청서',
 };
 
+// 카드구매 세부: 선결제(한도복구) vs 일반 카드구매(매입·한도차감) — 승인자가 한눈에 구분하도록
+function cardKind(a: { doc_type: string; is_card_payment?: boolean }): { text: string; cls: string } | null {
+  if (a.doc_type !== '카드구매') return null;
+  return a.is_card_payment
+    ? { text: '선결제 · 한도복구', cls: 'bg-blue-100 text-blue-700' }
+    : { text: '카드구매(매입) · 한도차감', cls: 'bg-orange-100 text-orange-700' };
+}
+
 interface LeaveRow {
   id: string;
   name: string;
@@ -654,7 +662,9 @@ export default function ApprovalContent() {
     const label = approval.doc_type === '휴가신청서'
       ? `${VACATION_TYPES.find(v => v.value === approval.vacation_type)?.label || ''} ${approval.vacation_days}일`
       : `${approval.total_amount.toLocaleString()}원`;
-    if (!confirm(`[${approval.company}] ${approval.doc_type} · ${approval.submitter_name}\n${label}\n\n승인하시겠습니까?`)) return;
+    const ck = cardKind(approval);
+    const typeLine = `${approval.doc_type}${ck ? ` [${ck.text}]` : ''}`;
+    if (!confirm(`[${approval.company}] ${typeLine} · ${approval.submitter_name}\n${label}\n\n승인하시겠습니까?`)) return;
     await handleApprove(approval);
   }
 
@@ -1007,6 +1017,11 @@ export default function ApprovalContent() {
                 <span className={`text-sm px-2 py-1 rounded-md font-medium ${STATUS_MAP[selected.status]?.color}`}>
                   {STATUS_MAP[selected.status]?.label}
                 </span>
+                {cardKind(selected) && (
+                  <span className={`text-sm px-2 py-1 rounded-md font-semibold ${cardKind(selected)!.cls}`}>
+                    {cardKind(selected)!.text}
+                  </span>
+                )}
                 <span className="text-sm text-gray-400">{selected.company}</span>
               </div>
             </div>
@@ -1321,6 +1336,13 @@ export default function ApprovalContent() {
           <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
             <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6">
               <h3 className="text-lg font-bold text-gray-800 mb-1">승인</h3>
+              <div className="flex items-center gap-2 flex-wrap mb-2">
+                <span className="text-sm font-medium text-gray-700">{DOC_TYPE_LABELS[selected.doc_type as DocType] || selected.doc_type}</span>
+                {cardKind(selected) && (
+                  <span className={`text-xs px-2 py-0.5 rounded-md font-semibold ${cardKind(selected)!.cls}`}>{cardKind(selected)!.text}</span>
+                )}
+                {selected.doc_type !== '휴가신청서' && <span className="text-sm text-gray-500">· {selected.total_amount?.toLocaleString?.() || 0}원</span>}
+              </div>
               <p className="text-sm text-gray-400 mb-3">지시·요청사항이 있으면 적어주세요. (선택 — 비워도 승인됩니다)</p>
               <textarea value={approveNote} onChange={(e) => setApproveNote(e.target.value)}
                 placeholder="예: 다음부터 견적서 첨부 부탁드립니다 / 이번 건만 예외 승인 등" rows={4}
@@ -1943,7 +1965,10 @@ export default function ApprovalContent() {
                 <tbody className="divide-y divide-gray-50">
                   {shown.map(a => (
                     <tr key={a.id} onClick={() => loadDetail(a.id)} className="hover:bg-blue-50/40 cursor-pointer">
-                      <td className="px-4 py-3 font-medium text-gray-800">{a.doc_type}</td>
+                      <td className="px-4 py-3 font-medium text-gray-800">
+                        {a.doc_type}
+                        {cardKind(a) && <span className={`ml-1.5 text-xs px-1.5 py-0.5 rounded font-medium whitespace-nowrap ${cardKind(a)!.cls}`}>{cardKind(a)!.text}</span>}
+                      </td>
                       <td className="px-4 py-3 text-gray-500">{a.company}</td>
                       <td className="px-4 py-3 text-gray-500">{a.issue_date}</td>
                       <td className="px-4 py-3 text-gray-500 text-sm">
@@ -1978,6 +2003,7 @@ export default function ApprovalContent() {
                   <div className="flex items-center justify-between gap-2 mb-1.5">
                     <div className="flex items-center gap-2 min-w-0">
                       <span className="font-bold text-gray-800 text-[15px]">{a.doc_type}</span>
+                      {cardKind(a) && <span className={`text-xs px-1.5 py-0.5 rounded font-medium whitespace-nowrap ${cardKind(a)!.cls}`}>{cardKind(a)!.text}</span>}
                       {a.approval_note && <span title="승인 지시·요청사항 있음">📝</span>}
                       <span className="text-sm text-gray-400 truncate">{a.company}</span>
                     </div>
