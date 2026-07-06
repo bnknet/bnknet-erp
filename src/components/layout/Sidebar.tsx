@@ -24,6 +24,7 @@ const menuItems: MenuGroup[] = [
       { href: '/sales', label: '매출 현황', icon: '💰' },
       { href: '/orders', label: '주문 변환', icon: '📦' },
       { href: '/sales-target', label: '매출 목표', icon: '🎯' },
+      { href: '/mall-fees', label: '몰 수수료', icon: '🧾', roles: ['ceo', 'admin', 'sales'] },
     ],
   },
   {

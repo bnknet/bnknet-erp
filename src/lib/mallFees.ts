@@ -29,6 +29,15 @@ export function normalizeMall(raw: string): string {
   return (raw || '').trim();
 }
 
+// 정규 몰명 목록 — 관리 화면 입력 후보(단일 출처). normalizeMall이 만들어내는 정규 키와 일치해야 함.
+export const CANONICAL_MALLS = [
+  '스마트스토어', 'G마켓', '옥션', '11번가', '쿠팡', '쿠팡로켓그로스', '토스',
+  'SSG', 'Hmall', '롯데온', '인터파크', '카카오스토어', '자사몰Npay', '자사몰직접결제', '공구',
+];
+
+// 정규 사업자명 후보 (기존 데이터 + 아는 값 병합해서 화면에서 사용)
+export const KNOWN_COMPANIES = ['BNKNET', '더블아이', 'SJ글로벌', 'IX글로벌'];
+
 // 수수료 조회용 맵 빌드: `${company}|${정규몰명}` → rate(%)
 export function buildFeeMap(fees: MallFee[]): Map<string, number> {
   const m = new Map<string, number>();
