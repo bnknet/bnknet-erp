@@ -42,6 +42,8 @@ interface PurchaseItem {
   note?: string;
   canceled?: boolean;
   refund_due_date?: string;
+  prepaid_date?: string;   // 부분 선결제: 이 날 한도 복구
+  prepaid_at?: string;
 }
 
 // 캘린더에 표시할 이벤트 (매입 + / 환불 -)
@@ -95,14 +97,17 @@ export default function CardsContent() {
   const [cancelChecked, setCancelChecked] = useState<Set<string>>(new Set());
   const [cancelRefundDate, setCancelRefundDate] = useState('');
   const [canceledItems, setCanceledItems] = useState<PurchaseItem[]>([]); // 취소된 항목(환불 이벤트용)
+  const [prepaidItems, setPrepaidItems] = useState<PurchaseItem[]>([]); // 부분 선결제된 항목(한도복구 이벤트용)
   const [rangeFrom, setRangeFrom] = useState('');
   const [rangeTo, setRangeTo] = useState('');
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
-  // 선결제 처리 (미결제 매입을 골라 앞당겨 결제 → 한도 복구)
+  // 선결제 처리 (미결제 매입의 구매상품을 건별로 골라 앞당겨 결제 → 한도 복구)
   const [prepayOpen, setPrepayOpen] = useState(false);
-  const [prepayChecked, setPrepayChecked] = useState<Set<string>>(new Set());
   const [prepayDate, setPrepayDate] = useState('');
   const [prepaySaving, setPrepaySaving] = useState(false);
+  const [prepayExpanded, setPrepayExpanded] = useState<Set<string>>(new Set()); // 펼친 매입(approvalId)
+  const [prepayItemsMap, setPrepayItemsMap] = useState<Record<string, PurchaseItem[]>>({}); // 매입별 품목 캐시
+  const [prepayItemChecked, setPrepayItemChecked] = useState<Set<string>>(new Set()); // 체크한 품목(itemId, 품목없으면 appr:approvalId)
 
   const loadCards = useCallback(async () => {
     const res = await supabaseFetch('/cards?order=sort_order.asc,created_at.asc');
@@ -120,6 +125,9 @@ export default function CardsContent() {
     // 취소된 항목(부분취소 포함) — 환불 이벤트/한도 계산용
     const cData = await supabaseFetchAll<PurchaseItem & { approval_id?: string }>('/approval_items?canceled=eq.true&select=id,approval_id,amount,refund_due_date,description&order=approval_id.asc');
     setCanceledItems(cData);
+    // 부분 선결제된 항목 — 한도복구 이벤트/계산용
+    const pData = await supabaseFetchAll<PurchaseItem & { approval_id?: string }>('/approval_items?prepaid_date=not.is.null&select=id,approval_id,amount,prepaid_date,description&order=approval_id.asc');
+    setPrepaidItems(pData);
   }, []);
 
   const loadLogs = useCallback(async () => {
@@ -199,11 +207,19 @@ export default function CardsContent() {
     await Promise.all([loadCards(), loadLogs()]);
   }
 
+  const todayStr = ymd(new Date());
   const purchaseById = (id: string) => purchases.find(p => p.id === id);
   // 매입별 취소금액 합 (부분취소 포함)
   const canceledAmtByPurchase: Record<string, number> = {};
   for (const ci of canceledItems) {
     if (ci.approval_id) canceledAmtByPurchase[ci.approval_id] = (canceledAmtByPurchase[ci.approval_id] || 0) + (ci.amount || 0);
+  }
+  // 매입별 '이미 복구된' 선결제 금액 합 (선결제일이 오늘까지 지난 것만 한도 복구)
+  const prepaidAmtByPurchase: Record<string, number> = {};
+  for (const pi of prepaidItems) {
+    if (pi.approval_id && pi.prepaid_date && pi.prepaid_date <= todayStr) {
+      prepaidAmtByPurchase[pi.approval_id] = (prepaidAmtByPurchase[pi.approval_id] || 0) + (pi.amount || 0);
+    }
   }
 
   // ── 캘린더 이벤트 생성 ──
@@ -222,6 +238,13 @@ export default function CardsContent() {
     const p = ci.approval_id ? purchaseById(ci.approval_id) : null;
     if (p && ci.refund_due_date && ci.amount) {
       events.push({ date: ci.refund_due_date, cardId: p.card_id, amount: -(ci.amount || 0), type: 'refund', purchase: p });
+    }
+  }
+  // 선결제 이벤트 = 부분 선결제된 항목별 (그날 한도 복구 / 선결제일에 앞당겨 결제)
+  for (const pi of prepaidItems) {
+    const p = pi.approval_id ? purchaseById(pi.approval_id) : null;
+    if (p && pi.prepaid_date && pi.amount) {
+      events.push({ date: pi.prepaid_date, cardId: p.card_id, amount: -(pi.amount || 0), type: 'prepay', purchase: p });
     }
   }
 
@@ -308,7 +331,6 @@ export default function CardsContent() {
     if (!c) return '(삭제된 카드)';
     return `${c.holder_name ? c.holder_name + ' · ' : ''}${c.card_name}`;
   };
-  const todayStr = ymd(new Date());
 
   // ── 한도 현황 계산 ──
   // 카드별 미결제 = (결제일 안 지난 매입 − 취소금액) − 선결제(승인 즉시 한도 복구).
@@ -317,7 +339,10 @@ export default function CardsContent() {
       .filter(p => p.card_id === cardId)
       .reduce((s, p) => {
         if (p.is_card_payment) return s - (p.total_amount || 0); // 선결제 = 한도 복구(크레딧), 즉시 반영
-        if (p.payment_due_date && p.payment_due_date >= todayStr) return s + (p.total_amount - (canceledAmtByPurchase[p.id] || 0)); // 미결제 매입
+        if (p.payment_due_date && p.payment_due_date >= todayStr) {
+          // 미결제 매입 − 취소분 − 이미 선결제(한도복구)된 항목분
+          return s + Math.max(0, p.total_amount - (canceledAmtByPurchase[p.id] || 0) - (prepaidAmtByPurchase[p.id] || 0));
+        }
         return s;
       }, 0);
   }
@@ -463,65 +488,155 @@ export default function CardsContent() {
     </div>
   );
 
-  // ── 선결제 처리 ── 미결제 매입(결제일 안 지난 카드구매)을 골라 앞당겨 결제 → 결제예정일을 선결제일로 → 한도 복구
+  // ── 선결제 처리 ── 미결제 매입의 '구매상품'을 건별로 골라 앞당겨 결제 → 그 항목 금액만 그 날짜에 한도 복구
   const prepayCandidates = purchases.filter(p =>
     !p.is_card_payment
     && !!p.payment_due_date && p.payment_due_date >= todayStr
     && p.purchase_status !== 'canceled'
     && (typeFilter === 'all' || cardTypeOf(p.card_id) === typeFilter),
   ).sort((a, b) => (a.payment_due_date || '').localeCompare(b.payment_due_date || ''));
-  const prepayTotal = prepayCandidates.filter(p => prepayChecked.has(p.id)).reduce((s, p) => s + (p.total_amount || 0), 0);
+  const prepaidIdSet = new Set(prepaidItems.map(pi => pi.id)); // 이미 선결제된 항목
   const prepayLogs = logs.filter(l => l.action === '선결제처리'); // 선결제 이력
-  const togglePrepay = (id: string) => setPrepayChecked(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+
+  // 매입 펼치기(구매상품 상세 로드)
+  async function togglePrepayExpand(approvalId: string) {
+    setPrepayExpanded(prev => { const n = new Set(prev); if (n.has(approvalId)) n.delete(approvalId); else n.add(approvalId); return n; });
+    if (prepayItemsMap[approvalId] === undefined) {
+      const res = await supabaseFetch(`/approval_items?approval_id=eq.${approvalId}&order=sort_order.asc`);
+      const d = await res.json();
+      setPrepayItemsMap(prev => ({ ...prev, [approvalId]: Array.isArray(d) ? d : [] }));
+    }
+  }
+  const togglePrepayItem = (key: string) => setPrepayItemChecked(prev => { const n = new Set(prev); if (n.has(key)) n.delete(key); else n.add(key); return n; });
+  // 체크한 키(itemId 또는 appr:approvalId)의 금액
+  function prepayKeyInfo(key: string): { amount: number; label: string; cardId: string } {
+    if (key.startsWith('appr:')) {
+      const p = prepayCandidates.find(x => x.id === key.slice(5));
+      return { amount: p?.total_amount || 0, label: `${p?.purchase_vendor || '구매'} 전체`, cardId: p?.card_id || '' };
+    }
+    for (const [aid, items] of Object.entries(prepayItemsMap)) {
+      const it = items.find(x => x.id === key);
+      if (it) { const p = prepayCandidates.find(x => x.id === aid); return { amount: it.amount || 0, label: it.description || '항목', cardId: p?.card_id || '' }; }
+    }
+    return { amount: 0, label: '항목', cardId: '' };
+  }
+  const prepaySelKeys = Array.from(prepayItemChecked);
+  const prepaySelTotal = prepaySelKeys.reduce((s, k) => s + prepayKeyInfo(k).amount, 0);
+  // 매입별 선택 건수(펼침 헤더 표시용)
+  const prepaySelCountBy = (approvalId: string) => {
+    const items = prepayItemsMap[approvalId] || [];
+    let c = prepayItemChecked.has(`appr:${approvalId}`) ? 1 : 0;
+    for (const it of items) if (it.id && prepayItemChecked.has(it.id)) c++;
+    return c;
+  };
+
   async function processPrepay() {
-    if (!prepayDate || prepayChecked.size === 0) return;
-    const chosen = prepayCandidates.filter(p => prepayChecked.has(p.id));
-    if (!confirm(`선택한 ${chosen.length}건 (${won(prepayTotal)}원)을 ${prepayDate}에 선결제 처리할까요?\n\n→ 해당 매입의 결제예정일이 ${prepayDate}로 바뀌고, 그날 잔여한도가 복구됩니다.`)) return;
+    if (!prepayDate || prepaySelKeys.length === 0) return;
+    if (!confirm(`선택한 구매상품 ${prepaySelKeys.length}건 (${won(prepaySelTotal)}원)을 ${prepayDate}에 선결제 처리할까요?\n\n→ 선택한 항목 금액만 ${prepayDate}에 결제 처리되어 잔여한도가 복구됩니다. (매입 전체가 아니라 고른 상품만)`)) return;
     setPrepaySaving(true);
     try {
-      for (const p of chosen) {
-        await supabaseFetch(`/approvals?id=eq.${p.id}`, {
-          method: 'PATCH', headers: { Prefer: 'return=minimal' },
-          body: JSON.stringify({ payment_due_date: prepayDate, updated_at: new Date().toISOString() }),
-        });
+      const nowIso = new Date().toISOString();
+      const parts: string[] = [];
+      for (const key of prepaySelKeys) {
+        const info = prepayKeyInfo(key);
+        if (key.startsWith('appr:')) {
+          // 상세 품목이 없는 매입 → 전체를 결제예정일 앞당김(기존 방식)
+          const id = key.slice(5);
+          await supabaseFetch(`/approvals?id=eq.${id}`, {
+            method: 'PATCH', headers: { Prefer: 'return=minimal' },
+            body: JSON.stringify({ payment_due_date: prepayDate, updated_at: nowIso }),
+          });
+        } else {
+          // 구매상품 항목 → 선결제 표시(그 항목 금액만 한도 복구)
+          await supabaseFetch(`/approval_items?id=eq.${key}`, {
+            method: 'PATCH', headers: { Prefer: 'return=minimal' },
+            body: JSON.stringify({ prepaid_date: prepayDate, prepaid_at: nowIso }),
+          });
+        }
+        parts.push(`${info.cardId ? cardName(info.cardId) + '/' : ''}${info.label} ${won(info.amount)}원`);
       }
-      // 원래 결제예정일까지 기록(되돌리기·감사용)
-      const detail = chosen.map(p => `${cardName(p.card_id)}/${p.purchase_vendor || '구매'} ${won(p.total_amount)}원 (결제예정 ${p.payment_due_date}→${prepayDate})`).join(' · ');
-      await logCardChange('선결제처리', `${chosen.length}건 · ${won(prepayTotal)}원 · 선결제일 ${prepayDate}`, detail, me?.name || '').catch(() => {});
+      await logCardChange('선결제처리', `${prepaySelKeys.length}건 · ${won(prepaySelTotal)}원 · 선결제일 ${prepayDate}`, parts.join(' · '), me?.name || '').catch(() => {});
       setPrepayOpen(false);
-      setPrepayChecked(new Set());
+      setPrepayItemChecked(new Set());
+      setPrepayExpanded(new Set());
+      setPrepayItemsMap({});
       await loadPurchases();
       await loadLogs();
     } catch (e) { alert('선결제 처리 중 오류: ' + ((e as Error)?.message || e)); }
     finally { setPrepaySaving(false); }
   }
+
   const prepayModal = prepayOpen && (
     <div className="fixed inset-0 bg-black/40 z-[60] flex items-end sm:items-center justify-center sm:p-4">
       <div className="bg-white w-full sm:max-w-2xl rounded-t-2xl sm:rounded-2xl shadow-xl max-h-[92vh] flex flex-col">
         <div className="px-5 py-4 border-b border-gray-100">
           <h3 className="text-lg font-bold text-gray-800">💚 선결제 처리 (한도 복구)</h3>
-          <p className="text-sm text-gray-400 mt-0.5">앞당겨 결제한 매입 건을 골라 결제일을 넣으면, 그 날짜로 결제 처리되어 <b>잔여한도가 복구</b>됩니다. (별도 선결제 결재 안 올려도 됨 — 이중복구 없음)</p>
+          <p className="text-sm text-gray-400 mt-0.5">매입의 <b>금액을 누르면 구매상품 상세</b>가 펼쳐집니다. 앞당겨 결제할 상품만 골라 체크하면, 그 <b>항목 금액만</b> 선결제일에 결제 처리되어 <b>잔여한도가 복구</b>됩니다. (일부만 선결제 가능)</p>
         </div>
         <div className="px-5 py-3 border-b border-gray-100 flex items-center gap-2 flex-wrap">
           <label className="text-sm font-medium text-gray-600">선결제일(실제 결제일)</label>
           <input type="date" value={prepayDate} onChange={e => setPrepayDate(e.target.value)}
             className="px-3 py-2 border border-gray-200 rounded-lg text-base" />
-          <span className="text-sm text-gray-500 ml-auto">선택 <b className="text-green-600">{prepayChecked.size}</b>건 · {won(prepayTotal)}원</span>
+          <span className="text-sm text-gray-500 ml-auto">선택 <b className="text-green-600">{prepaySelKeys.length}</b>건 · {won(prepaySelTotal)}원</span>
         </div>
         <div className="overflow-auto flex-1">
           <div className="divide-y divide-gray-50">
             {prepayCandidates.length === 0 ? (
               <div className="text-center py-12 text-gray-400">선결제할 미결제 매입이 없습니다</div>
-            ) : prepayCandidates.map(p => (
-              <label key={p.id} className="flex items-center gap-3 px-5 py-3 cursor-pointer hover:bg-green-50/40">
-                <input type="checkbox" checked={prepayChecked.has(p.id)} onChange={() => togglePrepay(p.id)} className="w-4 h-4 accent-green-600 flex-shrink-0" />
-                <div className="flex-1 min-w-0">
-                  <div className="text-base text-gray-800 font-medium truncate">{cardName(p.card_id)} · {p.purchase_vendor || '구매'}</div>
-                  <div className="text-xs text-gray-400">구매일 {p.spend_date || '-'} · 결제예정 {p.payment_due_date} · {p.company}</div>
+            ) : prepayCandidates.map(p => {
+              const expanded = prepayExpanded.has(p.id);
+              const items = prepayItemsMap[p.id];
+              const selCnt = prepaySelCountBy(p.id);
+              return (
+                <div key={p.id}>
+                  {/* 매입 헤더 — 금액 누르면 펼침 */}
+                  <button onClick={() => togglePrepayExpand(p.id)}
+                    className="w-full flex items-center gap-3 px-5 py-3 text-left hover:bg-green-50/40">
+                    <span className={`text-gray-300 text-xs w-3 flex-shrink-0 transition-transform ${expanded ? 'rotate-90' : ''}`}>▶</span>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-base text-gray-800 font-medium truncate">{cardName(p.card_id)} · {p.purchase_vendor || '구매'}</div>
+                      <div className="text-xs text-gray-400">구매일 {p.spend_date || '-'} · 결제예정 {p.payment_due_date} · {p.company}{selCnt > 0 && <span className="text-green-600 font-medium"> · 선택 {selCnt}건</span>}</div>
+                    </div>
+                    <div className="text-base font-semibold text-green-700 tabular-nums flex-shrink-0 underline decoration-dotted">{won(p.total_amount)}원</div>
+                  </button>
+                  {/* 구매상품 상세(체크) */}
+                  {expanded && (
+                    <div className="bg-gray-50/70 border-t border-gray-100">
+                      {items === undefined ? (
+                        <div className="px-8 py-3 text-sm text-gray-400">불러오는 중...</div>
+                      ) : items.length === 0 ? (
+                        <label className="flex items-center gap-3 px-8 py-2.5 cursor-pointer hover:bg-green-50/60">
+                          <input type="checkbox" checked={prepayItemChecked.has(`appr:${p.id}`)} onChange={() => togglePrepayItem(`appr:${p.id}`)} className="w-4 h-4 accent-green-600 flex-shrink-0" />
+                          <div className="flex-1 text-sm text-gray-600">전체 금액 (상세 품목 없음)</div>
+                          <div className="text-sm font-medium text-gray-700 tabular-nums">{won(p.total_amount)}원</div>
+                        </label>
+                      ) : items.map((it, i) => {
+                        const done = !!it.id && (prepaidIdSet.has(it.id) || !!it.prepaid_date);
+                        const canceled = it.canceled;
+                        const disabled = done || canceled || !it.id;
+                        const key = it.id || '';
+                        return (
+                          <label key={it.id || i} className={`flex items-center gap-3 px-8 py-2.5 border-t border-gray-100 ${disabled ? 'opacity-60' : 'cursor-pointer hover:bg-green-50/60'}`}>
+                            {done ? <span className="text-[10px] text-green-600 w-4 flex-shrink-0 text-center">✓</span>
+                              : canceled ? <span className="text-[10px] text-red-400 w-4 flex-shrink-0 text-center">✕</span>
+                              : <input type="checkbox" checked={prepayItemChecked.has(key)} onChange={() => togglePrepayItem(key)} className="w-4 h-4 accent-green-600 flex-shrink-0" />}
+                            <div className="flex-1 min-w-0">
+                              <div className={`text-sm truncate ${done ? 'text-green-700' : canceled ? 'text-red-400 line-through' : 'text-gray-700'}`}>{it.description || '-'}</div>
+                              <div className="text-[11px] text-gray-400">
+                                {it.item_date || ''}{it.quantity ? ` · ${it.quantity.toLocaleString()}개` : ''}
+                                {done && <span className="text-green-600"> · 선결제완료 {it.prepaid_date || ''}</span>}
+                                {canceled && <span className="text-red-400"> · 취소됨</span>}
+                              </div>
+                            </div>
+                            <div className="text-sm font-medium text-gray-700 tabular-nums flex-shrink-0">{won(it.amount || 0)}원</div>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
-                <div className="text-base font-semibold text-gray-700 tabular-nums flex-shrink-0">{won(p.total_amount)}원</div>
-              </label>
-            ))}
+              );
+            })}
           </div>
           {prepayLogs.length > 0 && (
             <div className="border-t border-gray-100 mt-1">
@@ -537,8 +652,8 @@ export default function CardsContent() {
           )}
         </div>
         <div className="px-5 py-4 border-t border-gray-100 flex gap-2">
-          <button onClick={processPrepay} disabled={prepaySaving || prepayChecked.size === 0 || !prepayDate}
-            className="flex-1 px-5 py-2.5 bg-green-600 hover:bg-green-700 disabled:bg-green-300 text-white rounded-xl text-base font-bold">{prepaySaving ? '처리 중...' : `선결제 처리 (${prepayChecked.size}건)`}</button>
+          <button onClick={processPrepay} disabled={prepaySaving || prepaySelKeys.length === 0 || !prepayDate}
+            className="flex-1 px-5 py-2.5 bg-green-600 hover:bg-green-700 disabled:bg-green-300 text-white rounded-xl text-base font-bold">{prepaySaving ? '처리 중...' : `선결제 처리 (${prepaySelKeys.length}건)`}</button>
           <button onClick={() => setPrepayOpen(false)} className="px-5 py-2.5 border border-gray-200 text-gray-600 rounded-xl text-base hover:bg-gray-50">닫기</button>
         </div>
       </div>
@@ -702,7 +817,7 @@ export default function CardsContent() {
           <div className="flex items-center justify-between gap-2 flex-wrap">
             <p className="text-xs text-gray-400">💡 잔여한도(실시간) = 6/30 잔여 기준값에서 시작 · 카드구매 결재 −차감 / 선결제 결재 +복구. (6/30 기준값은 카드 수정에서 확인·변경)</p>
             {canManage && (
-              <button onClick={() => { setPrepayDate(todayStr); setPrepayChecked(new Set()); setPrepayOpen(true); }}
+              <button onClick={() => { setPrepayDate(todayStr); setPrepayItemChecked(new Set()); setPrepayExpanded(new Set()); setPrepayItemsMap({}); setPrepayOpen(true); }}
                 className="px-4 py-2 text-sm font-medium bg-green-600 hover:bg-green-700 text-white rounded-lg whitespace-nowrap">💚 선결제 처리</button>
             )}
             <button onClick={viewPurchase}
