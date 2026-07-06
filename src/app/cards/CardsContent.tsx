@@ -784,25 +784,18 @@ export default function CardsContent() {
   return (
     <div className="space-y-4">
       {/* 탭 */}
-      <div className="flex items-center gap-2 border-b border-gray-200 pb-3 overflow-x-auto">
-        <button onClick={() => setTab('calendar')}
-          className={`px-4 py-2 rounded-t-lg text-base font-medium border-b-2 whitespace-nowrap ${tab === 'calendar' ? 'border-blue-600 text-blue-600 bg-white' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
-          결제 캘린더
-        </button>
-        <button onClick={() => setTab('limit')}
-          className={`px-4 py-2 rounded-t-lg text-base font-medium border-b-2 whitespace-nowrap ${tab === 'limit' ? 'border-blue-600 text-blue-600 bg-white' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
-          한도 현황
-        </button>
-        <button onClick={() => setTab('cards')}
-          className={`px-4 py-2 rounded-t-lg text-base font-medium border-b-2 whitespace-nowrap ${tab === 'cards' ? 'border-blue-600 text-blue-600 bg-white' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
-          카드 목록
-        </button>
-        {canManage && (
-          <button onClick={() => setTab('log')}
-            className={`px-4 py-2 rounded-t-lg text-base font-medium border-b-2 ${tab === 'log' ? 'border-blue-600 text-blue-600 bg-white' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
-            변경 로그
+      <div className="flex items-stretch gap-1 border-b border-gray-200">
+        {([
+          { k: 'calendar', label: '결제 캘린더' },
+          { k: 'limit', label: '한도 현황' },
+          { k: 'cards', label: '카드 목록' },
+          ...(canManage ? [{ k: 'log', label: '변경 로그' }] : []),
+        ] as { k: Tab; label: string }[]).map(t => (
+          <button key={t.k} onClick={() => setTab(t.k)}
+            className={`flex-1 px-2 py-2.5 text-center text-sm sm:text-base font-medium border-b-2 whitespace-nowrap -mb-px ${tab === t.k ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
+            {t.label}
           </button>
-        )}
+        ))}
       </div>
 
       {loading ? (

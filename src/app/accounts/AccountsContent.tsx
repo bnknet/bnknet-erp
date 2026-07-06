@@ -116,41 +116,46 @@ export default function AccountsContent() {
   return (
     <div className="space-y-4">
       {/* 상단 */}
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div className="flex-1 space-y-2">
-          {/* 사업자 필터 */}
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-sm text-gray-400 w-12">사업자</span>
+      <div className="space-y-3">
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-base font-semibold text-gray-700">계정 필터</span>
+          <button
+            onClick={() => { setShowForm(true); setEditId(null); setForm({ ...EMPTY_FORM }); }}
+            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm sm:text-base font-medium transition-colors flex-shrink-0"
+          >
+            + 계정 추가
+          </button>
+        </div>
+        {/* 사업자 필터 */}
+        <div>
+          <div className="text-xs font-medium text-gray-400 mb-1.5">사업자</div>
+          <div className="grid grid-cols-3 gap-2 sm:flex sm:flex-wrap">
             {COMPANIES.map((c) => (
               <button
                 key={c}
                 onClick={() => setFilterCompany(c)}
-                className={`px-3 py-1.5 rounded-lg text-base font-medium transition-colors ${filterCompany === c ? 'bg-slate-700 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}
-              >
-                {c}
-              </button>
-            ))}
-          </div>
-          {/* 카테고리 필터 */}
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-sm text-gray-400 w-12">카테고리</span>
-            {CATEGORIES.map((c) => (
-              <button
-                key={c}
-                onClick={() => setFilterCat(c)}
-                className={`px-3 py-1.5 rounded-lg text-base font-medium transition-colors ${filterCat === c ? 'bg-blue-600 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}
+                className={`px-3 py-2 rounded-lg text-sm sm:text-base font-medium whitespace-nowrap text-center transition-colors ${filterCompany === c ? 'bg-slate-700 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}
               >
                 {c}
               </button>
             ))}
           </div>
         </div>
-        <button
-          onClick={() => { setShowForm(true); setEditId(null); setForm({ ...EMPTY_FORM }); }}
-          className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-base font-medium transition-colors flex-shrink-0"
-        >
-          + 계정 추가
-        </button>
+        {/* 카테고리 필터 */}
+        <div>
+          <div className="text-xs font-medium text-gray-400 mb-1.5">카테고리</div>
+          <div className="grid grid-cols-3 gap-2 sm:flex sm:flex-wrap">
+            {CATEGORIES.map((c) => (
+              <button
+                key={c}
+                onClick={() => setFilterCat(c)}
+                className={`px-3 py-2 rounded-lg text-sm sm:text-base font-medium whitespace-nowrap text-center transition-colors ${filterCat === c ? 'bg-blue-600 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}
+              >
+                {c}
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
 
       {/* 검색 */}

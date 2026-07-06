@@ -16,7 +16,7 @@ interface Worklog {
   created_at: string;
 }
 
-const COMPANIES = ['전체', '더블아이', 'BNKNET', 'SJ글로벌', 'IX글로벌'];
+const COMPANIES = ['전체', 'BNKNET', '더블아이', 'SJ글로벌', 'IX글로벌'];
 
 const EMPTY_FORM = {
   work_date: new Date().toISOString().slice(0, 10),
@@ -171,10 +171,10 @@ export default function WorklogContent() {
               {p.label}
             </button>
           ))}
-          <div className="flex gap-1">
+          <div className="grid grid-cols-2 gap-2 w-full sm:flex sm:w-auto sm:flex-wrap">
             {COMPANIES.map((c) => (
               <button key={c} onClick={() => setFilterCompany(c)}
-                className={`px-3 py-2 rounded-xl text-base font-medium transition-colors ${filterCompany === c ? 'bg-slate-700 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
+                className={`px-3 py-2 rounded-xl text-base font-medium whitespace-nowrap text-center transition-colors ${c === '전체' ? 'col-span-2 sm:col-span-1' : ''} ${filterCompany === c ? 'bg-slate-700 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
                 {c}
               </button>
             ))}
