@@ -1931,7 +1931,12 @@ export default function ApprovalContent() {
   // 사업자·문서종류·작성자·발의일 상세 필터
   const filtered = statusFiltered.filter((a) => {
     if (filterCompany !== '전체' && a.company !== filterCompany) return false;
-    if (filterDocType !== '전체' && a.doc_type !== filterDocType) return false;
+    // 문서종류 필터 — 카드구매는 선결제(한도복구)/매입으로 세분
+    if (filterDocType !== '전체') {
+      if (filterDocType === '카드구매(매입)') { if (!(a.doc_type === '카드구매' && !a.is_card_payment)) return false; }
+      else if (filterDocType === '선결제(한도복구)') { if (!(a.doc_type === '카드구매' && a.is_card_payment)) return false; }
+      else if (a.doc_type !== filterDocType) return false;
+    }
     if (filterSubmitter && !(a.submitter_name || '').includes(filterSubmitter)) return false;
     if (filterFrom && (a.issue_date || '') < filterFrom) return false;
     if (filterTo && (a.issue_date || '') > filterTo) return false;
@@ -2001,7 +2006,7 @@ export default function ApprovalContent() {
         </select>
         <select value={filterDocType} onChange={(e) => setFilterDocType(e.target.value)}
           className="px-3 py-2 rounded-lg border border-gray-200 text-base bg-white">
-          {['전체', '지출결의서', '카드구매', '휴가신청서'].map((d) => <option key={d} value={d}>{d === '전체' ? '문서종류 전체' : d}</option>)}
+          {['전체', '지출결의서', '카드구매(매입)', '선결제(한도복구)', '휴가신청서'].map((d) => <option key={d} value={d}>{d === '전체' ? '문서종류 전체' : d}</option>)}
         </select>
         <input value={filterSubmitter} onChange={(e) => setFilterSubmitter(e.target.value)}
           placeholder="작성자"
