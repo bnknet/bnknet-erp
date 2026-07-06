@@ -50,7 +50,7 @@ interface PurchaseItem {
 interface PayEvent {
   date: string;
   cardId: string;
-  amount: number;       // + 매입, - 환불/선결제
+  amount: number;       // + 출금(매입 청구·선결제 결제), − 입금(환불). 부분선결제는 그날 나간 돈이므로 +
   type: 'charge' | 'refund' | 'prepay';
   purchase: CardPurchase;
 }
@@ -246,7 +246,14 @@ export default function CardsContent() {
       events.push({ date: ci.refund_due_date, cardId: p.card_id, amount: -(ci.amount || 0), type: 'refund', purchase: p });
     }
   }
-  // (부분 선결제분은 예정일 청구액에서 이미 차감 — 별도 −이벤트를 만들면 이중반영되므로 안 만든다)
+  // 선결제 이벤트 = 부분 선결제한 날 실제로 카드사에 나간 돈(+출금).
+  // 예정일 청구액은 이미 그만큼 차감돼 있으므로(위 net) 합치면 전체금액 = 이중반영 없음.
+  for (const pi of prepaidItems) {
+    const p = pi.approval_id ? purchaseById(pi.approval_id) : null;
+    if (p && pi.prepaid_date && pi.amount) {
+      events.push({ date: pi.prepaid_date, cardId: p.card_id, amount: (pi.amount || 0), type: 'prepay', purchase: p });
+    }
+  }
 
   async function openPurchaseDetail(e: PayEvent) {
     setDetailEvent(e);
