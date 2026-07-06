@@ -864,7 +864,15 @@ const PRODUCT_MAP_VAL_NORM: Record<string, string> = (() => {
 let DB_MATCH: Record<string, string> = {};
 let DB_MATCH_NORM: Record<string, string> = {};
 let DB_MATCH_VAL_NORM: Record<string, string> = {}; // 대표명(값) 정규화 → 자기매칭용
+let BOM_SET_NORM: Record<string, string> = {};      // 세트구성(BOM) 세트명 정규화 → 세트도 매칭 인정
 let dbMatchesLoaded = false;
+
+// 세트구성(product_bom)의 세트명 등록 → matchProduct가 세트명도 '매칭됨'으로 인식
+export function setBomSets(names: string[]): void {
+  const m: Record<string, string> = {};
+  for (const n of names) { const s = String(n || '').trim(); if (!s) continue; const nk = normKey(s); if (nk && !(nk in m)) m[nk] = s; }
+  BOM_SET_NORM = m;
+}
 
 export function setDbMatches(rows: { collect_name?: string; product_name?: string }[]): void {
   const m: Record<string, string> = {};
@@ -901,6 +909,10 @@ export async function loadDbMatches(force = false): Promise<void> {
     );
     setDbMatches(rows);
   } catch { /* 매칭 테이블 없거나 조회 실패해도 하드코딩 매칭으로 동작 */ }
+  try {
+    const bom = await supabaseFetchAll<{ set_name: string }>('/product_bom?select=set_name');
+    setBomSets(Array.from(new Set(bom.map(b => b.set_name).filter(Boolean))));
+  } catch { /* BOM 없어도 매칭 정상 동작 */ }
 }
 
 // 수집상품명을 매칭데이터 기준 대표상품명으로 변환 + 매칭 여부 반환
@@ -917,7 +929,9 @@ export function matchProduct(collectName: string): { name: string; matched: bool
     || PRODUCT_MAP_NORM[normKey(cleanName)] || PRODUCT_MAP_NORM[normKey(raw)]
     // 최후 폴백: 입력이 이미 대표상품명이면 자기 자신으로 매칭(직접주문·수기 캐논명)
     || DB_MATCH_VAL_NORM[normKey(cleanName)] || DB_MATCH_VAL_NORM[normKey(raw)]
-    || PRODUCT_MAP_VAL_NORM[normKey(cleanName)] || PRODUCT_MAP_VAL_NORM[normKey(raw)];
+    || PRODUCT_MAP_VAL_NORM[normKey(cleanName)] || PRODUCT_MAP_VAL_NORM[normKey(raw)]
+    // 세트구성(BOM)에 등록된 세트명도 매칭으로 인정
+    || BOM_SET_NORM[normKey(cleanName)] || BOM_SET_NORM[normKey(raw)];
   return { name: mapped || cleanName || raw, matched: !!mapped };
 }
 
