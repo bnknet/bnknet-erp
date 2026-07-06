@@ -98,6 +98,11 @@ export default function CardsContent() {
   const [rangeFrom, setRangeFrom] = useState('');
   const [rangeTo, setRangeTo] = useState('');
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
+  // 선결제 처리 (미결제 매입을 골라 앞당겨 결제 → 한도 복구)
+  const [prepayOpen, setPrepayOpen] = useState(false);
+  const [prepayChecked, setPrepayChecked] = useState<Set<string>>(new Set());
+  const [prepayDate, setPrepayDate] = useState('');
+  const [prepaySaving, setPrepaySaving] = useState(false);
 
   const loadCards = useCallback(async () => {
     const res = await supabaseFetch('/cards?order=sort_order.asc,created_at.asc');
@@ -458,6 +463,68 @@ export default function CardsContent() {
     </div>
   );
 
+  // ── 선결제 처리 ── 미결제 매입(결제일 안 지난 카드구매)을 골라 앞당겨 결제 → 결제예정일을 선결제일로 → 한도 복구
+  const prepayCandidates = purchases.filter(p =>
+    !p.is_card_payment
+    && !!p.payment_due_date && p.payment_due_date >= todayStr
+    && p.purchase_status !== 'canceled'
+    && (typeFilter === 'all' || cardTypeOf(p.card_id) === typeFilter),
+  ).sort((a, b) => (a.payment_due_date || '').localeCompare(b.payment_due_date || ''));
+  const prepayTotal = prepayCandidates.filter(p => prepayChecked.has(p.id)).reduce((s, p) => s + (p.total_amount || 0), 0);
+  const togglePrepay = (id: string) => setPrepayChecked(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  async function processPrepay() {
+    if (!prepayDate || prepayChecked.size === 0) return;
+    setPrepaySaving(true);
+    try {
+      for (const id of prepayChecked) {
+        await supabaseFetch(`/approvals?id=eq.${id}`, {
+          method: 'PATCH', headers: { Prefer: 'return=minimal' },
+          body: JSON.stringify({ payment_due_date: prepayDate, updated_at: new Date().toISOString() }),
+        });
+      }
+      await logCardChange('선결제처리', `${prepayChecked.size}건 · ${won(prepayTotal)}원`, `결제예정일 → ${prepayDate} 로 앞당겨 결제(한도복구)`, me?.name || '').catch(() => {});
+      setPrepayOpen(false);
+      setPrepayChecked(new Set());
+      await loadPurchases();
+    } catch (e) { alert('선결제 처리 중 오류: ' + ((e as Error)?.message || e)); }
+    finally { setPrepaySaving(false); }
+  }
+  const prepayModal = prepayOpen && (
+    <div className="fixed inset-0 bg-black/40 z-[60] flex items-end sm:items-center justify-center sm:p-4">
+      <div className="bg-white w-full sm:max-w-2xl rounded-t-2xl sm:rounded-2xl shadow-xl max-h-[92vh] flex flex-col">
+        <div className="px-5 py-4 border-b border-gray-100">
+          <h3 className="text-lg font-bold text-gray-800">💚 선결제 처리 (한도 복구)</h3>
+          <p className="text-sm text-gray-400 mt-0.5">앞당겨 결제한 매입 건을 골라 결제일을 넣으면, 그 날짜로 결제 처리되어 <b>잔여한도가 복구</b>됩니다. (별도 선결제 결재 안 올려도 됨 — 이중복구 없음)</p>
+        </div>
+        <div className="px-5 py-3 border-b border-gray-100 flex items-center gap-2 flex-wrap">
+          <label className="text-sm font-medium text-gray-600">선결제일(실제 결제일)</label>
+          <input type="date" value={prepayDate} onChange={e => setPrepayDate(e.target.value)}
+            className="px-3 py-2 border border-gray-200 rounded-lg text-base" />
+          <span className="text-sm text-gray-500 ml-auto">선택 <b className="text-green-600">{prepayChecked.size}</b>건 · {won(prepayTotal)}원</span>
+        </div>
+        <div className="overflow-auto flex-1 divide-y divide-gray-50">
+          {prepayCandidates.length === 0 ? (
+            <div className="text-center py-12 text-gray-400">선결제할 미결제 매입이 없습니다</div>
+          ) : prepayCandidates.map(p => (
+            <label key={p.id} className="flex items-center gap-3 px-5 py-3 cursor-pointer hover:bg-green-50/40">
+              <input type="checkbox" checked={prepayChecked.has(p.id)} onChange={() => togglePrepay(p.id)} className="w-4 h-4 accent-green-600 flex-shrink-0" />
+              <div className="flex-1 min-w-0">
+                <div className="text-base text-gray-800 font-medium truncate">{cardName(p.card_id)} · {p.purchase_vendor || '구매'}</div>
+                <div className="text-xs text-gray-400">결제예정 {p.payment_due_date} · {p.company}</div>
+              </div>
+              <div className="text-base font-semibold text-gray-700 tabular-nums flex-shrink-0">{won(p.total_amount)}원</div>
+            </label>
+          ))}
+        </div>
+        <div className="px-5 py-4 border-t border-gray-100 flex gap-2">
+          <button onClick={processPrepay} disabled={prepaySaving || prepayChecked.size === 0 || !prepayDate}
+            className="flex-1 px-5 py-2.5 bg-green-600 hover:bg-green-700 disabled:bg-green-300 text-white rounded-xl text-base font-bold">{prepaySaving ? '처리 중...' : `선결제 처리 (${prepayChecked.size}건)`}</button>
+          <button onClick={() => setPrepayOpen(false)} className="px-5 py-2.5 border border-gray-200 text-gray-600 rounded-xl text-base hover:bg-gray-50">닫기</button>
+        </div>
+      </div>
+    </div>
+  );
+
   // ── 카드 폼 모달 ──
   const cardFormModal = showForm && (
     <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4 overflow-y-auto">
@@ -614,6 +681,10 @@ export default function CardsContent() {
           </div>
           <div className="flex items-center justify-between gap-2 flex-wrap">
             <p className="text-xs text-gray-400">💡 잔여한도(실시간) = 6/30 잔여 기준값에서 시작 · 카드구매 결재 −차감 / 선결제 결재 +복구. (6/30 기준값은 카드 수정에서 확인·변경)</p>
+            {canManage && (
+              <button onClick={() => { setPrepayDate(todayStr); setPrepayChecked(new Set()); setPrepayOpen(true); }}
+                className="px-4 py-2 text-sm font-medium bg-green-600 hover:bg-green-700 text-white rounded-lg whitespace-nowrap">💚 선결제 처리</button>
+            )}
             <button onClick={viewPurchase}
               className="px-4 py-2 text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white rounded-lg whitespace-nowrap">📄 카드 구매내역 보기</button>
             <button onClick={exportPurchaseExcel}
@@ -940,6 +1011,7 @@ export default function CardsContent() {
 
       {cardFormModal}
       {tableViewModal}
+      {prepayModal}
 
       {/* 결제 내역 상세 모달 */}
       {detailEvent && (
