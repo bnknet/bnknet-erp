@@ -805,15 +805,15 @@ export default function CardsContent() {
         <div className="space-y-4">
           {/* 전체 요약 */}
           <div className="bg-gradient-to-r from-slate-800 to-slate-600 rounded-2xl p-5 text-white">
-            <div className="flex items-center justify-between flex-wrap gap-3">
-              <div>
-                <div className="text-sm text-slate-300">{typeFilter === 'all' ? '전체' : typeFilter} · 한도 / 사용중 / 잔여</div>
-                <div className="text-2xl font-bold mt-1">
-                  잔여 {won(totalLimit - totalUsed)}원
-                  <span className="text-base font-normal text-slate-300"> · 사용 {won(totalUsed)} / 한도 {won(totalLimit)}</span>
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="text-sm text-slate-300">{typeFilter === 'all' ? '전체' : typeFilter} · 잔여한도</div>
+                <div className="text-2xl font-bold mt-1 tabular-nums break-keep">잔여 {won(totalLimit - totalUsed)}원</div>
+                <div className="text-sm font-normal text-slate-300 mt-1.5 tabular-nums">
+                  사용 {won(totalUsed)}원 · 한도 {won(totalLimit)}원
                 </div>
               </div>
-              <div className="text-xs text-slate-300 text-right">미결제 = 결제일 안 지난 매입<br />결제일 지나면 자동 회복</div>
+              <div className="text-xs text-slate-300 text-right flex-shrink-0">미결제 =<br />결제일 안 지난 매입<br />결제일 지나면 자동 회복</div>
             </div>
             {totalLimit > 0 && (
               <div className="mt-3">
@@ -889,11 +889,11 @@ export default function CardsContent() {
       ) : tab === 'cards' ? (
         // ─────────── 카드 목록 ───────────
         <div className="space-y-4">
-          <div className="flex justify-between items-center">
-            <p className="text-base text-gray-500">사업자(담당자)별 카드와 결제 주기를 관리합니다.</p>
+          <div className="flex justify-between items-center gap-3">
+            <p className="text-sm sm:text-base text-gray-500 min-w-0">사업자(담당자)별 카드와 결제 주기를 관리합니다.</p>
             {canManage && (
               <button onClick={() => { setForm({ ...EMPTY_CARD }); setEditId(null); setShowForm(true); }}
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-base font-medium">+ 카드 등록</button>
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm sm:text-base font-medium whitespace-nowrap flex-shrink-0">+ 카드 등록</button>
             )}
           </div>
 
