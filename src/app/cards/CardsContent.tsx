@@ -809,8 +809,9 @@ export default function CardsContent() {
               <div className="min-w-0">
                 <div className="text-sm text-slate-300">{typeFilter === 'all' ? '전체' : typeFilter} · 잔여한도</div>
                 <div className="text-2xl font-bold mt-1 tabular-nums break-keep">잔여 {won(totalLimit - totalUsed)}원</div>
-                <div className="text-sm font-normal text-slate-300 mt-1.5 tabular-nums">
-                  사용 {won(totalUsed)}원 · 한도 {won(totalLimit)}원
+                <div className="text-sm font-normal text-slate-300 mt-1.5 tabular-nums space-y-0.5">
+                  <div>사용 {won(totalUsed)}원</div>
+                  <div>한도 {won(totalLimit)}원</div>
                 </div>
               </div>
               <div className="text-xs text-slate-300 text-right flex-shrink-0">미결제 =<br />결제일 안 지난 매입<br />결제일 지나면 자동 회복</div>
