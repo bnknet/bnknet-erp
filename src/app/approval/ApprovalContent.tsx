@@ -247,6 +247,10 @@ export default function ApprovalContent() {
   const [cardEditOpen, setCardEditOpen] = useState(false);
   const [cardEditVal, setCardEditVal] = useState('');
   const [cardEditSaving, setCardEditSaving] = useState(false);
+  // 승인된 선결제 건의 선결제일(한도복구일) 수정
+  const [spendEditOpen, setSpendEditOpen] = useState(false);
+  const [spendEditVal, setSpendEditVal] = useState('');
+  const [spendEditSaving, setSpendEditSaving] = useState(false);
   const [attachments, setAttachments] = useState<{ name: string; url: string }[]>([]);
   const [uploading, setUploading] = useState(false);
   const [items, setItems] = useState<ApprovalItem[]>(
@@ -497,6 +501,26 @@ export default function ApprovalContent() {
       await loadApprovals();
     } catch (e) { alert('카드 수정 중 오류: ' + ((e as Error)?.message || e)); }
     finally { setCardEditSaving(false); }
+  }
+
+  // 승인된 선결제 건의 선결제일(=결제 캘린더 표시일) 수정. 한도 복구는 즉시·날짜무관이라 변동 없음.
+  async function saveSpendEdit() {
+    if (!selected) return;
+    if (!spendEditVal) { alert('선결제일을 입력하세요.'); return; }
+    setSpendEditSaving(true);
+    try {
+      const res = await supabaseFetch(`/approvals?id=eq.${selected.id}`, {
+        method: 'PATCH', headers: { Prefer: 'return=minimal' },
+        body: JSON.stringify({ spend_date: spendEditVal, updated_at: new Date().toISOString() }),
+      });
+      if (!res.ok) { alert(`선결제일 수정 실패 (HTTP ${res.status})`); return; }
+      await logCardChange('선결제일수정', `${selected.doc_type} ${selected.total_amount?.toLocaleString?.() || ''}원`,
+        `선결제일 ${selected.spend_date || '-'} → ${spendEditVal}`, me?.name || '').catch(() => {});
+      setSpendEditOpen(false);
+      await loadDetail(selected.id);
+      await loadApprovals();
+    } catch (e) { alert('선결제일 수정 중 오류: ' + ((e as Error)?.message || e)); }
+    finally { setSpendEditSaving(false); }
   }
 
   async function handleSave(submitNow = false) {
@@ -1173,6 +1197,29 @@ export default function ApprovalContent() {
                       <button onClick={() => setCardEditOpen(false)}
                         className="px-4 py-2 border border-gray-200 text-gray-600 rounded-lg text-base hover:bg-gray-50">취소</button>
                       <p className="w-full text-xs text-gray-400">카드를 바꾸면 결제예정일이 새 카드 기준으로 재계산되고, 결제 캘린더·잔여한도에 자동 반영됩니다.</p>
+                    </div>
+                  )}
+                  {/* 선결제(한도복구) 건: 선결제일(=캘린더 표시일) 수정 — 승인 후에도 대표·실장이 교정 */}
+                  {selected.doc_type === '카드구매' && selected.is_card_payment && selected.status === 'approved' && (isCeo || isAdmin) && (
+                    <div className="mt-2 no-print">
+                      {!spendEditOpen ? (
+                        <div className="text-base">
+                          <span className="font-medium text-gray-700">💚 선결제일(한도복구일)</span>
+                          <span className="ml-2 text-gray-600">{selected.spend_date || '-'}</span>
+                          <button onClick={() => { setSpendEditVal(selected.spend_date || today()); setSpendEditOpen(true); }}
+                            className="ml-2 text-sm text-blue-600 hover:underline">선결제일 수정</button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2 flex-wrap bg-white border border-green-200 rounded-lg p-2.5">
+                          <input type="date" value={spendEditVal} onChange={e => setSpendEditVal(e.target.value)}
+                            className="px-3 py-2 border border-gray-200 rounded-lg text-base" />
+                          <button onClick={saveSpendEdit} disabled={spendEditSaving}
+                            className="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-green-300 text-white rounded-lg text-base font-medium">{spendEditSaving ? '저장 중...' : '저장'}</button>
+                          <button onClick={() => setSpendEditOpen(false)}
+                            className="px-4 py-2 border border-gray-200 text-gray-600 rounded-lg text-base hover:bg-gray-50">취소</button>
+                          <p className="w-full text-xs text-gray-400">선결제일(실제 결제·한도복구일)을 바꾸면 결제 캘린더의 표시 날짜가 이동합니다. <b>잔여한도는 변동 없음.</b></p>
+                        </div>
+                      )}
                     </div>
                   )}
                   {(selected.purchase_status === 'canceled' || selected.purchase_status === 'partial') && (
