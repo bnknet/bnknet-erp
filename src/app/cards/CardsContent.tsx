@@ -211,7 +211,9 @@ export default function CardsContent() {
   const purchaseById = (id: string) => purchases.find(p => p.id === id);
   // 매입별 취소금액 합 (부분취소 포함)
   const canceledAmtByPurchase: Record<string, number> = {};
+  const canceledItemIds = new Set<string>();
   for (const ci of canceledItems) {
+    if (ci.id) canceledItemIds.add(ci.id);
     if (ci.approval_id) canceledAmtByPurchase[ci.approval_id] = (canceledAmtByPurchase[ci.approval_id] || 0) + (ci.amount || 0);
   }
   // 매입별 '이미 복구된' 선결제 금액 합 (선결제일이 오늘까지 지난 것만 한도 복구)
@@ -220,6 +222,7 @@ export default function CardsContent() {
   const prepaidTotalByPurchase: Record<string, number> = {};
   for (const pi of prepaidItems) {
     if (!pi.approval_id) continue;
+    if (pi.id && canceledItemIds.has(pi.id)) continue; // 취소된 항목은 환불로 처리 → 선결제 복구와 이중차감 방지
     prepaidTotalByPurchase[pi.approval_id] = (prepaidTotalByPurchase[pi.approval_id] || 0) + (pi.amount || 0);
     if (pi.prepaid_date && pi.prepaid_date <= todayStr) {
       prepaidAmtByPurchase[pi.approval_id] = (prepaidAmtByPurchase[pi.approval_id] || 0) + (pi.amount || 0);
@@ -249,6 +252,7 @@ export default function CardsContent() {
   // 선결제 이벤트 = 부분 선결제한 날 실제로 카드사에 나간 돈(+출금).
   // 예정일 청구액은 이미 그만큼 차감돼 있으므로(위 net) 합치면 전체금액 = 이중반영 없음.
   for (const pi of prepaidItems) {
+    if (pi.id && canceledItemIds.has(pi.id)) continue; // 취소된 항목은 환불로만 표시(이중반영 방지)
     const p = pi.approval_id ? purchaseById(pi.approval_id) : null;
     if (p && pi.prepaid_date && pi.amount) {
       events.push({ date: pi.prepaid_date, cardId: p.card_id, amount: (pi.amount || 0), type: 'prepay', purchase: p });
@@ -348,7 +352,7 @@ export default function CardsContent() {
         if (p.is_card_payment) return s - (p.total_amount || 0); // 선결제 = 한도 복구(크레딧), 즉시 반영
         if (p.payment_due_date && p.payment_due_date >= todayStr) {
           // 미결제 매입 − 취소분 − 이미 선결제(한도복구)된 항목분
-          return s + Math.max(0, p.total_amount - (canceledAmtByPurchase[p.id] || 0) - (prepaidAmtByPurchase[p.id] || 0));
+          return s + Math.max(0, (p.total_amount || 0) - (canceledAmtByPurchase[p.id] || 0) - (prepaidAmtByPurchase[p.id] || 0));
         }
         return s;
       }, 0);
@@ -515,17 +519,17 @@ export default function CardsContent() {
     }
   }
   const togglePrepayItem = (key: string) => setPrepayItemChecked(prev => { const n = new Set(prev); if (n.has(key)) n.delete(key); else n.add(key); return n; });
-  // 체크한 키(itemId 또는 appr:approvalId)의 금액
-  function prepayKeyInfo(key: string): { amount: number; label: string; cardId: string } {
+  // 체크한 키(itemId 또는 appr:approvalId)의 금액·라벨·카드·결제예정일
+  function prepayKeyInfo(key: string): { amount: number; label: string; cardId: string; due: string } {
     if (key.startsWith('appr:')) {
       const p = prepayCandidates.find(x => x.id === key.slice(5));
-      return { amount: p?.total_amount || 0, label: `${p?.purchase_vendor || '구매'} 전체`, cardId: p?.card_id || '' };
+      return { amount: p?.total_amount || 0, label: `${p?.purchase_vendor || '구매'} 전체`, cardId: p?.card_id || '', due: p?.payment_due_date || '' };
     }
     for (const [aid, items] of Object.entries(prepayItemsMap)) {
       const it = items.find(x => x.id === key);
-      if (it) { const p = prepayCandidates.find(x => x.id === aid); return { amount: it.amount || 0, label: it.description || '항목', cardId: p?.card_id || '' }; }
+      if (it) { const p = prepayCandidates.find(x => x.id === aid); return { amount: it.amount || 0, label: it.description || '항목', cardId: p?.card_id || '', due: p?.payment_due_date || '' }; }
     }
-    return { amount: 0, label: '항목', cardId: '' };
+    return { amount: 0, label: '항목', cardId: '', due: '' };
   }
   const prepaySelKeys = Array.from(prepayItemChecked);
   const prepaySelTotal = prepaySelKeys.reduce((s, k) => s + prepayKeyInfo(k).amount, 0);
@@ -539,6 +543,13 @@ export default function CardsContent() {
 
   async function processPrepay() {
     if (!prepayDate || prepaySelKeys.length === 0) return;
+    // 선결제일은 결제예정일 이전이어야 자금흐름이 맞음(앞당겨 결제이므로)
+    const lateKey = prepaySelKeys.find(k => { const d = prepayKeyInfo(k).due; return d && prepayDate > d; });
+    if (lateKey) {
+      const d = prepayKeyInfo(lateKey).due;
+      alert(`선결제일(${prepayDate})이 결제예정일(${d})보다 늦습니다.\n앞당겨 결제하는 것이므로 선결제일은 결제예정일 이전으로 지정하세요.`);
+      return;
+    }
     if (!confirm(`선택한 구매상품 ${prepaySelKeys.length}건 (${won(prepaySelTotal)}원)을 ${prepayDate}에 선결제 처리할까요?\n\n→ 선택한 항목 금액만 ${prepayDate}에 결제 처리되어 잔여한도가 복구됩니다. (매입 전체가 아니라 고른 상품만)`)) return;
     setPrepaySaving(true);
     try {
@@ -1196,17 +1207,18 @@ export default function CardsContent() {
               {detailItems.length === 0 ? (
                 <div className="text-center py-4 text-sm text-gray-400">상세 품목이 없습니다</div>
               ) : detailItems.map((it, i) => (
-                <div key={i} className={`flex border-t border-gray-100 text-sm ${it.canceled ? 'bg-red-50/50' : ''}`}>
+                <div key={i} className={`flex border-t border-gray-100 text-sm ${it.canceled ? 'bg-red-50/50' : it.prepaid_date ? 'bg-green-50/40' : ''}`}>
                   {canManage && detailEvent.type === 'charge' && (
                     <div className="w-8 px-2 py-2 flex items-center justify-center">
-                      {it.canceled ? <span className="text-[10px] text-red-500">취소</span> : (
+                      {it.canceled ? <span className="text-[10px] text-red-500">취소</span>
+                        : it.prepaid_date ? <span className="text-[10px] text-green-600">선결제</span> : (
                         <input type="checkbox" checked={cancelChecked.has(it.id || '')}
                           onChange={() => setCancelChecked(prev => { const n = new Set(prev); const k = it.id || ''; n.has(k) ? n.delete(k) : n.add(k); return n; })}
                           className="w-4 h-4 rounded border-gray-300 text-red-600 cursor-pointer" />
                       )}
                     </div>
                   )}
-                  <div className={`flex-1 px-3 py-2 ${it.canceled ? 'text-red-400 line-through' : 'text-gray-700'}`}>{it.description || '-'}</div>
+                  <div className={`flex-1 px-3 py-2 ${it.canceled ? 'text-red-400 line-through' : 'text-gray-700'}`}>{it.description || '-'}{it.prepaid_date && !it.canceled && <span className="text-[11px] text-green-600 ml-1">· 선결제 {it.prepaid_date}</span>}</div>
                   <div className="w-16 px-2 py-2 text-right text-gray-600">{it.quantity ? it.quantity.toLocaleString() : '-'}</div>
                   <div className="w-28 px-3 py-2 text-right text-gray-700">{it.amount ? it.amount.toLocaleString() : '-'}</div>
                 </div>
