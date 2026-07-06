@@ -172,6 +172,14 @@ function cardKind(a: { doc_type: string; is_card_payment?: boolean }): { text: s
     : { text: '카드구매(매입) · 한도차감', cls: 'bg-orange-100 text-orange-700' };
 }
 
+// 폰에서 엑셀/워드/PPT 첨부를 앱 없이 열기 — MS Office 온라인 뷰어 경유(공개 URL 대상).
+// 이미지·PDF는 브라우저가 바로 열 수 있어 그대로 둔다.
+function attachmentHref(url: string): string {
+  return /\.(xlsx?|docx?|pptx?)(\?.*)?$/i.test(url)
+    ? `https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(url)}`
+    : url;
+}
+
 interface LeaveRow {
   id: string;
   name: string;
@@ -1181,7 +1189,7 @@ export default function ApprovalContent() {
                   <div className="text-sm font-medium text-gray-600 mb-2">📎 첨부파일 (영수증·증빙)</div>
                   <div className="space-y-1.5 no-print">
                     {selected.attachments.map((f, i) => (
-                      <a key={i} href={f.url} target="_blank" rel="noopener noreferrer"
+                      <a key={i} href={attachmentHref(f.url)} target="_blank" rel="noopener noreferrer"
                         className="flex items-center gap-2 text-sm text-blue-600 hover:underline">
                         <span>📄</span>{f.name}
                       </a>
@@ -1660,7 +1668,7 @@ export default function ApprovalContent() {
                 <div className="space-y-1.5">
                   {attachments.map((f, i) => (
                     <div key={i} className="flex items-center justify-between bg-white border border-gray-100 rounded-lg px-3 py-2">
-                      <a href={f.url} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-600 hover:underline truncate">{f.name}</a>
+                      <a href={attachmentHref(f.url)} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-600 hover:underline truncate">{f.name}</a>
                       <button onClick={() => setAttachments(prev => prev.filter((_, idx) => idx !== i))}
                         className="text-xs text-gray-400 hover:text-red-500 ml-2 flex-shrink-0">삭제</button>
                     </div>
