@@ -251,6 +251,10 @@ export default function ApprovalContent() {
   const [spendEditOpen, setSpendEditOpen] = useState(false);
   const [spendEditVal, setSpendEditVal] = useState('');
   const [spendEditSaving, setSpendEditSaving] = useState(false);
+  // 승인된 카드매입 건의 결제예정일(앞당겨 결제 시) 수정
+  const [dueEditOpen, setDueEditOpen] = useState(false);
+  const [dueEditVal, setDueEditVal] = useState('');
+  const [dueEditSaving, setDueEditSaving] = useState(false);
   const [attachments, setAttachments] = useState<{ name: string; url: string }[]>([]);
   const [uploading, setUploading] = useState(false);
   const [items, setItems] = useState<ApprovalItem[]>(
@@ -521,6 +525,27 @@ export default function ApprovalContent() {
       await loadApprovals();
     } catch (e) { alert('선결제일 수정 중 오류: ' + ((e as Error)?.message || e)); }
     finally { setSpendEditSaving(false); }
+  }
+
+  // 승인된 카드매입 건의 결제예정일 수정 — 카드값을 앞당겨 결제한 경우 실제 결제일로.
+  // 한도는 결제예정일 기준 자동복구라, 날짜를 앞당기면 그날 한도가 복구됨(선결제 대체).
+  async function saveDueEdit() {
+    if (!selected || !(isCeo || isAdmin) || selected.status !== 'approved') return;
+    if (!dueEditVal) { alert('결제예정일을 입력하세요.'); return; }
+    setDueEditSaving(true);
+    try {
+      const res = await supabaseFetch(`/approvals?id=eq.${selected.id}`, {
+        method: 'PATCH', headers: { Prefer: 'return=minimal' },
+        body: JSON.stringify({ payment_due_date: dueEditVal, updated_at: new Date().toISOString() }),
+      });
+      if (!res.ok) { alert(`결제예정일 수정 실패 (HTTP ${res.status})`); return; }
+      await logCardChange('결제예정일수정', `${selected.doc_type} ${selected.total_amount?.toLocaleString?.() || ''}원`,
+        `결제예정일 ${selected.payment_due_date || '-'} → ${dueEditVal} (앞당겨 결제)`, me?.name || '').catch(() => {});
+      setDueEditOpen(false);
+      await loadDetail(selected.id);
+      await loadApprovals();
+    } catch (e) { alert('결제예정일 수정 중 오류: ' + ((e as Error)?.message || e)); }
+    finally { setDueEditSaving(false); }
   }
 
   async function handleSave(submitNow = false) {
@@ -1252,6 +1277,25 @@ export default function ApprovalContent() {
                           <button onClick={() => setSpendEditOpen(false)}
                             className="px-4 py-2 border border-gray-200 text-gray-600 rounded-lg text-base hover:bg-gray-50">취소</button>
                           <p className="w-full text-xs text-gray-400">선결제일(실제 결제·한도복구일)을 바꾸면 결제 캘린더의 표시 날짜가 이동합니다. <b>잔여한도는 변동 없음.</b></p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  {/* 카드매입 건: 앞당겨 결제한 경우 결제예정일을 실제 결제일로 → 그날 한도 복구 (선결제 대체) */}
+                  {selected.doc_type === '카드구매' && !selected.is_card_payment && selected.status === 'approved' && (isCeo || isAdmin) && (
+                    <div className="mt-2 no-print">
+                      {!dueEditOpen ? (
+                        <button onClick={() => { setDueEditVal(selected.payment_due_date || today()); setDueEditOpen(true); }}
+                          className="text-sm text-blue-600 hover:underline">결제예정일 수정 (카드값 앞당겨 결제 시)</button>
+                      ) : (
+                        <div className="flex items-center gap-2 flex-wrap bg-white border border-blue-200 rounded-lg p-2.5">
+                          <input type="date" value={dueEditVal} onChange={e => setDueEditVal(e.target.value)}
+                            className="px-3 py-2 border border-gray-200 rounded-lg text-base" />
+                          <button onClick={saveDueEdit} disabled={dueEditSaving}
+                            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white rounded-lg text-base font-medium">{dueEditSaving ? '저장 중...' : '저장'}</button>
+                          <button onClick={() => setDueEditOpen(false)}
+                            className="px-4 py-2 border border-gray-200 text-gray-600 rounded-lg text-base hover:bg-gray-50">취소</button>
+                          <p className="w-full text-xs text-gray-400">카드값을 앞당겨 결제했으면 <b>실제 결제일</b>로 바꾸세요 → 그날 잔여한도가 복구되고 캘린더도 이동합니다. (별도 선결제를 올리면 <b>이중복구</b>되니 올리지 마세요)</p>
                         </div>
                       )}
                     </div>
