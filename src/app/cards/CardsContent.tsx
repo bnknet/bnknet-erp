@@ -615,9 +615,9 @@ export default function CardsContent() {
           <div className="flex items-center justify-between gap-2 flex-wrap">
             <p className="text-xs text-gray-400">💡 잔여한도(실시간) = 6/30 잔여 기준값에서 시작 · 카드구매 결재 −차감 / 선결제 결재 +복구. (6/30 기준값은 카드 수정에서 확인·변경)</p>
             <button onClick={viewPurchase}
-              className="px-3 py-1.5 text-sm border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50 whitespace-nowrap">📄 구매내역 보기</button>
+              className="px-4 py-2 text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white rounded-lg whitespace-nowrap">📄 구매내역 화면보기</button>
             <button onClick={exportPurchaseExcel}
-              className="px-3 py-1.5 text-sm border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50 whitespace-nowrap">📊 카드 구매내역 엑셀 (세무용)</button>
+              className="px-4 py-2 text-sm border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50 whitespace-nowrap">⬇ 구매내역 엑셀 다운로드 (세무용)</button>
           </div>
 
           {/* 사업자 필터 */}
@@ -779,8 +779,8 @@ export default function CardsContent() {
                 className="ml-1 px-2 py-1 text-sm border border-gray-200 rounded-lg text-gray-500 hover:bg-gray-50">오늘</button>
             </div>
             <div className="flex gap-2">
-              <button onClick={viewSchedule} className="px-3 py-1.5 text-sm border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50 whitespace-nowrap">📄 보기</button>
-              <button onClick={exportExcel} className="px-3 py-1.5 text-sm border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50">📊 엑셀</button>
+              <button onClick={viewSchedule} className="px-4 py-2 text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white rounded-lg whitespace-nowrap">📄 화면으로 보기</button>
+              <button onClick={exportExcel} className="px-4 py-2 text-sm border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50 whitespace-nowrap">⬇ 엑셀 다운로드</button>
             </div>
           </div>
 
