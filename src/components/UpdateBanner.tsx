@@ -40,19 +40,12 @@ export default function UpdateBanner() {
 
   return (
     <div className="fixed top-0 inset-x-0 z-[100] bg-blue-600 text-white px-4 py-2.5 flex items-center justify-center gap-3 shadow-md">
-      <span className="text-sm font-medium">새 버전이 있어요.</span>
+      <span className="text-sm font-medium">새 버전이 있어요. 눌러서 업데이트하세요.</span>
       <button
         onClick={() => window.location.reload()}
-        className="px-3 py-1 bg-white text-blue-700 rounded-lg text-sm font-bold hover:bg-blue-50 whitespace-nowrap"
+        className="px-4 py-1.5 bg-white text-blue-700 rounded-lg text-sm font-bold hover:bg-blue-50 whitespace-nowrap"
       >
         새로고침
-      </button>
-      <button
-        onClick={() => setShow(false)}
-        aria-label="닫기"
-        className="text-white/70 hover:text-white text-xl leading-none ml-1"
-      >
-        ×
       </button>
     </div>
   );
