@@ -1291,11 +1291,17 @@ export default function ApprovalContent() {
                         <div className="flex items-center gap-2 flex-wrap bg-white border border-blue-200 rounded-lg p-2.5">
                           <input type="date" value={dueEditVal} onChange={e => setDueEditVal(e.target.value)}
                             className="px-3 py-2 border border-gray-200 rounded-lg text-base" />
+                          <button type="button" onClick={() => {
+                            const card = cards.find(c => c.id === selected.card_id);
+                            if (!card) { alert('카드 정보가 없어 자동계산할 수 없습니다.'); return; }
+                            const d = computePaymentDate(selected.issue_date || '', card.billing_day, card.close_day);
+                            if (d) setDueEditVal(d); else alert('계산에 실패했습니다.');
+                          }} className="px-3 py-2 text-sm border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50 whitespace-nowrap">원래 청구일 자동계산</button>
                           <button onClick={saveDueEdit} disabled={dueEditSaving}
                             className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white rounded-lg text-base font-medium">{dueEditSaving ? '저장 중...' : '저장'}</button>
                           <button onClick={() => setDueEditOpen(false)}
                             className="px-4 py-2 border border-gray-200 text-gray-600 rounded-lg text-base hover:bg-gray-50">취소</button>
-                          <p className="w-full text-xs text-gray-400">카드값을 앞당겨 결제했으면 <b>실제 결제일</b>로 바꾸세요 → 그날 잔여한도가 복구되고 캘린더도 이동합니다. (별도 선결제를 올리면 <b>이중복구</b>되니 올리지 마세요)</p>
+                          <p className="w-full text-xs text-gray-400">앞당겨 결제했으면 <b>실제 결제일</b>로, 잘못 바꾼 걸 되돌리려면 <b>‘원래 청구일 자동계산’</b>을 누르세요 → 저장. (별도 선결제 올리면 이중복구되니 올리지 마세요)</p>
                         </div>
                       )}
                     </div>
