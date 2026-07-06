@@ -216,8 +216,12 @@ export default function CardsContent() {
   }
   // 매입별 '이미 복구된' 선결제 금액 합 (선결제일이 오늘까지 지난 것만 한도 복구)
   const prepaidAmtByPurchase: Record<string, number> = {};
+  // 매입별 선결제 총액 (예정일 청구액에서 차감 — 앞당겨 낸 만큼 카드값이 줄어듦)
+  const prepaidTotalByPurchase: Record<string, number> = {};
   for (const pi of prepaidItems) {
-    if (pi.approval_id && pi.prepaid_date && pi.prepaid_date <= todayStr) {
+    if (!pi.approval_id) continue;
+    prepaidTotalByPurchase[pi.approval_id] = (prepaidTotalByPurchase[pi.approval_id] || 0) + (pi.amount || 0);
+    if (pi.prepaid_date && pi.prepaid_date <= todayStr) {
       prepaidAmtByPurchase[pi.approval_id] = (prepaidAmtByPurchase[pi.approval_id] || 0) + (pi.amount || 0);
     }
   }
@@ -230,7 +234,9 @@ export default function CardsContent() {
       const d = p.spend_date || p.payment_due_date;
       if (d) events.push({ date: d, cardId: p.card_id, amount: -(p.total_amount || 0), type: 'prepay', purchase: p });
     } else if (p.payment_due_date) {
-      events.push({ date: p.payment_due_date, cardId: p.card_id, amount: p.total_amount, type: 'charge', purchase: p });
+      // 예정일 청구액 = 매입 전액 − 선결제분 (앞당겨 낸 만큼 실제 카드값에서 빠짐)
+      const net = (p.total_amount || 0) - (prepaidTotalByPurchase[p.id] || 0);
+      if (net > 0) events.push({ date: p.payment_due_date, cardId: p.card_id, amount: net, type: 'charge', purchase: p });
     }
   }
   // 환불 이벤트 = 취소된 항목별 (부분취소 지원)
@@ -240,13 +246,7 @@ export default function CardsContent() {
       events.push({ date: ci.refund_due_date, cardId: p.card_id, amount: -(ci.amount || 0), type: 'refund', purchase: p });
     }
   }
-  // 선결제 이벤트 = 부분 선결제된 항목별 (그날 한도 복구 / 선결제일에 앞당겨 결제)
-  for (const pi of prepaidItems) {
-    const p = pi.approval_id ? purchaseById(pi.approval_id) : null;
-    if (p && pi.prepaid_date && pi.amount) {
-      events.push({ date: pi.prepaid_date, cardId: p.card_id, amount: -(pi.amount || 0), type: 'prepay', purchase: p });
-    }
-  }
+  // (부분 선결제분은 예정일 청구액에서 이미 차감 — 별도 −이벤트를 만들면 이중반영되므로 안 만든다)
 
   async function openPurchaseDetail(e: PayEvent) {
     setDetailEvent(e);
