@@ -319,10 +319,11 @@ export default function ApprovalContent() {
 
   // 카드구매 선택 시 지출일을 해당 카드 결제일로 자동 설정
   useEffect(() => {
-    if (docType === '카드구매' && paymentDuePreview && spendDate !== paymentDuePreview) {
+    // 선결제(한도복구)는 실제 결제/복구일을 담당자가 지정 → 자동 고정하지 않음
+    if (docType === '카드구매' && !isPrepay && paymentDuePreview && spendDate !== paymentDuePreview) {
       setSpendDate(paymentDuePreview);
     }
-  }, [docType, paymentDuePreview]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [docType, isPrepay, paymentDuePreview]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function handleFileUpload(files: FileList | null) {
     if (!files || files.length === 0) return;
@@ -1501,12 +1502,12 @@ export default function ApprovalContent() {
               <div className="mb-3 flex gap-2">
                 <button type="button" onClick={() => setIsPrepay(false)}
                   className={`px-4 py-2 rounded-lg text-base font-medium ${!isPrepay ? 'bg-amber-600 text-white' : 'bg-white border border-gray-200 text-gray-600'}`}>카드구매 (한도 차감)</button>
-                <button type="button" onClick={() => setIsPrepay(true)}
+                <button type="button" onClick={() => { setIsPrepay(true); setSpendDate(today()); }}
                   className={`px-4 py-2 rounded-lg text-base font-medium ${isPrepay ? 'bg-green-600 text-white' : 'bg-white border border-gray-200 text-gray-600'}`}>선결제 (한도 복구)</button>
               </div>
             )}
             {docType === '카드구매' && isPrepay && (
-              <p className="text-sm text-green-700 bg-green-50 border border-green-200 rounded-lg px-3 py-2 mb-3">💳 선결제: 기존 카드 사용분을 앞당겨 결제 → 승인되면 해당 카드 <b>잔여한도가 복구</b>되고 결제 캘린더에 −금액으로 기록됩니다.</p>
+              <p className="text-sm text-green-700 bg-green-50 border border-green-200 rounded-lg px-3 py-2 mb-3">💳 선결제: 기존 카드 사용분을 앞당겨 결제 → 승인되면 해당 카드 <b>잔여한도가 복구</b>됩니다. 아래 <b>‘지출’ 날짜에 실제 결제(한도복구)일</b>을 넣으세요 — 결제 캘린더에 그 날짜로 −금액이 기록됩니다. (카드 청구일이 아니라 실제 빠지는 날)</p>
             )}
             {/* 결제카드·구매처는 카드구매(선결제 포함) 전용. 지출결의서엔 노출 안 함(카드 연결로 인한 한도 오차 방지) */}
             {docType === '카드구매' && (
@@ -1522,7 +1523,7 @@ export default function ApprovalContent() {
                     <option key={c.id} value={c.id}>[{c.card_type}] {c.card_name} {c.holder_name ? `· ${c.holder_name}` : ''}</option>
                   ))}
                 </select>
-                {selectedCard && paymentDuePreview && (
+                {selectedCard && paymentDuePreview && !isPrepay && (
                   <p className="text-sm text-blue-600 mt-1.5">💳 결제예정일: <span className="font-bold">{paymentDuePreview}</span> (구매일 {spendDate} 기준)</p>
                 )}
                 {cards.length === 0 && (
@@ -1569,7 +1570,7 @@ export default function ApprovalContent() {
                 <div key={i} className={`flex text-base ${i > 0 ? 'border-t border-gray-400' : ''}`}>
                   <div className="w-12 px-2 py-1 bg-gray-50 border-r border-gray-400 text-center font-medium flex items-center justify-center">{row.label}</div>
                   <div className="px-1 py-1 border-r border-gray-400 w-36">
-                    {row.label === '지출' && docType === '카드구매' ? (
+                    {row.label === '지출' && docType === '카드구매' && !isPrepay ? (
                       <input type="date" value={row.date} readOnly disabled
                         className="w-full text-base px-1 bg-amber-50 text-amber-700 font-medium" title="카드 결제일로 자동 설정됨" />
                     ) : (
