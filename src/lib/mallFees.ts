@@ -23,6 +23,9 @@ export function normalizeMall(raw: string): string {
   if (s.includes('롯데')) return '롯데온';
   if (s.includes('인터파크')) return '인터파크';
   if (s.includes('카카오')) return '카카오스토어';
+  // Cafe24 기반 유튜브쇼핑 — "Cafe24(신) 유튜브쇼핑"·"Cafe24 유튜브쇼핑"·"유튜브쇼핑" 등 표기 흔들림을
+  // 하나로 통일. canonical은 실제 주문에 저장된 문자열과 동일하게 두어 기존 등록 요율이 그대로 유지됨.
+  if (s.includes('유튜브쇼핑')) return 'Cafe24(신) 유튜브쇼핑';
   if (s.includes('자사') && s.includes('npay')) return '자사몰Npay';
   if (s.includes('자사') || s.includes('자체')) return '자사몰직접결제';
   if (s.includes('공구')) return '공구';
@@ -33,6 +36,7 @@ export function normalizeMall(raw: string): string {
 export const CANONICAL_MALLS = [
   '스마트스토어', 'G마켓', '옥션', '11번가', '쿠팡', '쿠팡로켓그로스', '토스',
   'SSG', 'Hmall', '롯데온', '인터파크', '카카오스토어', '자사몰Npay', '자사몰직접결제', '공구',
+  'Cafe24(신) 유튜브쇼핑',
 ];
 
 // 정규 사업자명 후보 (기존 데이터 + 아는 값 병합해서 화면에서 사용)
