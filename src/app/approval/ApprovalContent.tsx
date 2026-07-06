@@ -989,7 +989,7 @@ export default function ApprovalContent() {
     try {
       const XLSX = await import('xlsx');
       const buf = await file.arrayBuffer();
-      const wb = XLSX.read(buf, { type: 'array' });
+      const wb = XLSX.read(buf, { type: 'array', cellDates: true }); // 날짜 셀을 숫자(일련번호) 대신 Date로
       const ws = wb.Sheets[wb.SheetNames[0]];
       const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws, { defval: '' });
       const num = (v: unknown) => Number(String(v).replace(/[^\d.-]/g, '')) || 0;
@@ -997,8 +997,20 @@ export default function ApprovalContent() {
         for (const k of keys) if (r[k] !== undefined && r[k] !== '') return r[k];
         return '';
       };
+      // 월/일 셀 정규화 — 엑셀 날짜(Date/일련번호)면 MM/DD로, 텍스트면 그대로
+      const fmtItemDate = (v: unknown): string => {
+        if (v == null || v === '') return '';
+        if (v instanceof Date) return `${String(v.getMonth() + 1).padStart(2, '0')}/${String(v.getDate()).padStart(2, '0')}`;
+        if (typeof v === 'number') { // 혹시 일련번호로 들어오면 SSF로 변환
+          const ssf = (XLSX as unknown as { SSF?: { parse_date_code?: (n: number) => { m?: number; d?: number } } }).SSF;
+          const d = ssf?.parse_date_code?.(v);
+          if (d && d.m && d.d) return `${String(d.m).padStart(2, '0')}/${String(d.d).padStart(2, '0')}`;
+          return String(v);
+        }
+        return String(v).trim();
+      };
       const parsed: ApprovalItem[] = rows.map((r, idx) => ({
-        item_date: String(pick(r, ['월/일', '월일', '날짜', '일자'])).trim(),
+        item_date: fmtItemDate(pick(r, ['월/일', '월일', '날짜', '일자'])),
         description: String(pick(r, ['구매상품', '적요', '상품', '품목', '내용'])).trim(),
         quantity: num(pick(r, ['구매수량', '수량'])),
         amount: num(pick(r, ['금액', '가격'])),
