@@ -325,8 +325,8 @@ export default function CalendarContent() {
                           onClick={(ev) => { ev.stopPropagation(); canEdit(p.e) ? openEdit(p.e) : setSelectedDay(p.date); }}
                           style={{ gridColumn: `${p.startCol + 1} / span ${p.span}`, gridRow: p.lane + 1 }}
                           className={`pointer-events-auto h-[22px] px-2 rounded-md text-sm font-bold text-white truncate flex items-center cursor-pointer shadow-sm ${st?.bar || 'bg-gray-400'}`}
-                          title={p.e.title}>
-                          {!p.e.all_day && p.e.start_time ? `${p.e.start_time} ` : ''}{p.e.title}
+                          title={`${p.e.title}${!p.e.all_day && p.e.start_time ? ` (${p.e.start_time})` : ''}`}>
+                          {p.e.title || (!p.e.all_day && p.e.start_time ? p.e.start_time : '')}
                         </div>
                       );
                     })}
