@@ -5,7 +5,11 @@ import { convertOrders, buildSupabaseRows, matchProduct, loadDbMatches, type Con
 import { supabaseFetch, supabaseFetchAll, supabaseUpload, safeStorageKey } from '@/lib/supabase';
 import { getUser } from '@/lib/auth';
 
-type Tab = 'convert' | 'history' | 'manage' | 'register';
+type Tab = 'convert' | 'history' | 'manage' | 'register' | 'log';
+type ChangeLogRow = {
+  id: string; order_id: string; action: string; detail?: string; changed_by?: string; created_at: string;
+  _order?: { product_name?: string; order_number?: string; company?: string; mall_name?: string };
+};
 type Status = { type: 'info' | 'success' | 'error'; msg: string } | null;
 
 // 사업자 선택 (값은 재고 테이블의 company 표기와 정확히 일치해야 함)
@@ -77,6 +81,8 @@ export default function OrdersContent() {
   const canViewHistory = me?.role === 'ceo' || me?.role === 'admin'; // 주문 변경 이력은 대표·실장만
 
   const [tab, setTab] = useState<Tab>('convert');
+  const [changeLogs, setChangeLogs] = useState<ChangeLogRow[]>([]); // 주문 변경 로그(대표·실장 전용)
+  const [logLoading, setLogLoading] = useState(false);
   const [status, setStatus] = useState<Status>(null);
   const [resultData, setResultData] = useState<ConvertedOrderRow[]>([]);
   const [headerOrder, setHeaderOrder] = useState<string[]>([]);
@@ -258,6 +264,8 @@ export default function OrdersContent() {
       });
       if (!res.ok) throw new Error(String(res.status));
       const r = await res.json();
+      // 변경 로그 기록 (건별)
+      await supabaseFetch('/order_change_logs', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify(ids.map(oid => ({ order_id: oid, action: '취소', detail: reason, changed_by: me?.name || '' }))) }).catch(() => {});
       alert(`✅ ${r?.canceled ?? ids.length}건 취소 처리 완료 (재고 복구 ${r?.restored ?? 0}건)`);
     } catch {
       alert('❌ 취소 처리 중 오류가 발생했습니다. (재고 정합성 보호를 위해 변경이 모두 취소되었습니다)\n설정(db/order_inventory_sync.sql)이 적용됐는지 확인해주세요.');
@@ -276,6 +284,7 @@ export default function OrdersContent() {
       });
       if (!res.ok) throw new Error(String(res.status));
       const r = await res.json();
+      await supabaseFetch('/order_change_logs', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify(ids.map(oid => ({ order_id: oid, action: '취소해제', detail: '취소 해제(매출 재포함·재고 재차감)', changed_by: me?.name || '' }))) }).catch(() => {});
       alert(`✅ ${r?.uncanceled ?? ids.length}건 취소 해제 완료 (재고 재차감 ${r?.rededucted ?? 0}건)`);
     } catch {
       alert('❌ 취소 해제 중 오류가 발생했습니다. (변경이 모두 취소되었습니다)');
@@ -306,6 +315,8 @@ export default function OrdersContent() {
       if (!res.ok) throw new Error(String(res.status));
       const r = await res.json();
       if (r?.error) { alert(`❌ ${r.error}`); return; }
+      const detail = r?.full_canceled ? `${qty}개 ${type} → 전체 취소 · 사유: ${reason}` : `${qty}개 ${type}(남은 ${r?.new_qty}개) · 사유: ${reason}`;
+      await supabaseFetch('/order_change_logs', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ order_id: id, action: `부분${type}`, detail, changed_by: me?.name || '' }) }).catch(() => {});
       if (r?.full_canceled) alert(`✅ 전체 수량 ${type} → 주문 전체가 취소 처리되었습니다 (재고 복구됨).`);
       else alert(`✅ ${qty}개 ${type} 처리 완료 (남은 수량 ${r?.new_qty}개, 금액·재고 자동 반영).`);
       setOrderChecked(new Set());
@@ -794,9 +805,27 @@ export default function OrdersContent() {
     await refreshUndeductedCount();
   }
 
+  // 주문 변경 로그(등록·수정·취소·부분취소 등) 최근 300건 + 주문 정보 보강
+  async function loadChangeLogs() {
+    setLogLoading(true);
+    try {
+      const res = await supabaseFetch('/order_change_logs?select=id,order_id,action,detail,changed_by,created_at&order=created_at.desc&limit=300');
+      const logs: ChangeLogRow[] = await res.json();
+      const ids = [...new Set((Array.isArray(logs) ? logs : []).map(l => l.order_id).filter(Boolean))];
+      const orderMap: Record<string, ChangeLogRow['_order']> = {};
+      if (ids.length) {
+        const orders = await supabaseFetchAll<{ id: string; product_name?: string; order_number?: string; company?: string; mall_name?: string }>(`/orders?id=in.(${ids.join(',')})&select=id,product_name,order_number,company,mall_name`);
+        for (const o of orders) orderMap[String(o.id)] = o;
+      }
+      setChangeLogs((Array.isArray(logs) ? logs : []).map(l => ({ ...l, _order: orderMap[String(l.order_id)] })));
+    } catch { setChangeLogs([]); }
+    finally { setLogLoading(false); }
+  }
+
   function handleTabChange(t: Tab) {
     setTab(t);
     if (t === 'history') loadHistory();
+    if (t === 'log') loadChangeLogs();
     if (t === 'register' && !invLoaded) loadInventory();
     if (t === 'manage') {
       // 조회·취소 탭 열면 오늘 주문 자동 조회 (해당일 전부)
@@ -806,6 +835,15 @@ export default function OrdersContent() {
       searchOrders({ from: iso, to: iso });
       refreshUndeductedCount();
     }
+  }
+
+  function logBadge(action: string): string {
+    if (action === '등록') return 'bg-green-50 text-green-600';
+    if (action === '수정') return 'bg-amber-50 text-amber-600';
+    if (action === '삭제') return 'bg-red-50 text-red-600';
+    if (action.includes('취소해제')) return 'bg-slate-100 text-slate-600';
+    if (action.includes('취소') || action.includes('반품')) return 'bg-orange-50 text-orange-600';
+    return 'bg-gray-100 text-gray-600';
   }
 
   const statusColors = {
@@ -858,7 +896,64 @@ export default function OrdersContent() {
         >
           ✍️ 직접 주문 등록
         </button>
+        {canViewHistory && (
+          <button
+            onClick={() => handleTabChange('log')}
+            className={`px-5 py-2.5 rounded-xl font-medium text-base transition-all ${
+              tab === 'log'
+                ? 'bg-blue-600 text-white shadow-md shadow-blue-500/20'
+                : 'bg-white text-gray-600 hover:bg-gray-50 border border-gray-200'
+            }`}
+          >
+            🔒 변경 로그
+          </button>
+        )}
       </div>
+
+      {/* 변경 로그 탭 — 대표·실장 전용 */}
+      {tab === 'log' && canViewHistory && (
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
+          <div className="flex items-center justify-between mb-1">
+            <h2 className="text-lg font-bold text-gray-800">🔒 주문 변경 로그 <span className="text-sm font-normal text-gray-400">(대표·실장 전용)</span></h2>
+            <button onClick={loadChangeLogs} className="text-sm text-blue-600 hover:underline">새로고침</button>
+          </div>
+          <p className="text-sm text-gray-400 mb-4">주문 등록·수정·취소·부분취소/반품 등 모든 변경 내역(최근 300건). 누가 언제 무엇을 바꿨는지 기록됩니다.</p>
+          {logLoading ? (
+            <div className="text-center py-12 text-gray-400">불러오는 중...</div>
+          ) : changeLogs.length === 0 ? (
+            <div className="text-center py-12 text-gray-400">변경 내역이 없습니다</div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-xs text-gray-400 border-b border-gray-100">
+                    <th className="py-2 px-2 text-left font-medium whitespace-nowrap">일시</th>
+                    <th className="py-2 px-2 text-left font-medium">구분</th>
+                    <th className="py-2 px-2 text-left font-medium">주문 (상품·몰·주문번호)</th>
+                    <th className="py-2 px-2 text-left font-medium">내용</th>
+                    <th className="py-2 px-2 text-left font-medium">처리자</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {changeLogs.map(l => (
+                    <tr key={l.id} className="hover:bg-gray-50/60 align-top">
+                      <td className="py-2 px-2 text-gray-500 whitespace-nowrap">{l.created_at?.slice(0, 16).replace('T', ' ')}</td>
+                      <td className="py-2 px-2 whitespace-nowrap"><span className={`px-1.5 py-0.5 rounded text-xs font-medium ${logBadge(l.action)}`}>{l.action}</span></td>
+                      <td className="py-2 px-2 text-gray-600">
+                        {l._order
+                          ? <span>{l._order.mall_name ? l._order.mall_name + ' · ' : ''}{l._order.product_name || '-'}{l._order.order_number ? ` (${l._order.order_number})` : ''}{l._order.company ? ` · ${l._order.company}` : ''}</span>
+                          : <span className="text-gray-300">주문 #{l.order_id}</span>}
+                      </td>
+                      <td className="py-2 px-2 text-gray-600 break-words max-w-[320px]">{l.detail || '-'}</td>
+                      <td className="py-2 px-2 text-gray-500 whitespace-nowrap">{l.changed_by || '-'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* 파일 변환 탭 */}
       {tab === 'convert' && (
