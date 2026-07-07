@@ -74,6 +74,7 @@ interface ChangeLog { id: string; action: string; detail?: string; changed_by?: 
 export default function OrdersContent() {
   const me = getUser();
   const canDelete = me?.role === 'ceo' || me?.role === 'admin';
+  const canViewHistory = me?.role === 'ceo' || me?.role === 'admin'; // 주문 변경 이력은 대표·실장만
 
   const [tab, setTab] = useState<Tab>('convert');
   const [status, setStatus] = useState<Status>(null);
@@ -1302,9 +1303,10 @@ export default function OrdersContent() {
               </div>
             </div>
 
-            {/* 변경 이력 */}
+            {/* 변경 이력 — 대표·실장만 */}
+            {canViewHistory && (
             <div className="mt-4">
-              <div className="text-sm font-medium text-gray-600 mb-1.5">변경 이력</div>
+              <div className="text-sm font-medium text-gray-600 mb-1.5">🔒 변경 이력 <span className="text-xs text-gray-400 font-normal">(대표·실장 전용)</span></div>
               {editLogs.length === 0 ? (
                 <div className="text-sm text-gray-400">이력 없음</div>
               ) : (
@@ -1319,6 +1321,7 @@ export default function OrdersContent() {
                 </div>
               )}
             </div>
+            )}
 
             <div className="flex gap-3 mt-5">
               <button onClick={saveEditOrder} disabled={editSaving}
@@ -1387,8 +1390,9 @@ export default function OrdersContent() {
                   })}
                 </div>
 
-                {/* 변경 이력 (등록·수정) */}
-                <div className="text-sm font-medium text-gray-600 mb-1.5">변경 이력 (등록·수정)</div>
+                {/* 변경 이력 (등록·수정) — 대표·실장만 */}
+                {canViewHistory && (<>
+                <div className="text-sm font-medium text-gray-600 mb-1.5">🔒 변경 이력 (등록·수정) <span className="text-xs text-gray-400 font-normal">(대표·실장 전용)</span></div>
                 {detailLogs.length === 0 ? (
                   <div className="text-sm text-gray-400">이력 없음</div>
                 ) : (
@@ -1402,6 +1406,7 @@ export default function OrdersContent() {
                     ))}
                   </div>
                 )}
+                </>)}
               </>
             )}
 
