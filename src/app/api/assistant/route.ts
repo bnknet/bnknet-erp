@@ -53,10 +53,13 @@ const ERP_TOOL: Anthropic.Tool = {
   },
 };
 
+// 보안상 봇이 읽으면 안 되는 테이블 (비밀번호 등 민감정보)
+const BLOCKED_TABLES = new Set(['accounts', 'rpc']);
+
 async function runQueryErp(input: { table?: string; query?: string }): Promise<string> {
   const table = String(input.table || '').trim();
   if (!/^[a-z_][a-z0-9_]*$/.test(table)) return '오류: 잘못된 테이블명';
-  if (table === 'rpc') return '오류: rpc(쓰기/함수 호출)는 허용되지 않습니다';
+  if (BLOCKED_TABLES.has(table)) return `오류: '${table}' 테이블은 보안상 조회할 수 없습니다 (rpc·비밀번호 등)`;
   let q = String(input.query || '').trim();
   if (!q) q = 'select=*&limit=20';
   // 안전장치: 최대 200건으로 제한
@@ -73,25 +76,69 @@ async function runQueryErp(input: { table?: string; query?: string }): Promise<s
   }
 }
 
-const SYSTEM = `너는 BNKNET ERP의 사내 데이터 비서다. 대표·실장의 질문에 ERP 데이터로 정확히 답한다.
+// 한국시간(KST) 오늘 날짜 — 서버는 UTC라 +9시간
+function todayKST(): string {
+  return new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10);
+}
+
+// 봇이 알아야 할 실제 DB 스키마 지도 (테이블·컬럼·집계 방법). 이게 없으면 테이블명을 추측하다 실패한다.
+const SCHEMA_GUIDE = `[BNKNET ERP 데이터 지도 — PostgREST 테이블, 모두 소문자]
+사업자(company) 값: 더블아이 / BNKNET / SJ글로벌 / IX글로벌
+
+■ 매출·주문
+- orders: 매출/주문 원장. 컬럼 upload_date(등록일 YYYY-MM-DD), company, mall_name(판매몰), product_name, collect_product(수집상품명), quantity(수량), amount(매출액,원), canceled(취소 boolean), order_number, delivery_fee, source, manual_cost, manual_shipping.
+  · 매출 합계 = amount 합. 반드시 취소 제외(canceled=is.false). 기간은 upload_date로 필터.
+  · 예) 이번달 매출: /orders?select=amount,company,canceled&canceled=is.false&upload_date=gte.<이번달1일>&upload_date=lte.<오늘> → amount를 직접 합산. 사업자별은 company로 그룹.
+- order_uploads: 주문 업로드 이력. ship_alerts: 재고 미차감/출고 알림.
+- sales_targets: 매출 목표. brand_sales: 과거(6월 이전) 브랜드별 매출(period_date,brand,sales,margin) 참고용.
+
+■ 재고·상품
+- inventory: 재고. product_name, company, brand, cost_price(원가), quantity(재고수량).
+- products: 상품 마스터. inventory_snapshots/inventory_logs: 재고 스냅샷·변동이력.
+- product_matches: 수집상품명→대표상품명 매칭. product_bom: 세트 구성(set_name, component_name, component_qty).
+- mall_fees: 몰 수수료율(company, mall, rate).
+
+■ 결재·카드
+- approvals: 결재 문서. doc_type(지출결의서/카드구매/휴가신청서), status(pending/approved/rejected/canceled), company, organizer(담당), total_amount, card_id, payment_due_date(결제예정), spend_date, purchase_vendor(구매처), purchase_status, is_card_payment(선결제 여부), issue_date(발의일), settle_date.
+- approval_items: 결재 상세 품목. approval_id, item_date, description, quantity, amount, canceled, prepaid_date(부분선결제).
+- cards: 카드. card_name, holder_name, card_company, limit_amount(한도), billing_day, close_day, opening_balance.
+
+■ 인사·근태
+- employees: 직원. name, email, role(ceo/admin/staff/md), company, phone, hire_date, status, position, salary, pay_day.
+- attendance: 근태. employee_name, work_date, check_in, check_out, status.
+
+■ 기타
+- notices/notice_comments: 공지·댓글. worklogs: 업무일지(work_date, author_name, company). calendar_events: 일정. partners: 거래처.
+
+■ 규칙
+- 날짜 필터는 PostgREST 연산자로: 컬럼=gte.YYYY-MM-DD & 컬럼=lte.YYYY-MM-DD. 취소 제외는 canceled=is.false.
+- 합계·평균·순위는 데이터를 받아와 직접 계산한다(서버 집계 없음). 큰 표는 select로 필요한 컬럼만.
+- 컬럼이 불확실하면 먼저 /<table>?select=*&limit=1 로 실제 컬럼을 확인한 뒤 질의를 짠다.`;
+
+function buildSystem(): string {
+  return `너는 BNKNET ERP의 사내 데이터 비서다. 대표·실장의 질문에 ERP 데이터로 정확히 답한다.
+오늘은 한국시간 기준 ${todayKST()} 이다. "이번달/오늘/최근"은 이 날짜를 기준으로 계산한다.
 - 답은 반드시 query_erp 도구로 조회한 실제 데이터에 근거한다. 추측하지 말 것.
-- 컬럼이 확실치 않으면 먼저 select=*&limit=1 로 샘플을 확인하고 조회를 짠다.
-- 집계(합계·평균·순위 등)는 데이터를 가져와 직접 계산한다.
-- 사업자(company)는 BNKNET 등으로 구분된다. 필요하면 company로 필터한다.
+- 아래 데이터 지도를 보고 알맞은 테이블·컬럼으로 질의한다. 테이블명을 넘겨짚지 말 것.
 - 한국어 존댓말로, 숫자는 천단위 구분(,)과 '원' 단위로 깔끔하게. 표가 도움되면 간단한 텍스트 표로.
-- 데이터로 확인 안 되는 건 모른다고 솔직히 말한다.`;
+- 데이터로 확인 안 되는 건 모른다고 솔직히 말한다. 답변은 결론(핵심 숫자)부터 제시한다.
+
+${SCHEMA_GUIDE}`;
+}
 
 async function handleQuestion(channel: string, question: string) {
   if (!ANTHROPIC_KEY) { await postSlack(channel, '설정 오류: ANTHROPIC_API_KEY 미설정'); return; }
   const client = new Anthropic({ apiKey: ANTHROPIC_KEY });
   const messages: Anthropic.MessageParam[] = [{ role: 'user', content: question }];
   try {
+    const system = buildSystem();
     for (let i = 0; i < 12; i++) { // 도구 호출 루프 상한
       const resp = await client.messages.create({
         model: 'claude-opus-4-8',
-        max_tokens: 4096,
+        max_tokens: 8192,
         thinking: { type: 'adaptive' },
-        system: SYSTEM,
+        output_config: { effort: 'medium' },
+        system,
         tools: [ERP_TOOL],
         messages,
       });
@@ -109,7 +156,14 @@ async function handleQuestion(channel: string, question: string) {
       }
       // 최종 답변
       const text = resp.content.filter(b => b.type === 'text').map(b => (b as Anthropic.TextBlock).text).join('\n').trim();
-      await postSlack(channel, text || '(답변을 생성하지 못했어요)');
+      if (text) { await postSlack(channel, text); return; }
+      // 텍스트가 비었는데 사고 예산이 부족했던 경우(max_tokens): 한 번 더 이어서 답을 받는다
+      if (resp.stop_reason === 'max_tokens') {
+        messages.push({ role: 'assistant', content: resp.content });
+        messages.push({ role: 'user', content: '위 내용을 바탕으로 최종 답변만 간단히 정리해서 알려줘.' });
+        continue;
+      }
+      await postSlack(channel, '죄송해요, 이 질문은 아직 정확히 처리하지 못했어요. 기간이나 사업자를 조금 더 구체적으로 알려주시겠어요?');
       return;
     }
     await postSlack(channel, '조회가 너무 길어져 중단했어요. 질문을 조금 더 좁혀주세요.');
