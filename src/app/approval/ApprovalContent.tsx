@@ -257,6 +257,7 @@ export default function ApprovalContent() {
   const [dueEditSaving, setDueEditSaving] = useState(false);
   const [attachments, setAttachments] = useState<{ name: string; url: string }[]>([]);
   const [uploading, setUploading] = useState(false);
+  const [dragOver, setDragOver] = useState(false); // 첨부 드래그앤드롭 하이라이트
   const [items, setItems] = useState<ApprovalItem[]>(
     [0,1,2,3,4].map(i => ({ ...EMPTY_ITEM, sort_order: i }))
   );
@@ -1792,18 +1793,24 @@ export default function ApprovalContent() {
               <span className="text-xs text-gray-400">긴 구매 품목은 엑셀 양식에 작성해 한 번에 올리세요</span>
             </div>
 
-            {/* 첨부파일 */}
-            <div className="border border-gray-200 rounded-xl p-4 mb-6 bg-gray-50/50">
+            {/* 첨부파일 — 클릭 선택 또는 드래그 앤 드롭 */}
+            <div
+              onDragOver={e => { e.preventDefault(); if (!uploading) setDragOver(true); }}
+              onDragLeave={e => { e.preventDefault(); setDragOver(false); }}
+              onDrop={e => { e.preventDefault(); setDragOver(false); if (!uploading) handleFileUpload(e.dataTransfer.files); }}
+              className={`border rounded-xl p-4 mb-6 transition-colors ${dragOver ? 'border-blue-400 border-dashed bg-blue-50/60 ring-2 ring-blue-200' : 'border-gray-200 bg-gray-50/50'}`}>
               <div className="flex items-center justify-between mb-2">
-                <span className="text-sm font-medium text-gray-600">📎 첨부파일 <span className="text-xs text-gray-400">(영수증·견적서 등)</span></span>
+                <span className="text-sm font-medium text-gray-600">📎 첨부파일 <span className="text-xs text-gray-400">(영수증·견적서 등 · 끌어다 놓기 가능)</span></span>
                 <label className="px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-sm text-blue-600 cursor-pointer hover:bg-blue-50">
                   {uploading ? '업로드 중...' : '파일 선택'}
                   <input type="file" multiple className="hidden" disabled={uploading}
                     onChange={e => { handleFileUpload(e.target.files); e.target.value = ''; }} />
                 </label>
               </div>
-              {attachments.length === 0 ? (
-                <div className="text-xs text-gray-400 py-2">첨부된 파일이 없습니다</div>
+              {dragOver ? (
+                <div className="text-sm text-blue-600 py-4 text-center font-medium">여기로 파일을 놓으면 첨부됩니다</div>
+              ) : attachments.length === 0 ? (
+                <div className="text-xs text-gray-400 py-2">첨부된 파일이 없습니다 — 파일을 이 영역으로 끌어다 놓거나 &apos;파일 선택&apos;을 누르세요</div>
               ) : (
                 <div className="space-y-1.5">
                   {attachments.map((f, i) => (
