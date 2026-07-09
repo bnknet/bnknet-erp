@@ -113,6 +113,7 @@ export default function InventoryContent() {
   const [outRows, setOutRows] = useState<{ product: string; qty: number; count: number }[]>([]);
   const [outUnmatched, setOutUnmatched] = useState<{ product: string; qty: number; count: number }[]>([]);
   const [outLoading, setOutLoading] = useState(false);
+  const [outSearch, setOutSearch] = useState(''); // 일자별 출고 상품명 검색
 
   async function loadOutbound(from: string, to: string) {
     setOutLoading(true);
@@ -503,6 +504,11 @@ export default function InventoryContent() {
   );
   const snapTotalQty = filteredSnap.reduce((a, s) => a + s.quantity, 0);
   const snapTotalCost = filteredSnap.reduce((a, s) => a + s.quantity * (s.cost_price || 0), 0);
+
+  // 일자별 출고 — 상품명 검색 필터
+  const outQuery = outSearch.trim().toLowerCase();
+  const outFiltered = outQuery ? outRows.filter((r) => r.product.toLowerCase().includes(outQuery)) : outRows;
+  const outFilteredQty = outFiltered.reduce((s, r) => s + r.qty, 0);
 
   function exportSnapshotExcel() {
     const data = filteredSnap.map((s) => ({
@@ -947,17 +953,27 @@ export default function InventoryContent() {
                 <button onClick={() => outQuick('month')} className="px-2.5 py-1.5 text-sm border border-gray-200 rounded-lg text-gray-500 hover:bg-gray-50">이번달</button>
               </div>
             </div>
+            {/* 상품명 검색 필터 */}
+            {outRows.length > 0 && (
+              <div className="mt-3 flex items-center gap-2 bg-gray-50 border border-gray-100 rounded-xl px-3 py-2">
+                <span className="text-gray-400">🔍</span>
+                <input value={outSearch} onChange={e => setOutSearch(e.target.value)}
+                  placeholder="상품명으로 검색 (예: 오로라, 덴프스)"
+                  className="flex-1 bg-transparent text-base focus:outline-none" />
+                {outSearch && <button onClick={() => setOutSearch('')} className="text-sm text-gray-400 hover:text-gray-600 flex-shrink-0">지우기</button>}
+              </div>
+            )}
             <p className="text-sm text-gray-400 mt-2">매칭데이터 기준 대표상품명으로 합산 · 취소건 제외 · 출고수량 많은 순</p>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div className="bg-white rounded-xl border border-gray-100 px-4 py-3">
-              <div className="text-sm text-gray-400">출고 품목 수</div>
-              <div className="text-xl font-bold text-gray-800 mt-0.5">{outRows.length}종</div>
+              <div className="text-sm text-gray-400">출고 품목 수{outQuery && ' (검색)'}</div>
+              <div className="text-xl font-bold text-gray-800 mt-0.5">{outFiltered.length}종</div>
             </div>
             <div className="bg-white rounded-xl border border-gray-100 px-4 py-3">
-              <div className="text-sm text-gray-400">총 출고 수량</div>
-              <div className="text-xl font-bold text-blue-600 mt-0.5">{outRows.reduce((s, r) => s + r.qty, 0).toLocaleString()}개</div>
+              <div className="text-sm text-gray-400">총 출고 수량{outQuery && ' (검색)'}</div>
+              <div className="text-xl font-bold text-blue-600 mt-0.5">{outFilteredQty.toLocaleString()}개</div>
             </div>
           </div>
 
@@ -987,6 +1003,8 @@ export default function InventoryContent() {
               <div className="text-center py-12 text-gray-400">불러오는 중...</div>
             ) : outRows.length === 0 ? (
               <div className="text-center py-12 text-gray-400">{outFrom} ~ {outTo} 출고 내역이 없습니다</div>
+            ) : outFiltered.length === 0 ? (
+              <div className="text-center py-12 text-gray-400">&apos;{outSearch}&apos; 검색 결과가 없습니다</div>
             ) : (
               <table className="w-full text-base">
                 <thead className="bg-gray-50 border-b border-gray-100">
@@ -998,7 +1016,7 @@ export default function InventoryContent() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
-                  {outRows.map((r, i) => (
+                  {outFiltered.map((r, i) => (
                     <tr key={i} className="hover:bg-blue-50/40">
                       <td className="px-4 py-2.5 text-gray-400 text-sm">{i + 1}</td>
                       <td className="px-4 py-2.5 text-gray-700">{r.product}</td>
@@ -1009,8 +1027,8 @@ export default function InventoryContent() {
                 </tbody>
                 <tfoot>
                   <tr className="bg-gray-50 border-t border-gray-200 font-bold">
-                    <td className="px-4 py-3" colSpan={3}>합계</td>
-                    <td className="px-4 py-3 text-right text-blue-600">{outRows.reduce((s, r) => s + r.qty, 0).toLocaleString()}개</td>
+                    <td className="px-4 py-3" colSpan={3}>합계{outQuery && ' (검색)'}</td>
+                    <td className="px-4 py-3 text-right text-blue-600">{outFilteredQty.toLocaleString()}개</td>
                   </tr>
                 </tfoot>
               </table>
