@@ -5,7 +5,7 @@ import { supabaseFetch, supabaseFetchAll } from '@/lib/supabase';
 import { getUser } from '@/lib/auth';
 import { matchProduct, loadDbMatches } from '@/lib/orderConvert';
 
-interface MatchRow { id: string; collect_name: string; product_name: string; created_by?: string; created_at?: string; updated_at?: string }
+interface MatchRow { id: string; collect_name: string; collect_option?: string; product_name: string; created_by?: string; created_at?: string; updated_at?: string }
 interface LogRow { id: string; action: string; collect_name: string; before_product?: string; after_product?: string; changed_by?: string; created_at: string }
 
 const ACTION_LABEL: Record<string, string> = { create: '생성', update: '수정', delete: '삭제' };
@@ -25,6 +25,7 @@ export default function MatchesContent() {
 
   const [editId, setEditId] = useState<string | null>(null); // null=폼 닫힘, ''=신규
   const [formCollect, setFormCollect] = useState('');
+  const [formOption, setFormOption] = useState(''); // 수집옵션(선택) — 색상 등 옵션별 매칭
   const [formProduct, setFormProduct] = useState('');
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState('');
@@ -33,7 +34,8 @@ export default function MatchesContent() {
     setLoading(true);
     try {
       const [mr, lg, inv] = await Promise.all([
-        supabaseFetchAll<MatchRow>('/product_matches?select=id,collect_name,product_name,created_by,created_at,updated_at&order=updated_at.desc').catch(() => []),
+        supabaseFetchAll<MatchRow>('/product_matches?select=id,collect_name,collect_option,product_name,created_by,created_at,updated_at&order=updated_at.desc')
+          .catch(() => supabaseFetchAll<MatchRow>('/product_matches?select=id,collect_name,product_name,created_by,created_at,updated_at&order=updated_at.desc').catch(() => [])),
         supabaseFetchAll<LogRow>('/product_match_logs?select=id,action,collect_name,before_product,after_product,changed_by,created_at&order=created_at.desc&limit=200').catch(() => []),
         supabaseFetchAll<{ product_name: string }>('/inventory?select=product_name&order=product_name.asc').catch(() => []),
       ]);
@@ -46,8 +48,8 @@ export default function MatchesContent() {
   }, []);
   useEffect(() => { load(); }, [load]);
 
-  function startNew() { setEditId(''); setFormCollect(''); setFormProduct(''); setMsg(''); }
-  function startEdit(r: MatchRow) { setEditId(r.id); setFormCollect(r.collect_name); setFormProduct(r.product_name); setMsg(''); }
+  function startNew() { setEditId(''); setFormCollect(''); setFormOption(''); setFormProduct(''); setMsg(''); }
+  function startEdit(r: MatchRow) { setEditId(r.id); setFormCollect(r.collect_name); setFormOption(r.collect_option || ''); setFormProduct(r.product_name); setMsg(''); }
   function cancel() { setEditId(null); setMsg(''); }
 
   async function logChange(action: string, collect: string, before: string | null, after: string | null) {
@@ -70,26 +72,29 @@ export default function MatchesContent() {
   // 미리보기: 입력한 수집상품명이 현재 어떻게 매칭되는지(하드코딩 기준). 신규 매칭 판단 도움.
   const preview = useMemo(() => {
     if (!collectClean) return null;
-    return matchProduct(collectClean);
-  }, [collectClean]);
+    return matchProduct(collectClean, formOption);
+  }, [collectClean, formOption]);
 
   async function save() {
     const collect = collectClean; // 수량 꼬리표 제거된 값으로 저장
+    const option = formOption.trim();
     const product = formProduct.trim();
     if (!collect) { setMsg('수집상품명을 입력하세요.'); return; }
     if (!product) { setMsg('대표상품명을 입력하세요.'); return; }
     const isEdit = !!editId;
     const before = isEdit ? (rows.find(r => r.id === editId)?.product_name || null) : null;
-    const beforeCollect = isEdit ? (rows.find(r => r.id === editId)?.collect_name || '') : '';
+    const beforeRow = isEdit ? rows.find(r => r.id === editId) : undefined;
+    const beforeCollect = beforeRow?.collect_name || '';
+    const beforeOption = beforeRow?.collect_option || '';
     setSaving(true);
     try {
-      // 수집상품명 유니크 — upsert(on_conflict). 이름을 바꾼 경우 기존 행 정리.
-      if (isEdit && beforeCollect && beforeCollect !== collect) {
-        await supabaseFetch(`/product_matches?collect_name=eq.${encodeURIComponent(beforeCollect)}`, { method: 'DELETE' });
+      // (수집명+옵션) 유니크 upsert. 키가 바뀌면 기존 행 정리.
+      if (isEdit && (beforeCollect !== collect || beforeOption !== option) && beforeCollect) {
+        await supabaseFetch(`/product_matches?collect_name=eq.${encodeURIComponent(beforeCollect)}&collect_option=eq.${encodeURIComponent(beforeOption)}`, { method: 'DELETE' });
       }
-      const res = await supabaseFetch('/product_matches?on_conflict=collect_name', {
+      const res = await supabaseFetch('/product_matches?on_conflict=collect_name,collect_option', {
         method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
-        body: JSON.stringify({ collect_name: collect, product_name: product, created_by: me?.name || '', updated_at: new Date().toISOString() }),
+        body: JSON.stringify({ collect_name: collect, collect_option: option, product_name: product, created_by: me?.name || '', updated_at: new Date().toISOString() }),
       });
       if (!res.ok) { setMsg(`저장 실패 (${res.status})`); return; }
       await logChange(isEdit ? 'update' : 'create', collect, before, product);
@@ -115,7 +120,7 @@ export default function MatchesContent() {
   }
 
   const filtered = rows.filter(r =>
-    !search || r.collect_name.includes(search) || r.product_name.includes(search),
+    !search || r.collect_name.includes(search) || r.product_name.includes(search) || (r.collect_option || '').includes(search),
   );
 
   if (!canEdit) {
@@ -158,6 +163,13 @@ export default function MatchesContent() {
             )}
           </div>
           <div>
+            <label className="block text-sm font-medium text-gray-600 mb-1">수집옵션 <span className="text-gray-400 font-normal">(선택 — 색상 등 옵션별로 다르게 매칭할 때만)</span></label>
+            <input value={formOption} onChange={e => setFormOption(e.target.value)}
+              placeholder="예: 색상:자연갈색  (비우면 옵션 상관없이 매칭)"
+              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-blue-400" />
+            <p className="text-xs text-gray-400 mt-1">주문의 ‘★수집옵션’에 이 값이 <b>포함되면</b> 이 매칭이 적용됩니다(가장 구체적인 것 우선). 색상만 다른 상품이면 <b>색상:흑색 / 색상:자연갈색</b>을 각각 등록하세요. 비워두면 옵션과 무관하게 매칭.</p>
+          </div>
+          <div>
             <label className="block text-sm font-medium text-gray-600 mb-1">대표상품명 (재고/매출 매칭 기준) *</label>
             <input list="rep-names" value={formProduct} onChange={e => setFormProduct(e.target.value)}
               placeholder="예: 마이메이트 유기농 엑스트라버진 올리브오일"
@@ -195,7 +207,10 @@ export default function MatchesContent() {
             {filtered.map(r => (
               <div key={r.id} className="px-5 py-3 flex items-start justify-between gap-4">
                 <div className="min-w-0 flex-1">
-                  <div className="text-sm text-gray-500 break-words">{r.collect_name}</div>
+                  <div className="text-sm text-gray-500 break-words">
+                    {r.collect_name}
+                    {r.collect_option && <span className="ml-1.5 text-xs bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded">옵션: {r.collect_option}</span>}
+                  </div>
                   <div className="text-base font-semibold text-gray-800 mt-0.5">
                     → {r.product_name}
                     {!repNames.includes(r.product_name) && <span className="text-amber-500 text-xs ml-1.5">⚠️재고없음</span>}
