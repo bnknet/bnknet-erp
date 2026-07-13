@@ -935,6 +935,37 @@ export function matchProduct(collectName: string): { name: string; matched: bool
   return { name: mapped || cleanName || raw, matched: !!mapped };
 }
 
+// 정규화 키가 실제 대표상품명(재고 매칭 기준)인지
+function isRepName(name: string): boolean {
+  const nk = normKey(name);
+  return !!(PRODUCT_MAP_VAL_NORM[nk] || DB_MATCH_VAL_NORM[nk]);
+}
+
+// 수집옵션의 '색상:XXX'을 대표상품명에 반영. 이름엔 색상이 없고 옵션에만 있는 몰 대응.
+// 안전장치: 색상만 바꾼 이름이 실제 대표상품명일 때만 반영(아니면 원본 유지).
+const REP_COLOR_TOKENS = ['자연갈색', '흑색', '블랙', '갈색'];
+export function applyOptionColor(name: string, option: string): string {
+  const cm = String(option || '').match(/색상\s*[:：]\s*([가-힣A-Za-z]+)/);
+  const color = cm?.[1];
+  if (!color || name.includes(color)) return name;
+  for (const c of REP_COLOR_TOKENS) {
+    if (name.endsWith(c)) {
+      const cand = (name.slice(0, name.length - c.length) + color).replace(/\s+/g, ' ').trim();
+      return isRepName(cand) ? cand : name;
+    }
+  }
+  return name;
+}
+
+// 이름 끝에 수량이 없고(예: "…6박스 12개월분") 이름 속 'N박스'가 진짜 수량인 경우를 잡는다.
+const TRAIL_QTY_RE = /,?\s*(\d+)\s*(박스|개|포|세트)\s*(\([^)]*\))?\s*$/;
+export function extractBoxQty(name: string): number | null {
+  const all = String(name || '').match(/(\d+)\s*박스/g);
+  if (!all) return null;
+  const n = parseInt(all[all.length - 1]);
+  return n > 1 ? n : null;
+}
+
 export interface RawOrderRow {
   [key: string]: string | number | undefined;
 }
@@ -962,13 +993,20 @@ export function convertOrders(raw: RawOrderRow[]): ConvertedOrderRow[] {
     const collectName = String(row['★수집상품명'] || row['수집상품명'] || '');
     const collectOpt = String(row['★수집옵션'] || row['수집옵션'] || '');
     const collectQty = parseInt(String(row['★수집수량'] || row['수집수량'] || 1)) || 1;
-    const [nameQty, cleanName] = extractQtyAndName(collectName);
+    const [nameQty] = extractQtyAndName(collectName);
     const optQty = extractQtyFromOption(collectOpt);
-    const unitQty = optQty !== null ? optQty : nameQty;
+    // 수량 우선순위: 이름 끝 명시수량(있으면 기존 로직) → 없고 'N박스'면 박스 수 → 옵션수량 → 1
+    let unitQty: number;
+    if (TRAIL_QTY_RE.test(collectName)) {
+      unitQty = optQty !== null ? optQty : nameQty;           // 기존 동작 유지(회귀 방지)
+    } else {
+      const boxQty = extractBoxQty(collectName);              // "…6박스 12개월분"류
+      unitQty = boxQty !== null ? boxQty : (optQty !== null ? optQty : nameQty);
+    }
     const finalQty = unitQty * collectQty;
-    // 상품명 치환은 matchProduct로 통일 (정확 매칭 → 원문 → 띄어쓰기·쉼표 무시 폴백).
+    // 상품명 치환은 matchProduct로 통일 + 수집옵션 색상(자연갈색/흑색 등) 반영.
     // 변환 저장되는 product_name이 재고/매출 매칭과 100% 동일 기준이 되도록.
-    const mappedName = matchProduct(collectName).name;
+    const mappedName = applyOptionColor(matchProduct(collectName).name, collectOpt);
 
     return {
       ...row,
