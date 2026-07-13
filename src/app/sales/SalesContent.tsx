@@ -6,6 +6,7 @@ import { supabaseFetch, supabaseFetchAll } from '@/lib/supabase';
 import { loadDbMatches } from '@/lib/orderConvert';
 import { normalizeMall, type MallFee } from '@/lib/mallFees';
 import { computeOrderLines } from '@/lib/salesStats';
+import OpexTab from './OpexTab';
 
 // ── 타입 ─────────────────────────────────────────────
 interface OrderRow {
@@ -118,6 +119,9 @@ export default function SalesContent() {
 
   const [period, setPeriod] = useState<Period>('day');
   const [companyFilter, setCompanyFilter] = useState('전체');
+  // 영업이익(판관비) 탭 — 경영진(대표·실장) 전용
+  const canOpex = user?.role === 'ceo' || user?.role === 'admin';
+  const [salesTab, setSalesTab] = useState<'sales' | 'opex'>('sales');
   const [anchor, setAnchor] = useState(() => ymd(new Date())); // 조회 기준일 (지난달 등 과거 기간 조회용)
   const [rangeStart, setRangeStart] = useState(() => ymd(startOfMonth(new Date()))); // 기간조회 시작일
   const [rangeEnd, setRangeEnd] = useState(() => ymd(new Date()));                    // 기간조회 종료일
@@ -381,6 +385,22 @@ export default function SalesContent() {
 
   return (
     <div className="space-y-6">
+      {canOpex && (
+        <div className="flex gap-1 bg-gray-100 rounded-lg p-1 w-fit">
+          <button onClick={() => setSalesTab('sales')}
+            className={`px-4 py-1.5 rounded-md text-base font-medium transition-colors ${salesTab === 'sales' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
+            매출·공헌이익
+          </button>
+          <button onClick={() => setSalesTab('opex')}
+            className={`px-4 py-1.5 rounded-md text-base font-medium transition-colors ${salesTab === 'opex' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
+            🔒 영업이익
+          </button>
+        </div>
+      )}
+      {canOpex && salesTab === 'opex' ? (
+        <OpexTab orders={orders} inventory={inventory} fees={fees} bomRows={bomRows} userName={user?.name} />
+      ) : (
+      <>
       {/* 상단: 기간/사업자 필터 */}
       <div className="flex flex-wrap items-center gap-3">
         <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
@@ -724,6 +744,8 @@ export default function SalesContent() {
         매출 = (상품금액 + 고객배송비) ÷ 1.1. 공헌이익 = (상품금액 + 고객배송비 − 몰수수료 − 원가 − 실운임) ÷ 1.1.
         고객배송비·실운임은 합구매(같은 주문번호) 주문당 1회만 반영. 실운임 건당 {UNIT_SHIPPING.toLocaleString('ko-KR')}원. 수수료율은 사업자·판매몰별이며 mall_fees에서 수정 가능. 공헌이익률 = 공헌이익 ÷ 매출.
       </p>
+      </>
+      )}
     </div>
   );
 }
