@@ -119,8 +119,8 @@ export default function SalesContent() {
 
   const [period, setPeriod] = useState<Period>('day');
   const [companyFilter, setCompanyFilter] = useState('전체');
-  // 영업이익(판관비) 탭 — 경영진(대표·실장) 전용
-  const canOpex = user?.role === 'ceo' || user?.role === 'admin';
+  // 영업이익(판관비) 탭 — 현재는 실장(admin)만. 필요 시 'ceo' 추가로 대표까지 확대.
+  const canOpex = user?.role === 'admin';
   const [salesTab, setSalesTab] = useState<'sales' | 'opex'>('sales');
   const [anchor, setAnchor] = useState(() => ymd(new Date())); // 조회 기준일 (지난달 등 과거 기간 조회용)
   const [rangeStart, setRangeStart] = useState(() => ymd(startOfMonth(new Date()))); // 기간조회 시작일
