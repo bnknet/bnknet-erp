@@ -989,7 +989,8 @@ export function convertOrders(raw: RawOrderRow[]): ConvertedOrderRow[] {
 }
 
 export function buildSupabaseRows(resultData: ConvertedOrderRow[], company = '') {
-  const today = new Date().toISOString().slice(0, 10);
+  // 한국시간(KST) 기준 오늘. UTC로 하면 오전 9시 이전 변환분이 전날로 저장되는 버그가 생김.
+  const today = new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10);
   return resultData.map((r) => ({
     upload_date: today,
     company,
