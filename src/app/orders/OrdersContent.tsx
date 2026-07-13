@@ -210,6 +210,7 @@ export default function OrdersContent() {
   const [sOrderNo, setSOrderNo] = useState('');
   const [sProduct, setSProduct] = useState('');
   const [sMall, setSMall] = useState('');
+  const [sCompany, setSCompany] = useState('전체'); // 조회·취소 탭 사업자 필터
   const [sFrom, setSFrom] = useState('');
   const [sTo, setSTo] = useState('');
   const [orderList, setOrderList] = useState<OrderRow[]>([]);
@@ -224,9 +225,10 @@ export default function OrdersContent() {
   const [editLogs, setEditLogs] = useState<{ id: string; action: string; detail?: string; changed_by?: string; created_at: string }[]>([]);
   const [editSaving, setEditSaving] = useState(false);
 
-  async function searchOrders(opts?: { from?: string; to?: string }) {
+  async function searchOrders(opts?: { from?: string; to?: string; company?: string }) {
     const from = opts?.from !== undefined ? opts.from : sFrom;
     const to = opts?.to !== undefined ? opts.to : sTo;
+    const comp = opts?.company !== undefined ? opts.company : sCompany;
     setOrderLoading(true);
     setOrderChecked(new Set());
     try {
@@ -234,10 +236,11 @@ export default function OrdersContent() {
       if (sOrderNo.trim()) q += `&order_number=ilike.*${encodeURIComponent(sOrderNo.trim())}*`;
       if (sProduct.trim()) q += `&product_name=ilike.*${encodeURIComponent(sProduct.trim())}*`;
       if (sMall.trim()) q += `&mall_name=ilike.*${encodeURIComponent(sMall.trim())}*`;
+      if (comp !== '전체') q += `&company=eq.${encodeURIComponent(comp)}`;
       if (from) q += `&upload_date=gte.${from}`;
       if (to) q += `&upload_date=lte.${to}`;
       // 조건(날짜/검색어)이 있으면 해당 범위 "전부" 조회(1000건 초과도 페이지네이션). 조건 없으면 최근 1000건만.
-      const hasFilter = !!(from || to || sOrderNo.trim() || sProduct.trim() || sMall.trim());
+      const hasFilter = !!(from || to || sOrderNo.trim() || sProduct.trim() || sMall.trim() || comp !== '전체');
       let data: OrderRow[];
       if (hasFilter) {
         data = await supabaseFetchAll<OrderRow>(q);
@@ -849,7 +852,7 @@ export default function OrdersContent() {
       // 조회·취소 탭 열면 오늘 주문 자동 조회 (해당일 전부)
       const d = new Date();
       const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-      setSFrom(iso); setSTo(iso); setSOrderNo(''); setSProduct(''); setSMall('');
+      setSFrom(iso); setSTo(iso); setSOrderNo(''); setSProduct(''); setSMall(''); setSCompany('전체');
       searchOrders({ from: iso, to: iso });
       refreshUndeductedCount();
     }
@@ -1291,6 +1294,16 @@ export default function OrdersContent() {
               </div>
             )}
             <p className="text-base text-gray-400 mb-4">고객 취소 등으로 주문을 취소/삭제합니다. 취소된 주문은 매출·공헌이익 집계에서 제외됩니다. · <b>자동출고 실패분</b>은 우측 &apos;재고 재출고&apos;로 일괄 차감.</p>
+            {/* 사업자 필터 */}
+            <div className="flex gap-2 flex-wrap items-center mb-3">
+              <span className="text-sm text-gray-400">사업자</span>
+              {['전체', ...COMPANY_OPTIONS.map(c => c.value)].map(c => (
+                <button key={c} onClick={() => { setSCompany(c); searchOrders({ company: c }); }}
+                  className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${sCompany === c ? 'bg-slate-700 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
+                  {c}
+                </button>
+              ))}
+            </div>
             <div className="flex gap-2 flex-wrap items-center">
               <div className="flex items-center gap-1">
                 <input type="date" value={sFrom} max={sTo || undefined} onChange={e => setSFrom(e.target.value)}
@@ -1306,7 +1319,7 @@ export default function OrdersContent() {
               <input value={sMall} onChange={e => setSMall(e.target.value)} onKeyDown={e => e.key === 'Enter' && searchOrders()}
                 placeholder="몰명" className="px-3 py-2 border border-gray-200 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-blue-400 w-28" />
               <button onClick={() => searchOrders()} className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-base font-medium">검색</button>
-              <button onClick={() => { setSFrom(''); setSTo(''); setSOrderNo(''); setSProduct(''); setSMall(''); }}
+              <button onClick={() => { setSFrom(''); setSTo(''); setSOrderNo(''); setSProduct(''); setSMall(''); setSCompany('전체'); }}
                 className="px-3 py-2 border border-gray-200 rounded-lg text-sm text-gray-500 hover:bg-gray-50">초기화</button>
             </div>
             <p className="text-xs text-gray-400 mt-2">📅 탭 열면 <b>오늘 주문 자동 조회</b> · 업로드일(주문 변환일) 기준 · 날짜·검색어를 걸면 <b>해당 범위 전부</b> 조회(건수 제한 없음). (조회 {orderList.length.toLocaleString()}건)</p>
