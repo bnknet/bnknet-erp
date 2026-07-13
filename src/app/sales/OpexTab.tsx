@@ -331,7 +331,7 @@ export default function OpexTab({ orders, inventory, fees, bomRows, userName }: 
 
       <p className="text-xs text-gray-400">
         ⚠️ 건당 택배 실운임(2,300원)은 이미 공헌이익에서 차감됩니다. 판관비 ‘물류·보관비’에는 <b>고정 창고비만</b> 넣어주세요(이중차감 방지).
-        판관비는 지급액으로 입력하고, 과세 항목은 부가세 제외(÷1.1) 공급가액으로 영업이익에 반영됩니다.
+        판관비는 <b>지급액(카드·계산서 총액) 그대로</b> 입력하세요. 과세 항목은 부가세 포함 금액을 넣으면 자동으로 부가세 제외(÷1.1)되어 반영됩니다. (면세 항목은 그대로)
       </p>
 
       {/* 항목 관리 모달 */}
@@ -344,7 +344,7 @@ export default function OpexTab({ orders, inventory, fees, bomRows, userName }: 
             </div>
             <div className="p-5 space-y-2 max-h-[60vh] overflow-y-auto">
               <div className="flex items-center gap-2 text-xs text-gray-400 px-1">
-                <span className="flex-1">항목 이름</span><span className="w-24">성격</span><span className="w-16 text-center">과세</span><span className="w-24 text-center">순서·삭제</span>
+                <span className="flex-1">항목 이름</span><span className="w-24">성격</span><span className="w-20 text-center">과세여부</span><span className="w-24 text-center">순서·삭제</span>
               </div>
               {draft.map((c, i) => (
                 <div key={c.key} className={`flex items-center gap-2 ${c.active === false ? 'opacity-45' : ''}`}>
@@ -354,8 +354,9 @@ export default function OpexTab({ orders, inventory, fees, bomRows, userName }: 
                     className="w-24 px-2 py-2 rounded-lg border border-gray-200 text-sm bg-white">
                     {NATURES.map((n) => <option key={n} value={n}>{n}</option>)}
                   </select>
-                  <label className="w-16 flex justify-center" title="과세(체크)/면세">
-                    <input type="checkbox" checked={c.taxable} onChange={(e) => updateDraft(i, { taxable: e.target.checked })} className="w-5 h-5 rounded border-gray-300 text-blue-600" />
+                  <label className="w-20 flex items-center justify-center gap-1.5 cursor-pointer" title="과세면 체크(부가세 포함 금액 입력 → 계산 시 자동 ÷1.1). 급여 등 면세는 체크 해제.">
+                    <input type="checkbox" checked={c.taxable} onChange={(e) => updateDraft(i, { taxable: e.target.checked })} className="w-4 h-4 rounded border-gray-300 text-blue-600" />
+                    <span className={`text-xs font-medium ${c.taxable ? 'text-blue-600' : 'text-gray-400'}`}>{c.taxable ? '과세' : '면세'}</span>
                   </label>
                   <div className="w-24 flex items-center justify-center gap-0.5">
                     <button onClick={() => moveDraft(i, -1)} className="px-1.5 py-1 text-gray-400 hover:text-gray-700" title="위로">▲</button>
@@ -367,7 +368,10 @@ export default function OpexTab({ orders, inventory, fees, bomRows, userName }: 
                 </div>
               ))}
               <button onClick={addDraft} className="mt-1 px-3 py-2 rounded-lg border border-dashed border-gray-300 text-sm text-gray-500 hover:bg-gray-50 w-full">+ 항목 추가</button>
-              <p className="text-xs text-gray-400 pt-1">삭제는 숨김 처리(과거 입력 금액은 보존)됩니다. 과세=부가세 포함 지급(영업이익 계산 시 ÷1.1), 면세=그대로(예: 인건비).</p>
+              <p className="text-xs text-gray-500 pt-1 leading-relaxed">
+                <b className="text-blue-600">과세</b> = 부가세가 붙는 거래(임대·광고·수수료·소모품 등). → 부가세 <b>포함</b> 금액을 그대로 입력하면 계산 시 자동으로 부가세 제외(÷1.1)됩니다.<br />
+                <b>면세</b> = 부가세가 없는 항목(급여·4대보험 등). → 지급액 그대로 반영. · 삭제는 숨김 처리(과거 입력 금액 보존).
+              </p>
             </div>
             <div className="px-5 py-4 border-t border-gray-100 flex gap-2 justify-end">
               <button onClick={() => setManageOpen(false)} className="px-4 py-2 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50">취소</button>
