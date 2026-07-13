@@ -1323,6 +1323,20 @@ export default function OrdersContent() {
                 className="px-3 py-2 border border-gray-200 rounded-lg text-sm text-gray-500 hover:bg-gray-50">초기화</button>
             </div>
             <p className="text-xs text-gray-400 mt-2">📅 탭 열면 <b>오늘 주문 자동 조회</b> · 업로드일(주문 변환일) 기준 · 날짜·검색어를 걸면 <b>해당 범위 전부</b> 조회(건수 제한 없음). (조회 {orderList.length.toLocaleString()}건)</p>
+            {orderList.length > 0 && (() => {
+              const live = orderList.filter(o => !o.canceled);
+              const qty = live.reduce((a, o) => a + (Number(o.quantity) || 0), 0);
+              const amt = live.reduce((a, o) => a + (Number(o.amount) || 0), 0);
+              const cancQty = orderList.filter(o => o.canceled).reduce((a, o) => a + (Number(o.quantity) || 0), 0);
+              return (
+                <p className="text-sm text-gray-600 mt-1 font-medium">
+                  📦 유효 수량 합계 <b className="text-slate-800">{qty.toLocaleString()}개</b>
+                  <span className="mx-1 text-gray-300">·</span>
+                  매출 합계 <b className="text-slate-800">₩{amt.toLocaleString()}</b>
+                  {cancQty > 0 && <span className="text-gray-400"> (취소 {cancQty.toLocaleString()}개 제외)</span>}
+                </p>
+              );
+            })()}
           </div>
 
           {orderChecked.size > 0 && (
