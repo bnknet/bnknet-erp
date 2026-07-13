@@ -23,6 +23,21 @@ export const OPEX_CAT_MAP: Record<string, OpexCategory> = Object.fromEntries(
   OPEX_CATEGORIES.map((c) => [c.key, c]),
 );
 
+// DB(opex_category)에서 불러오는 동적 카테고리. 화면은 이 형태로 다룬다.
+export interface OpexCatDef {
+  key: string;
+  label: string;
+  nature: string;
+  taxable: boolean;
+  sort?: number;
+  active?: boolean;
+}
+
+// 지급액 → 공급가액 환산 (과세 여부를 직접 받아 동적 카테고리에도 적용)
+export function toSupply(taxable: boolean, paidAmount: number): number {
+  return taxable ? paidAmount / VAT_DIV : paidAmount;
+}
+
 // 판관비 입력 대상 사업자 (실제 매출 사업자). 공통비 배분(전사→사업자)은 다음 단계.
 export const OPEX_COMPANIES = ['BNKNET', 'SJ글로벌', '더블아이', 'IX글로벌'];
 
