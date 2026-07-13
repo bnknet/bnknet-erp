@@ -1,9 +1,11 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { convertOrders, buildSupabaseRows, matchProduct, loadDbMatches, type ConvertedOrderRow, type RawOrderRow } from '@/lib/orderConvert';
 import { supabaseFetch, supabaseFetchAll, supabaseUpload, safeStorageKey } from '@/lib/supabase';
 import { getUser } from '@/lib/auth';
+import { computeOrderLines } from '@/lib/salesStats';
+import { type MallFee } from '@/lib/mallFees';
 
 type Tab = 'convert' | 'history' | 'manage' | 'register' | 'log';
 type ChangeLogRow = {
@@ -60,6 +62,9 @@ interface OrderRow {
   company?: string;
   manual_cost?: number;
   manual_shipping?: number;
+  collect_product?: string;
+  collect_option?: string;
+  delivery_fee?: number;
 }
 
 interface UploadHistory {
@@ -115,12 +120,31 @@ export default function OrdersContent() {
   const [inv, setInv] = useState<InvItem[]>([]);
   const [invLoaded, setInvLoaded] = useState(false);
   const [mStatus, setMStatus] = useState<Status>(null);
+  // 공헌이익 계산용(주문 조회 탭) — 몰수수료·세트구성표. 재고 원가는 위 inv 재사용.
+  const [fees, setFees] = useState<MallFee[]>([]);
+  const [bomRows, setBomRows] = useState<{ set_name: string; component_name: string; component_qty: number }[]>([]);
+  const [marginLoaded, setMarginLoaded] = useState(false);
 
   async function loadInventory() {
     try {
       const data = await supabaseFetchAll<InvItem>('/inventory?select=id,product_name,company,cost_price,quantity');
       setInv(data); setInvLoaded(true);
     } catch { setInvLoaded(true); }
+  }
+
+  // 주문 조회 탭에서 공헌이익을 계산하려면 원가(재고)·몰수수료·세트구성표가 필요.
+  async function loadMarginData() {
+    if (marginLoaded) return;
+    if (!invLoaded) await loadInventory();
+    try {
+      const fee = await supabaseFetchAll<MallFee>('/mall_fees?select=company,mall,rate');
+      setFees(fee);
+    } catch { /* mall_fees 미설정 시 수수료 0 처리 */ }
+    try {
+      const bom = await supabaseFetchAll<{ set_name: string; component_name: string; component_qty: number }>('/product_bom?select=set_name,component_name,component_qty');
+      setBomRows(bom);
+    } catch { /* product_bom 미설정 시 건너뜀 */ }
+    setMarginLoaded(true);
   }
 
   const invForCompany = mCompany ? inv.filter((i) => i.company === mCompany) : [];
@@ -232,7 +256,7 @@ export default function OrdersContent() {
     setOrderLoading(true);
     setOrderChecked(new Set());
     try {
-      let q = '/orders?select=id,upload_date,order_number,recipient_name,mall_name,product_name,quantity,amount,tracking_number,canceled,source,company,manual_cost,manual_shipping&order=upload_date.desc';
+      let q = '/orders?select=id,upload_date,order_number,recipient_name,mall_name,product_name,collect_product,collect_option,quantity,amount,delivery_fee,tracking_number,canceled,source,company,manual_cost,manual_shipping&order=upload_date.desc';
       if (sOrderNo.trim()) q += `&order_number=ilike.*${encodeURIComponent(sOrderNo.trim())}*`;
       if (sProduct.trim()) q += `&product_name=ilike.*${encodeURIComponent(sProduct.trim())}*`;
       if (sMall.trim()) q += `&mall_name=ilike.*${encodeURIComponent(sMall.trim())}*`;
@@ -253,6 +277,28 @@ export default function OrdersContent() {
     } catch { setOrderList([]); }
     finally { setOrderLoading(false); }
   }
+
+  // 조회 결과의 공헌이익 요약 + 옵션별 집계. 매출현황과 동일한 computeOrderLines 사용.
+  const marginSummary = useMemo(() => {
+    if (orderList.length === 0) return null;
+    const { lines } = computeOrderLines(orderList, inv, fees, bomRows);
+    // mrev = 원가 확인된 라인의 매출(공급가액). 이익률은 매출현황과 동일하게 mrev 기준.
+    type Agg = { option: string; qty: number; rev: number; mrev: number; profit: number; known: number; total: number; missCost: boolean };
+    const byOpt = new Map<string, Agg>();
+    let tQty = 0, tRev = 0, tMrev = 0, tProfit = 0, tKnown = 0, tTotal = 0, anyMiss = false;
+    for (const l of lines) {
+      const key = l.option || '(옵션 없음)';
+      const a = byOpt.get(key) || { option: key, qty: 0, rev: 0, mrev: 0, profit: 0, known: 0, total: 0, missCost: false };
+      a.qty += l.qty; a.rev += l.rev; a.total += 1;
+      if (l.profitKnown) { a.profit += l.profit; a.mrev += l.rev; a.known += 1; } else { a.missCost = true; }
+      byOpt.set(key, a);
+      tQty += l.qty; tRev += l.rev; tTotal += 1;
+      if (l.profitKnown) { tProfit += l.profit; tMrev += l.rev; tKnown += 1; } else anyMiss = true;
+    }
+    const cancelQty = orderList.filter(o => o.canceled).reduce((s, o) => s + (Number(o.quantity) || 0), 0);
+    const rows = [...byOpt.values()].sort((a, b) => b.rev - a.rev);
+    return { rows, tQty, tRev, tMrev, tProfit, tKnown, tTotal, anyMiss, cancelQty, ready: marginLoaded };
+  }, [orderList, inv, fees, bomRows, marginLoaded]);
 
   async function cancelSelectedOrders() {
     if (orderChecked.size === 0) { alert('취소할 주문을 선택하세요.'); return; }
@@ -855,6 +901,7 @@ export default function OrdersContent() {
       setSFrom(iso); setSTo(iso); setSOrderNo(''); setSProduct(''); setSMall(''); setSCompany('전체');
       searchOrders({ from: iso, to: iso });
       refreshUndeductedCount();
+      loadMarginData(); // 공헌이익 계산용 원가·수수료·세트 로드
     }
   }
 
@@ -1323,20 +1370,50 @@ export default function OrdersContent() {
                 className="px-3 py-2 border border-gray-200 rounded-lg text-sm text-gray-500 hover:bg-gray-50">초기화</button>
             </div>
             <p className="text-xs text-gray-400 mt-2">📅 탭 열면 <b>오늘 주문 자동 조회</b> · 업로드일(주문 변환일) 기준 · 날짜·검색어를 걸면 <b>해당 범위 전부</b> 조회(건수 제한 없음). (조회 {orderList.length.toLocaleString()}건)</p>
-            {orderList.length > 0 && (() => {
-              const live = orderList.filter(o => !o.canceled);
-              const qty = live.reduce((a, o) => a + (Number(o.quantity) || 0), 0);
-              const amt = live.reduce((a, o) => a + (Number(o.amount) || 0), 0);
-              const cancQty = orderList.filter(o => o.canceled).reduce((a, o) => a + (Number(o.quantity) || 0), 0);
-              return (
-                <p className="text-sm text-gray-600 mt-1 font-medium">
-                  📦 유효 수량 합계 <b className="text-slate-800">{qty.toLocaleString()}개</b>
-                  <span className="mx-1 text-gray-300">·</span>
-                  매출 합계 <b className="text-slate-800">₩{amt.toLocaleString()}</b>
-                  {cancQty > 0 && <span className="text-gray-400"> (취소 {cancQty.toLocaleString()}개 제외)</span>}
-                </p>
-              );
-            })()}
+            {marginSummary && (
+              <div className="mt-3 border-t border-gray-100 pt-3">
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+                  <span className="text-gray-600">📦 유효 수량 <b className="text-slate-800 text-base">{marginSummary.tQty.toLocaleString()}개</b></span>
+                  <span className="text-gray-300">·</span>
+                  <span className="text-gray-600">매출(공급가액) <b className="text-slate-800 text-base">₩{Math.round(marginSummary.tRev).toLocaleString()}</b></span>
+                  <span className="text-gray-300">·</span>
+                  <span className="text-gray-600">공헌이익 <b className="text-blue-700 text-base">₩{Math.round(marginSummary.tProfit).toLocaleString()}</b>
+                    {marginSummary.tMrev > 0 && <span className="text-gray-500"> ({(marginSummary.tProfit / marginSummary.tMrev * 100).toFixed(1)}%)</span>}</span>
+                  {marginSummary.cancelQty > 0 && <span className="text-gray-400">취소 {marginSummary.cancelQty.toLocaleString()}개 제외</span>}
+                </div>
+                {!marginSummary.ready && <p className="text-xs text-amber-600 mt-1">원가·수수료 데이터를 불러오는 중 — 공헌이익이 곧 반영됩니다.</p>}
+                {marginSummary.ready && marginSummary.anyMiss && (
+                  <p className="text-xs text-amber-600 mt-1">⚠️ 재고에 원가가 없는 상품은 공헌이익에서 제외됨 (원가 확인 {marginSummary.tKnown}/{marginSummary.tTotal}건). 매출·수량은 전부 반영.</p>
+                )}
+                {marginSummary.rows.length > 0 && (marginSummary.rows.length > 1 || marginSummary.rows[0].option !== '(옵션 없음)') && (
+                  <div className="mt-2 overflow-x-auto">
+                    <table className="text-sm border-collapse min-w-[420px]">
+                      <thead>
+                        <tr className="text-gray-400 border-b border-gray-100">
+                          <th className="text-left font-medium py-1 pr-4">판매 옵션</th>
+                          <th className="text-right font-medium py-1 px-3">수량</th>
+                          <th className="text-right font-medium py-1 px-3">매출</th>
+                          <th className="text-right font-medium py-1 px-3">공헌이익</th>
+                          <th className="text-right font-medium py-1 pl-3">이익률</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {marginSummary.rows.map(r => (
+                          <tr key={r.option} className="border-b border-gray-50">
+                            <td className="py-1 pr-4 text-gray-700">{r.option}{r.missCost && <span className="ml-1 text-amber-500 text-xs">(원가 일부 미확인)</span>}</td>
+                            <td className="text-right py-1 px-3 text-gray-700">{r.qty.toLocaleString()}개</td>
+                            <td className="text-right py-1 px-3 text-gray-700">₩{Math.round(r.rev).toLocaleString()}</td>
+                            <td className="text-right py-1 px-3 text-blue-700 font-medium">₩{Math.round(r.profit).toLocaleString()}</td>
+                            <td className="text-right py-1 pl-3 text-gray-500">{r.mrev > 0 ? (r.profit / r.mrev * 100).toFixed(1) : '0.0'}%</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+                <p className="text-[11px] text-gray-400 mt-1">공헌이익 = (상품금액 + 배송비 − 몰수수료 − 원가 − 실운임) ÷ 1.1 · 매출현황과 동일 기준. 합구매 배송비·실운임은 주문당 1회 반영.</p>
+              </div>
+            )}
           </div>
 
           {orderChecked.size > 0 && (

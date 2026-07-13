@@ -3,8 +3,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { getUser } from '@/lib/auth';
 import { supabaseFetch, supabaseFetchAll } from '@/lib/supabase';
-import { matchProduct, loadDbMatches } from '@/lib/orderConvert';
-import { buildFeeMap, lookupFee, normalizeMall, type MallFee } from '@/lib/mallFees';
+import { loadDbMatches } from '@/lib/orderConvert';
+import { normalizeMall, type MallFee } from '@/lib/mallFees';
+import { computeOrderLines } from '@/lib/salesStats';
 
 // ── 타입 ─────────────────────────────────────────────
 interface OrderRow {
@@ -169,142 +170,11 @@ export default function SalesContent() {
     const today = parseYmd(anchor); today.setHours(0, 0, 0, 0); // 기준일(과거 기간 조회 시 이동)
     const realToday = new Date(); realToday.setHours(0, 0, 0, 0); // 실제 오늘 (미래분 제외용)
 
-    // 재고 → (상품명+사업자)별 {원가, 사업자, 브랜드} 맵. 같은 상품이라도 사업자 다르면 원가 따로.
-    type InvVal = { cost: number; company: string; brand: string };
-    const invMap = new Map<string, InvVal>();      // key: `${상품명}|${사업자}` — 사업자별 원가 정확 매칭
-    const invByName = new Map<string, InvVal>();    // 폴백: 상품명만 (주문에 사업자 없을 때)
-    for (const it of inventory) {
-      const name = it.product_name;
-      if (!name) continue;
-      const cost = Number(it.cost_price) || 0;
-      const co = it.company || '미분류';
-      const val: InvVal = { cost, company: co, brand: it.brand || '' };
-      const key = `${name}|${co}`;
-      const prev = invMap.get(key);
-      if (!prev || (prev.cost === 0 && cost > 0)) invMap.set(key, val);
-      const pn = invByName.get(name);
-      if (!pn || (pn.cost === 0 && cost > 0)) invByName.set(name, val);
-    }
-
-    // 세트 구성표 (세트명 → 구성품·수량). 세트원가 = 구성품 원가 합.
-    const bomMap = new Map<string, { component_name: string; component_qty: number }[]>();
-    for (const b of bomRows) { const a = bomMap.get(b.set_name) || []; a.push({ component_name: b.component_name, component_qty: Number(b.component_qty) || 1 }); bomMap.set(b.set_name, a); }
-
-    // 몰 수수료 맵 (사업자+정규몰명 → %)
-    const feeMap = buildFeeMap(fees);
-
-    // 주문번호별 고객결제 배송비(주문당 1회 = 라인별 중복 표기 대비 max)
-    const orderDeliveryMax = new Map<string, number>();
-    for (const o of orders) {
-      if (o.canceled) continue;
-      const on = o.order_number || '';
-      if (!on) continue;
-      const df = Number(o.delivery_fee) || 0;
-      orderDeliveryMax.set(on, Math.max(orderDeliveryMax.get(on) || 0, df));
-    }
-
-    // 주문 → 매출 인식용 가공 (취소 제외). 공헌이익은 라인별로 미리 계산.
-    // · 일반/수기/사방넷: 전 항목 부가세 제외(공급가액 기준)
-    //   - 매출 = (상품금액 + 고객배송비) ÷ 1.1  (고객이 낸 배송비도 과세 매출 → 공급가액에 포함)
-    //   - 공헌이익 = (상품금액 + 고객배송비 − 몰수수료 − 원가 − 실운임) ÷ 1.1
-    //   - 고객배송비·실운임은 합구매(같은 주문번호) 1회만. 배송비는 매출로 흡수, 비용엔 실제 택배비만.
-    // · 도매(source='도매'): 입력값으로 확정 = (매출 − 원가(개당×수량) − 배송비)/1.1 (수수료 없음, 모두 부가세 포함 → ÷1.1).
-    // amt = 상품 결제금액(부가세 포함, DB 원본). rev = 부가세 제외 매출(공급가액) — 화면 표시·집계용.
-    type Flt = { date: string; amt: number; rev: number; qty: number; rep: string; mall: string; company: string;
-      profit: number; profitKnown: boolean; fee: number; unim: number;
-      missCost: boolean; registered: boolean; feeFound: boolean; invCompany?: string;
-      brand: string; isPast: boolean };
-    const flt: Flt[] = [];
-    const shipAssigned = new Set<string>(); // 고객배송비(매출) 배정 완료한 주문번호
-    const unimAssigned = new Set<string>(); // 실운임(비용) 배정 완료한 주문번호
+    // 라인별 매출(공급가액)·공헌이익 계산은 공용 함수(computeOrderLines)에서 단일 수행.
+    // 매출현황·주문조회가 같은 함수를 써서 숫자가 어긋나지 않도록 한다.
+    const { lines: flt, minDate } = computeOrderLines(orders, inventory, fees, bomRows);
     let earliest = ymd(today);
-    for (const o of orders) {
-      if (o.canceled) continue;
-      const qty = Number(o.quantity) || 0;
-      const amt = Number(o.amount) || 0;
-      if (qty < 1 && amt === 0) continue;
-      const rep = matchProduct(o.collect_product || o.product_name || '').name;
-      // 원가·브랜드는 (상품명+사업자)로 매칭. 주문에 사업자 있으면 그 사업자 재고, 없으면 상품명만으로 폴백.
-      const inv = (o.company ? invMap.get(`${rep}|${o.company}`) : undefined) || invByName.get(rep);
-      const date = o.upload_date || '';
-      if (date && date < earliest) earliest = date;
-      const company = o.company || (inv ? inv.company : '미분류');
-      const mall = o.mall_name || '(몰 미상)';
-
-      if (o.source === '과거') {
-        // 과거 실적: 엑셀의 매출·마진을 그대로 확정 (manual_cost = 매출 − 마진 → 공헌이익 = 마진)
-        flt.push({
-          date, amt, rev: amt / VAT_DIV, qty, rep, mall, company,
-          profit: amt - (Number(o.manual_cost) || 0), profitKnown: true,
-          fee: 0, unim: 0, missCost: false, registered: true, feeFound: true,
-          invCompany: inv?.company, brand: '', isPast: true,
-        });
-        continue;
-      }
-
-      if (o.source === '도매') {
-        // 도매: 등록 시 입력값으로 마진 확정 (재계산 안 함)
-        const wcost = (Number(o.manual_cost) || 0) * qty;
-        const wship = Number(o.manual_shipping) || 0;
-        flt.push({
-          date, amt, rev: amt / VAT_DIV, qty, rep, mall, company,
-          profit: (amt - wcost - wship) / VAT_DIV, profitKnown: true,
-          fee: 0, unim: 0, missCost: false, registered: true, feeFound: true,
-          invCompany: inv?.company, brand: inv?.brand || '', isPast: false,
-        });
-        continue;
-      }
-
-      // 일반/수기/사방넷
-      // 재고에 등록된 상품이면 원가 유효(0원=무상/서비스 품목도 정상 원가로 인정). 재고 미등록만 원가 미확인.
-      // 세트상품(BOM): 재고에 세트명은 없고 구성품만 있으므로 구성품 원가 합으로 계산.
-      const setDef = bomMap.get(rep);
-      let hasCost: boolean;
-      let cost: number;
-      let invCompanyVal = inv?.company;
-      let brandVal = inv?.brand || '';
-      if (setDef) {
-        let sum = 0; let allFound = true;
-        for (const b of setDef) {
-          const ci = (o.company ? invMap.get(`${b.component_name}|${o.company}`) : undefined) || invByName.get(b.component_name);
-          if (!ci) { allFound = false; break; }
-          sum += (ci.cost || 0) * b.component_qty;
-          if (!invCompanyVal) invCompanyVal = ci.company;
-          if (!brandVal) brandVal = ci.brand || '';
-        }
-        hasCost = allFound;
-        cost = allFound ? sum * qty : 0;
-      } else {
-        hasCost = !!inv;
-        cost = hasCost ? (inv!.cost || 0) * qty : 0;
-      }
-      const registered = setDef ? hasCost : !!inv;
-      const ff = lookupFee(feeMap, company, mall, amt);
-      const on = o.order_number || '';
-      const key = on || `__noorder_${flt.length}`; // 주문번호 없으면 라인 단위로 취급
-      // 고객 배송비: 주문당 1회만 매출·이익에 반영 (합구매 중복 방지). 원가 미확인 라인이어도 매출엔 포함.
-      let ship = 0;
-      if (!shipAssigned.has(key)) {
-        shipAssigned.add(key);
-        ship = on ? (orderDeliveryMax.get(on) || 0) : (Number(o.delivery_fee) || 0);
-      }
-      // 실운임(택배 매입, 과세): 원가 확인된 라인에서 주문당 1회만 비용 처리.
-      let unim = 0;
-      if (hasCost && !unimAssigned.has(key)) {
-        unimAssigned.add(key);
-        unim = UNIT_SHIPPING;
-      }
-      // 매출(공급가액) = (상품금액 + 고객배송비) ÷ 1.1 — 배송비도 부가세 제외.
-      const rev = (amt + ship) / VAT_DIV;
-      // 공헌이익 = (상품금액 + 배송비 − 몰수수료 − 원가 − 실운임) ÷ 1.1 (전 항목 부가세 제외 통일).
-      const profit = hasCost ? ((amt + ship - ff.fee) - cost - unim) / VAT_DIV : 0;
-      flt.push({
-        date, amt, rev, qty, rep, mall, company,
-        profit, profitKnown: hasCost, fee: ff.fee, unim,
-        missCost: !hasCost, registered, feeFound: ff.found,
-        invCompany: invCompanyVal, brand: brandVal, isPast: false,
-      });
-    }
+    if (minDate && minDate < earliest) earliest = minDate;
 
     const ranges = periodRanges(period, today, earliest, ymd(realToday), rangeStart, rangeEnd);
     const cf = (company: string) => companyFilter === '전체' || company === companyFilter;
