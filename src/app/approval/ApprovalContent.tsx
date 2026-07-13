@@ -619,32 +619,50 @@ export default function ApprovalContent() {
       }
 
       let approvalId = editId;
+      // 편집 시 기존 품목 id (재삽입 성공 후에만 삭제 → 본문 유실 방지)
+      const oldItemIds = editId && docType !== '휴가신청서'
+        ? items.filter(i => i.id).map(i => i.id as string) : [];
       if (editId) {
         await supabaseFetch(`/approvals?id=eq.${editId}`, {
           method: 'PATCH', headers: { Prefer: 'return=minimal' },
           body: JSON.stringify(payload),
         });
-        if (docType !== '휴가신청서') {
-          await supabaseFetch(`/approval_items?approval_id=eq.${editId}`, { method: 'DELETE' });
-        }
       } else {
         const res = await supabaseFetch('/approvals', {
           method: 'POST', headers: { Prefer: 'return=representation' },
           body: JSON.stringify(payload),
         });
-        const data = await res.json();
-        approvalId = data[0]?.id;
+        if (!res.ok) { alert(`결재 저장에 실패했습니다 (HTTP ${res.status}). 다시 시도해주세요.`); setSaving(false); return; }
+        const data = await res.json().catch(() => null);
+        approvalId = Array.isArray(data) ? data[0]?.id : undefined;
       }
+      if (!approvalId) { alert('결재 저장에 실패했습니다 (문서 ID를 받지 못함). 다시 시도해주세요.'); setSaving(false); return; }
 
-      if (approvalId && docType !== '휴가신청서') {
+      // ── 품목(본문) 저장: 반드시 '삽입 성공 확인' 후에 기존 품목 삭제 ──
+      // 예전 버그: 기존 품목을 먼저 DELETE → 재삽입이 실패해도 무시 → 본문이 통째로 사라짐(승인자에게 빈 화면).
+      if (docType !== '휴가신청서') {
         const validItems = items.filter(i => i.description || i.amount);
         if (validItems.length > 0) {
-          await supabaseFetch('/approval_items', {
+          const insRes = await supabaseFetch('/approval_items', {
             method: 'POST', headers: { Prefer: 'return=minimal' },
             body: JSON.stringify(validItems.map((i, idx) => ({
               ...i, id: undefined, approval_id: approvalId, sort_order: idx,
             }))),
           });
+          if (!insRes.ok) {
+            alert(`본문(품목) 저장에 실패했습니다 (HTTP ${insRes.status}). 기존 내용은 그대로 유지됩니다. 잠시 후 다시 시도해주세요.`);
+            setSaving(false); return;
+          }
+          // 삽입 성공 → 편집이면 예전 품목만 삭제(방금 넣은 새 품목은 유지)
+          if (oldItemIds.length > 0) {
+            await supabaseFetch(`/approval_items?id=in.(${oldItemIds.join(',')})`, { method: 'DELETE' });
+          }
+        } else if (editId && oldItemIds.length > 0) {
+          // 편집인데 품목이 비어 있음 → 실수로 본문 전체 삭제되는 것 방지(확인)
+          if (!confirm('본문(품목)이 비어 있습니다. 이대로 저장하면 기존 품목이 모두 삭제됩니다. 계속할까요?')) {
+            setSaving(false); return;
+          }
+          await supabaseFetch(`/approval_items?id=in.(${oldItemIds.join(',')})`, { method: 'DELETE' });
         }
       }
 
