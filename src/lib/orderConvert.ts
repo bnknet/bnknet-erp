@@ -864,6 +864,7 @@ const PRODUCT_MAP_VAL_NORM: Record<string, string> = (() => {
 let DB_MATCH: Record<string, string> = {};
 let DB_MATCH_NORM: Record<string, string> = {};
 let DB_MATCH_VAL_NORM: Record<string, string> = {}; // 대표명(값) 정규화 → 자기매칭용
+let DB_MATCH_OPT: Record<string, { opt: string; name: string }[]> = {}; // 수집명 정규화 → [{옵션정규화, 대표명}] 옵션별 매칭
 let BOM_SET_NORM: Record<string, string> = {};      // 세트구성(BOM) 세트명 정규화 → 세트도 매칭 인정
 let dbMatchesLoaded = false;
 
@@ -874,14 +875,25 @@ export function setBomSets(names: string[]): void {
   BOM_SET_NORM = m;
 }
 
-export function setDbMatches(rows: { collect_name?: string; product_name?: string }[]): void {
+export function setDbMatches(rows: { collect_name?: string; product_name?: string; collect_option?: string }[]): void {
   const m: Record<string, string> = {};
   const mn: Record<string, string> = {};
   const mvn: Record<string, string> = {};
+  const mopt: Record<string, { opt: string; name: string }[]> = {};
   for (const r of rows) {
     const cn = String(r.collect_name || '').trim();
     const pn = String(r.product_name || '').trim();
     if (!cn || !pn) continue;
+    // 옵션이 지정된 매칭 → 옵션 인덱스에 (이름·꼬리표제거 둘 다 키로)
+    const optNk = normKey(String(r.collect_option || ''));
+    if (optNk) {
+      const [, cnCleanO] = extractQtyAndName(cn);
+      for (const key of [normKey(cn), normKey(cnCleanO)]) {
+        if (!key) continue;
+        (mopt[key] = mopt[key] || []).push({ opt: optNk, name: pn });
+      }
+      continue; // 옵션 매칭은 이름-단독 인덱스에 넣지 않음(옵션 없는 주문엔 적용 안 되게)
+    }
     m[cn] = pn;
     const nk = normKey(cn);
     if (!(nk in mn)) mn[nk] = pn;
@@ -897,6 +909,7 @@ export function setDbMatches(rows: { collect_name?: string; product_name?: strin
   DB_MATCH = m;
   DB_MATCH_NORM = mn;
   DB_MATCH_VAL_NORM = mvn;
+  DB_MATCH_OPT = mopt;
   dbMatchesLoaded = true;
 }
 
@@ -904,9 +917,13 @@ export function setDbMatches(rows: { collect_name?: string; product_name?: strin
 export async function loadDbMatches(force = false): Promise<void> {
   if (dbMatchesLoaded && !force) return;
   try {
-    const rows = await supabaseFetchAll<{ collect_name: string; product_name: string }>(
-      '/product_matches?select=collect_name,product_name',
-    );
+    let rows: { collect_name: string; product_name: string; collect_option?: string }[];
+    try {
+      rows = await supabaseFetchAll('/product_matches?select=collect_name,product_name,collect_option');
+    } catch {
+      // collect_option 컬럼 적용 전이면 옵션 없이 조회(하위호환)
+      rows = await supabaseFetchAll('/product_matches?select=collect_name,product_name');
+    }
     setDbMatches(rows);
   } catch { /* 매칭 테이블 없거나 조회 실패해도 하드코딩 매칭으로 동작 */ }
   try {
@@ -917,10 +934,17 @@ export async function loadDbMatches(force = false): Promise<void> {
 
 // 수집상품명을 매칭데이터 기준 대표상품명으로 변환 + 매칭 여부 반환
 // 일자별 출고현황 집계용 — 매칭 안 된 상품은 별도 알림 처리
-export function matchProduct(collectName: string): { name: string; matched: boolean } {
+export function matchProduct(collectName: string, collectOption = ''): { name: string; matched: boolean } {
   const raw = String(collectName || '').trim();
   if (!raw) return { name: '(상품명 없음)', matched: false };
   const [, cleanName] = extractQtyAndName(raw);
+  // 0순위: 담당자가 등록한 '옵션별 매칭' — 주문 옵션이 등록옵션을 포함하면 그 대표명 사용(가장 구체적인 것 우선)
+  const optNk = normKey(collectOption);
+  if (optNk) {
+    const cands = [...(DB_MATCH_OPT[normKey(cleanName)] || []), ...(DB_MATCH_OPT[normKey(raw)] || [])];
+    const hit = cands.filter(c => c.opt && optNk.includes(c.opt)).sort((a, b) => b.opt.length - a.opt.length)[0];
+    if (hit) return { name: hit.name, matched: true };
+  }
   // 우선순위: DB 정확 → 하드코딩 정확 → DB 정규화 → 하드코딩 정규화
   const mapped =
     DB_MATCH[cleanName] || DB_MATCH[raw]
@@ -1006,7 +1030,7 @@ export function convertOrders(raw: RawOrderRow[]): ConvertedOrderRow[] {
     const finalQty = unitQty * collectQty;
     // 상품명 치환은 matchProduct로 통일 + 수집옵션 색상(자연갈색/흑색 등) 반영.
     // 변환 저장되는 product_name이 재고/매출 매칭과 100% 동일 기준이 되도록.
-    const mappedName = applyOptionColor(matchProduct(collectName).name, collectOpt);
+    const mappedName = applyOptionColor(matchProduct(collectName, collectOpt).name, collectOpt);
 
     return {
       ...row,
