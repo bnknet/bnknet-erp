@@ -297,7 +297,9 @@ export default function InventoryContent() {
         ? qty
         : before + qty;
 
-      if (after < 0) { alert('재고가 부족합니다.'); setSaving(false); return; }
+      // 출고만 재고 부족을 막는다. 입고/조정은 결과가 음수여도 허용
+      // (예: 현재고 -250개 상태에서 70개 입고 → -180개, 정상 처리돼야 함)
+      if (moveForm.type === '출고' && after < 0) { alert('재고가 부족합니다.'); setSaving(false); return; }
 
       // 재고 수량 변경 — 성공 여부 반드시 확인 (실패 시 로그도 남기지 않고 중단)
       const patchRes = await supabaseFetch(`/inventory?id=eq.${selected.id}`, {
@@ -484,7 +486,8 @@ export default function InventoryContent() {
     const matchCompany = filterCompany === '전체' || p.company === filterCompany;
     const matchCategory = filterCategory === '전체' || p.category === filterCategory;
     const matchBrand = filterBrand === '전체' || (p.brand || '') === filterBrand;
-    const matchSearch = !search || p.product_name.includes(search) || (p.brand || '').includes(search);
+    const sq = search.toLowerCase();
+    const matchSearch = !search || p.product_name.toLowerCase().includes(sq) || (p.brand || '').toLowerCase().includes(sq);
     return matchCompany && matchCategory && matchBrand && matchSearch;
   }).sort((a, b) => {
     // 판매O 먼저 → 재고수량 많은 순 → 원가총합(수량×원가) 높은 순
@@ -500,7 +503,7 @@ export default function InventoryContent() {
   // 일자별 재고 (스냅샷) — 회사/검색 필터 공유
   const filteredSnap = snapshots.filter((s) =>
     (filterCompany === '전체' || s.company === filterCompany) &&
-    (!search || s.product_name.includes(search) || (s.brand || '').includes(search))
+    (!search || s.product_name.toLowerCase().includes(search.toLowerCase()) || (s.brand || '').toLowerCase().includes(search.toLowerCase()))
   );
   const snapTotalQty = filteredSnap.reduce((a, s) => a + s.quantity, 0);
   const snapTotalCost = filteredSnap.reduce((a, s) => a + s.quantity * (s.cost_price || 0), 0);
