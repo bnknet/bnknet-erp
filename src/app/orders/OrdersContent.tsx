@@ -451,7 +451,16 @@ export default function OrdersContent() {
 
   // 주문 삭제(재고 복구 포함): 삭제 전 cancel_orders로 차감했던 재고를 원자적으로 복구한 뒤 행 삭제.
   // (cancel_orders는 이미 취소된 건은 건너뛰므로 이중복구 없음) 매출은 행이 사라지면서 자동 제외.
-  async function deleteOrdersWithRestore(ids: string[]): Promise<boolean> {
+  async function deleteOrdersWithRestore(ids: string[], context = ''): Promise<boolean> {
+    // 삭제 전에 로그용 정보 확보(삭제 후엔 못 읽음). URL 길이 회피 위해 200개씩.
+    const infos: { id: string; product_name?: string; order_number?: string; quantity?: number; company?: string; mall_name?: string }[] = [];
+    for (let i = 0; i < ids.length; i += 200) {
+      try {
+        const r = await supabaseFetch(`/orders?id=in.(${ids.slice(i, i + 200).join(',')})&select=id,product_name,order_number,quantity,company,mall_name`);
+        const d = await r.json();
+        if (Array.isArray(d)) infos.push(...d);
+      } catch { /* 무시 */ }
+    }
     try {
       const res = await supabaseFetch('/rpc/cancel_orders', {
         method: 'POST', headers: { Prefer: 'return=representation' },
@@ -461,6 +470,15 @@ export default function OrdersContent() {
     } catch { alert('❌ 재고 복구 중 오류로 삭제를 중단했습니다.'); return false; }
     const del = await supabaseFetch(`/orders?id=in.(${ids.join(',')})`, { method: 'DELETE' });
     if (!del.ok) { alert(`❌ 주문 삭제 실패 (HTTP ${del.status}). 재고는 이미 복구되었으니, 필요 시 취소 해제 후 다시 시도하세요.`); return false; }
+    // 변경 로그에 '삭제' 기록 (order_change_logs는 FK 없어 주문 삭제돼도 남음)
+    try {
+      const rows = infos.map(o => ({
+        order_id: o.id, action: '삭제',
+        detail: `${o.mall_name ? o.mall_name + ' · ' : ''}${o.product_name || ''}${o.quantity ? ' ' + o.quantity + '개' : ''}${o.order_number ? ' · ' + o.order_number : ''}${o.company ? ' · ' + o.company : ''}${context ? ' · ' + context : ''} (재고 복구)`,
+        changed_by: me?.name || '',
+      }));
+      if (rows.length) await supabaseFetch('/order_change_logs', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify(rows) });
+    } catch { /* 로그 실패는 삭제에 영향 없음 */ }
     return true;
   }
 
@@ -468,7 +486,7 @@ export default function OrdersContent() {
     if (orderChecked.size === 0) { alert('삭제할 주문을 선택하세요.'); return; }
     if (!confirm(`선택한 ${orderChecked.size}건을 완전히 삭제하시겠습니까?\n· 차감했던 재고는 자동 복구됩니다\n· 매출·공헌이익에서도 제외됩니다\n(삭제된 주문은 복구 불가)`)) return;
     const ids = Array.from(orderChecked);
-    if (await deleteOrdersWithRestore(ids)) {
+    if (await deleteOrdersWithRestore(ids, '주문 개별삭제')) {
       setOrderChecked(new Set());
       await searchOrders();
       await refreshUndeductedCount();
@@ -796,7 +814,7 @@ export default function OrdersContent() {
 
     if (linkedIds.length) {
       if (!confirm(`이 업로드로 저장된 주문 ${linkedIds.length}건을 함께 삭제하고 원상복구할까요?\n· 차감했던 재고 자동 복구\n· 매출·공헌이익에서 제외\n(삭제된 주문은 복구 불가)`)) return;
-      if (!(await deleteOrdersWithRestore(linkedIds))) return; // 실패 시 이력도 보존
+      if (!(await deleteOrdersWithRestore(linkedIds, '업로드 일괄삭제'))) return; // 실패 시 이력도 보존
     } else {
       if (!confirm('이 업로드 이력을 삭제하시겠습니까?\n(연결된 주문을 찾지 못해 이력만 삭제됩니다 — 주문 데이터는 유지)')) return;
     }
