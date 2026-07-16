@@ -1232,15 +1232,15 @@ export default function ApprovalContent() {
                 const prof = COMPANY_PROFILES[selected.company] || { biz_no: '', company_name: selected.company, ceo: '', address: '', phone: '' };
                 return (
                   <div className="flex justify-between gap-4 mb-4 flex-wrap">
-                    <div className="flex-1 min-w-[220px]">
+                    <div className="flex-1 min-w-[160px]">
                       <div className="border-b-2 border-gray-500 pb-1 text-lg font-semibold text-gray-800">{selected.purchase_vendor || ''} <span className="text-base font-normal text-gray-500">귀 하</span></div>
                       <div className="mt-3 text-base text-gray-700">아래와 같이 발주합니다.</div>
                     </div>
-                    <div className="border border-gray-400 text-sm self-start">
-                      <div className="flex"><div className="w-24 px-2 py-1.5 bg-gray-50 border-r border-b border-gray-400 font-medium">사업자번호</div><div className="px-2 py-1.5 border-b border-gray-400 min-w-[180px]">{prof.biz_no}</div></div>
-                      <div className="flex"><div className="w-24 px-2 py-1.5 bg-gray-50 border-r border-b border-gray-400 font-medium">상호</div><div className="px-2 py-1.5 border-r border-b border-gray-400 flex-1">{prof.company_name}</div><div className="w-14 px-2 py-1.5 bg-gray-50 border-r border-b border-gray-400 font-medium">성명</div><div className="px-2 py-1.5 border-b border-gray-400 flex-1">{prof.ceo}</div></div>
-                      <div className="flex"><div className="w-24 px-2 py-1.5 bg-gray-50 border-r border-b border-gray-400 font-medium">주소</div><div className="px-2 py-1.5 border-b border-gray-400 flex-1">{prof.address}</div></div>
-                      <div className="flex"><div className="w-24 px-2 py-1.5 bg-gray-50 border-r border-gray-400 font-medium">전화번호</div><div className="px-2 py-1.5 flex-1">{prof.phone}</div></div>
+                    <div className="border border-gray-400 text-sm self-start w-[340px] max-w-full">
+                      <div className="flex"><div className="w-20 flex-none px-2 py-1.5 bg-gray-50 border-r border-b border-gray-400 font-medium">사업자번호</div><div className="px-2 py-1.5 border-b border-gray-400 flex-1">{prof.biz_no}</div></div>
+                      <div className="flex"><div className="w-20 flex-none px-2 py-1.5 bg-gray-50 border-r border-b border-gray-400 font-medium">상호</div><div className="px-2 py-1.5 border-r border-b border-gray-400 flex-1 whitespace-nowrap">{prof.company_name}</div><div className="w-12 flex-none px-2 py-1.5 bg-gray-50 border-r border-b border-gray-400 font-medium">성명</div><div className="px-2 py-1.5 border-b border-gray-400 flex-1 whitespace-nowrap">{prof.ceo}</div></div>
+                      <div className="flex"><div className="w-20 flex-none px-2 py-1.5 bg-gray-50 border-r border-b border-gray-400 font-medium">주소</div><div className="px-2 py-1.5 border-b border-gray-400 flex-1">{prof.address}</div></div>
+                      <div className="flex"><div className="w-20 flex-none px-2 py-1.5 bg-gray-50 border-r border-gray-400 font-medium">전화번호</div><div className="px-2 py-1.5 flex-1">{prof.phone}</div></div>
                     </div>
                   </div>
                 );
@@ -1276,31 +1276,31 @@ export default function ApprovalContent() {
                 <div className="flex bg-gray-50 border-b border-gray-400 text-base font-medium text-center">
                   <div className="w-20 px-2 py-2 border-r border-gray-400">월/일</div>
                   <div className="flex-1 px-2 py-2 border-r border-gray-400">{selected.doc_type === '발주서' ? '품목 및 규격' : selected.doc_type === '카드구매' ? '구매상품' : '적 요'}</div>
-                  {(selected.doc_type === '카드구매' || selected.doc_type === '발주서') && <div className="w-24 px-2 py-2 border-r border-gray-400">수 량</div>}
-                  {selected.doc_type === '발주서' && <div className="w-28 px-2 py-2 border-r border-gray-400">공급가</div>}
-                  <div className="w-32 px-2 py-2 border-r border-gray-400">{selected.doc_type === '발주서' ? '합계금액' : '금 액'}</div>
-                  {selected.doc_type === '지출결의서' && <div className="w-32 px-2 py-2 border-r border-gray-400 no-print">판관비 항목</div>}
-                  <div className="w-36 px-2 py-2">비 고</div>
+                  {(selected.doc_type === '카드구매' || selected.doc_type === '발주서') && <div className="w-16 px-1 py-2 border-r border-gray-400">수량</div>}
+                  {selected.doc_type === '발주서' && <div className="w-24 px-1 py-2 border-r border-gray-400">공급가</div>}
+                  <div className="w-28 px-1 py-2 border-r border-gray-400">{selected.doc_type === '발주서' ? '합계금액' : '금 액'}</div>
+                  {selected.doc_type === '지출결의서' && <div className="w-28 px-1 py-2 border-r border-gray-400 no-print">판관비 항목</div>}
+                  <div className="w-24 px-2 py-2">비 고</div>
                 </div>
                 {[...(selected.items || []), ...Array(Math.max(0, 5 - (selected.items?.length || 0))).fill(null)].map((item, i) => (
                   <div key={i} className={`flex border-t border-gray-200 text-base min-h-[36px] ${item?.canceled ? 'bg-red-50/50' : ''}`}>
                     <div className="w-20 px-2 py-2 border-r border-gray-400 text-center">{item?.item_date || ''}</div>
                     <div className={`flex-1 px-2 py-2 border-r border-gray-400 ${item?.canceled ? 'line-through text-red-400' : ''}`}>{item?.description || ''}{item?.canceled ? ' (취소)' : ''}</div>
-                    {(selected.doc_type === '카드구매' || selected.doc_type === '발주서') && <div className="w-24 px-2 py-2 border-r border-gray-400 text-right">{item?.quantity ? item.quantity.toLocaleString() : ''}</div>}
-                    {selected.doc_type === '발주서' && <div className="w-28 px-2 py-2 border-r border-gray-400 text-right">{item?.unit_price ? item.unit_price.toLocaleString() : ''}</div>}
-                    <div className="w-32 px-2 py-2 border-r border-gray-400 text-right">{item?.amount ? item.amount.toLocaleString() : ''}</div>
-                    {selected.doc_type === '지출결의서' && <div className="w-32 px-2 py-2 border-r border-gray-400 text-center text-sm text-emerald-700 no-print">{item?.opex_category ? (opexCats.find(c => c.key === item.opex_category)?.label || item.opex_category) : ''}</div>}
-                    <div className="w-36 px-2 py-2">{item?.note || ''}</div>
+                    {(selected.doc_type === '카드구매' || selected.doc_type === '발주서') && <div className="w-16 px-1 py-2 border-r border-gray-400 text-right">{item?.quantity ? item.quantity.toLocaleString() : ''}</div>}
+                    {selected.doc_type === '발주서' && <div className="w-24 px-1 py-2 border-r border-gray-400 text-right">{item?.unit_price ? item.unit_price.toLocaleString() : ''}</div>}
+                    <div className="w-28 px-1 py-2 border-r border-gray-400 text-right">{item?.amount ? item.amount.toLocaleString() : ''}</div>
+                    {selected.doc_type === '지출결의서' && <div className="w-28 px-1 py-2 border-r border-gray-400 text-center text-sm text-emerald-700 no-print">{item?.opex_category ? (opexCats.find(c => c.key === item.opex_category)?.label || item.opex_category) : ''}</div>}
+                    <div className="w-24 px-2 py-2">{item?.note || ''}</div>
                   </div>
                 ))}
                 <div className="flex border-t border-gray-400 text-base font-bold bg-gray-50">
                   <div className="w-20 px-2 py-2 border-r border-gray-400" />
                   <div className="flex-1 px-2 py-2 border-r border-gray-400 text-center">합 계</div>
-                  {(selected.doc_type === '카드구매' || selected.doc_type === '발주서') && <div className="w-24 px-2 py-2 border-r border-gray-400 text-right">{(selected.items || []).reduce((s, it) => s + (Number(it.quantity) || 0), 0).toLocaleString()}</div>}
-                  {selected.doc_type === '발주서' && <div className="w-28 px-2 py-2 border-r border-gray-400" />}
-                  <div className="w-32 px-2 py-2 border-r border-gray-400 text-right">₩{selected.total_amount.toLocaleString()}</div>
-                  {selected.doc_type === '지출결의서' && <div className="w-32 px-2 py-2 border-r border-gray-400 no-print" />}
-                  <div className="w-36 px-2 py-2" />
+                  {(selected.doc_type === '카드구매' || selected.doc_type === '발주서') && <div className="w-16 px-1 py-2 border-r border-gray-400 text-right">{(selected.items || []).reduce((s, it) => s + (Number(it.quantity) || 0), 0).toLocaleString()}</div>}
+                  {selected.doc_type === '발주서' && <div className="w-24 px-1 py-2 border-r border-gray-400" />}
+                  <div className="w-28 px-1 py-2 border-r border-gray-400 text-right">₩{selected.total_amount.toLocaleString()}</div>
+                  {selected.doc_type === '지출결의서' && <div className="w-28 px-1 py-2 border-r border-gray-400 no-print" />}
+                  <div className="w-24 px-2 py-2" />
                 </div>
                </div>
               </div>
@@ -1822,11 +1822,11 @@ export default function ApprovalContent() {
               <div className="flex bg-gray-50 border-b border-gray-400 text-base font-medium text-center">
                 <div className="w-20 px-2 py-2 border-r border-gray-400">월/일</div>
                 <div className="flex-1 px-2 py-2 border-r border-gray-400">{docType === '발주서' ? '품목 및 규격' : docType === '카드구매' ? '구매상품' : '적 요'}</div>
-                {(docType === '카드구매' || docType === '발주서') && <div className="w-24 px-2 py-2 border-r border-gray-400">수 량</div>}
-                {docType === '발주서' && <div className="w-28 px-2 py-2 border-r border-gray-400">공급가</div>}
-                <div className="w-32 px-2 py-2 border-r border-gray-400">{docType === '발주서' ? '합계금액' : '금 액'}</div>
-                {docType === '지출결의서' && <div className="w-32 px-2 py-2 border-r border-gray-400">판관비 항목</div>}
-                <div className="w-36 px-2 py-2">비 고</div>
+                {(docType === '카드구매' || docType === '발주서') && <div className="w-16 px-1 py-2 border-r border-gray-400">수량</div>}
+                {docType === '발주서' && <div className="w-24 px-1 py-2 border-r border-gray-400">공급가</div>}
+                <div className="w-28 px-1 py-2 border-r border-gray-400">{docType === '발주서' ? '합계금액' : '금 액'}</div>
+                {docType === '지출결의서' && <div className="w-28 px-1 py-2 border-r border-gray-400">판관비 항목</div>}
+                <div className="w-24 px-2 py-2">비 고</div>
               </div>
               {items.map((item, i) => (
                 <div key={i} className="flex border-t border-gray-200 text-base">
@@ -1839,7 +1839,7 @@ export default function ApprovalContent() {
                       className="w-full px-2 py-2 focus:outline-none focus:bg-blue-50 text-base" />
                   </div>
                   {(docType === '카드구매' || docType === '발주서') && (
-                    <div className="w-24 border-r border-gray-400">
+                    <div className="w-16 border-r border-gray-400">
                       <input type="text" inputMode="numeric" value={item.quantity ? item.quantity.toLocaleString() : ''}
                         onChange={(e) => {
                           const q = Number(e.target.value.replace(/[^\d]/g, '')) || 0;
@@ -1850,7 +1850,7 @@ export default function ApprovalContent() {
                     </div>
                   )}
                   {docType === '발주서' && (
-                    <div className="w-28 border-r border-gray-400">
+                    <div className="w-24 border-r border-gray-400">
                       <input type="text" inputMode="numeric" value={item.unit_price ? item.unit_price.toLocaleString() : ''}
                         onChange={(e) => {
                           const u = Number(e.target.value.replace(/[^\d]/g, '')) || 0;
@@ -1859,7 +1859,7 @@ export default function ApprovalContent() {
                         className="w-full px-2 py-2 text-right focus:outline-none focus:bg-blue-50 text-base" />
                     </div>
                   )}
-                  <div className="w-32 border-r border-gray-400">
+                  <div className="w-28 border-r border-gray-400">
                     {docType === '발주서' ? (
                       <div className="w-full px-2 py-2 text-right text-base text-gray-700">{item.amount ? item.amount.toLocaleString() : ''}</div>
                     ) : (
@@ -1869,7 +1869,7 @@ export default function ApprovalContent() {
                     )}
                   </div>
                   {docType === '지출결의서' && (
-                    <div className="w-32 border-r border-gray-400">
+                    <div className="w-28 border-r border-gray-400">
                       <select value={item.opex_category || ''} onChange={(e) => updateItem(i, 'opex_category', e.target.value)}
                         className="w-full px-1 py-2 text-sm bg-white focus:outline-none focus:bg-blue-50">
                         <option value="">-</option>
@@ -1877,7 +1877,7 @@ export default function ApprovalContent() {
                       </select>
                     </div>
                   )}
-                  <div className="w-36">
+                  <div className="w-24">
                     <input value={item.note} onChange={(e) => updateItem(i, 'note', e.target.value)}
                       className="w-full px-2 py-2 focus:outline-none focus:bg-blue-50 text-base" />
                   </div>
@@ -1886,11 +1886,11 @@ export default function ApprovalContent() {
               <div className="flex border-t border-gray-400 text-base font-bold bg-gray-50">
                 <div className="w-20 px-2 py-2 border-r border-gray-400" />
                 <div className="flex-1 px-2 py-2 border-r border-gray-400 text-center">합 계</div>
-                {(docType === '카드구매' || docType === '발주서') && <div className="w-24 px-2 py-2 border-r border-gray-400 text-right">{items.reduce((s, it) => s + (Number(it.quantity) || 0), 0).toLocaleString()}</div>}
-                {docType === '발주서' && <div className="w-28 px-2 py-2 border-r border-gray-400" />}
-                <div className="w-32 px-2 py-2 border-r border-gray-400 text-right">₩{total.toLocaleString()}</div>
-                {docType === '지출결의서' && <div className="w-32 px-2 py-2 border-r border-gray-400" />}
-                <div className="w-36 px-2 py-2" />
+                {(docType === '카드구매' || docType === '발주서') && <div className="w-16 px-1 py-2 border-r border-gray-400 text-right">{items.reduce((s, it) => s + (Number(it.quantity) || 0), 0).toLocaleString()}</div>}
+                {docType === '발주서' && <div className="w-24 px-1 py-2 border-r border-gray-400" />}
+                <div className="w-28 px-1 py-2 border-r border-gray-400 text-right">₩{total.toLocaleString()}</div>
+                {docType === '지출결의서' && <div className="w-28 px-1 py-2 border-r border-gray-400" />}
+                <div className="w-24 px-2 py-2" />
               </div>
             </div>
             <div className="flex items-center gap-3 flex-wrap mb-4">
