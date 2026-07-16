@@ -87,6 +87,9 @@ export default function OpexTab({ orders, inventory, fees, bomRows, userName }: 
     return { map, othersProf, othersRev, othersMrev };
   }, [orders, inventory, fees, bomRows, ym]);
 
+  // 결재(지출결의서) 자동 태깅분: `${company}|${category}` → 지급액 합
+  const [autoMap, setAutoMap] = useState<Record<string, number>>({});
+
   async function loadOpex(y: number, m: number) {
     setLoading(true);
     try {
@@ -95,7 +98,23 @@ export default function OpexTab({ orders, inventory, fees, bomRows, userName }: 
     } catch { setRows([]); }
     finally { setLoading(false); }
   }
-  useEffect(() => { loadOpex(year, month); }, [year, month]);
+  // 승인된 지출결의서 중 판관비 항목이 태깅된 건을 사업자·항목별로 합산(지출일→없으면 발의일 기준 월 매칭)
+  async function loadAutoOpex(ymStr: string) {
+    try {
+      const data = await supabaseFetchAll<{ company?: string; opex_category?: string; total_amount?: number; spend_date?: string; issue_date?: string }>(
+        '/approvals?doc_type=eq.지출결의서&status=eq.approved&opex_category=not.is.null&select=company,opex_category,total_amount,spend_date,issue_date',
+      );
+      const m: Record<string, number> = {};
+      for (const a of Array.isArray(data) ? data : []) {
+        const d = (a.spend_date || a.issue_date || '').slice(0, 7);
+        if (d !== ymStr) continue;
+        const key = `${a.company || '미분류'}|${a.opex_category}`;
+        m[key] = (m[key] || 0) + (Number(a.total_amount) || 0);
+      }
+      setAutoMap(m);
+    } catch { setAutoMap({}); }
+  }
+  useEffect(() => { loadOpex(year, month); loadAutoOpex(ym); }, [year, month, ym]);
 
   useEffect(() => {
     const e: Record<string, string> = {};
@@ -108,8 +127,18 @@ export default function OpexTab({ orders, inventory, fees, bomRows, userName }: 
 
   const parse = (s: string) => Number(String(s).replace(/[^0-9.-]/g, '')) || 0;
 
-  const opexPaid = inputCats.reduce((a, c) => a + parse(edits[c.key] || ''), 0);
-  const opexSupply = inputCats.reduce((a, c) => a + toSupply(c.taxable, parse(edits[c.key] || '')), 0);
+  // 결재 자동 태깅분(지급액) — 사업자별 항목 합
+  const autoPaid = (co: string, catKey: string) => autoMap[`${co}|${catKey}`] || 0;
+  const autoSupplyCompany = (co: string) => Object.entries(autoMap).reduce((a, [k, v]) => {
+    const [c2, cat] = k.split('|');
+    return c2 === co ? a + toSupply(taxMap[cat] ?? true, Number(v) || 0) : a;
+  }, 0);
+
+  const opexPaidManual = inputCats.reduce((a, c) => a + parse(edits[c.key] || ''), 0);
+  const opexSupplyManual = inputCats.reduce((a, c) => a + toSupply(c.taxable, parse(edits[c.key] || '')), 0);
+  const opexAutoSupply = autoSupplyCompany(company);
+  const opexPaid = opexPaidManual + inputCats.reduce((a, c) => a + autoPaid(company, c.key), 0);
+  const opexSupply = opexSupplyManual + opexAutoSupply;
 
   const cur = monthAgg.map.get(company) || { rev: 0, prof: 0, mrev: 0, cnt: 0 };
   const operProfit = cur.prof - opexSupply;
@@ -200,9 +229,10 @@ export default function OpexTab({ orders, inventory, fees, bomRows, userName }: 
   // 전사 롤업
   const companyRollup = OPEX_COMPANIES.map((co) => {
     const agg = monthAgg.map.get(co) || { rev: 0, prof: 0, mrev: 0, cnt: 0 };
-    const supply = rows.filter((r) => r.company === co)
+    const manualSupply = rows.filter((r) => r.company === co)
       .reduce((a, r) => a + toSupply(taxMap[r.category] ?? true, Number(r.amount) || 0), 0);
-    const liveSupply = co === company ? opexSupply : supply;
+    // 선택 사업자는 화면 입력값(opexSupply=수동+자동), 나머지는 저장된 수동 + 결재 자동
+    const liveSupply = co === company ? opexSupply : (manualSupply + autoSupplyCompany(co));
     return { co, rev: agg.rev, prof: agg.prof, mrev: agg.mrev, opex: liveSupply, oper: agg.prof - liveSupply };
   });
   const totalProf = companyRollup.reduce((a, r) => a + r.prof, 0) + monthAgg.othersProf;
@@ -305,6 +335,9 @@ export default function OpexTab({ orders, inventory, fees, bomRows, userName }: 
                   placeholder="0"
                   className="w-full px-3 py-2 rounded-lg border border-gray-200 text-base text-right tabular-nums bg-white focus:outline-none focus:ring-2 focus:ring-blue-400"
                 />
+                {autoPaid(company, c.key) > 0 && (
+                  <div className="text-xs text-emerald-600 mt-0.5 text-right">+ 결재 지출결의서 자동 {won(autoPaid(company, c.key))} (수동 입력에 더해짐)</div>
+                )}
               </div>
               <div className="w-28 flex-none text-right text-sm text-gray-400 tabular-nums">
                 {parse(edits[c.key] || '') > 0 && (c.taxable ? `공급가 ${won(toSupply(true, parse(edits[c.key])))}` : '면세')}
@@ -332,6 +365,7 @@ export default function OpexTab({ orders, inventory, fees, bomRows, userName }: 
       <p className="text-xs text-gray-400">
         ⚠️ 건당 택배 실운임(2,300원)은 이미 공헌이익에서 차감됩니다. 판관비 ‘물류·보관비’에는 <b>고정 창고비만</b> 넣어주세요(이중차감 방지).
         판관비는 <b>지급액(카드·계산서 총액) 그대로</b> 입력하세요. 과세 항목은 부가세 포함 금액을 넣으면 자동으로 부가세 제외(÷1.1)되어 반영됩니다. (면세 항목은 그대로)
+        <br /><b className="text-emerald-600">결재(지출결의서)에 판관비 항목을 선택해 승인된 지출</b>은 위 초록 표시로 <b>자동 합산</b>됩니다. 그 지출은 여기서 또 입력하지 마세요(이중 반영 방지). 급여·임대료처럼 결재를 안 거치는 고정비만 수동 입력하면 됩니다.
       </p>
 
       {/* 항목 관리 모달 */}
