@@ -1714,12 +1714,6 @@ export default function ApprovalContent() {
               </div>
             </div>
 
-            {docType === '지출결의서' && (
-              <p className="text-xs text-emerald-600 bg-emerald-50 border border-emerald-100 rounded-lg px-3 py-2 mb-4">
-                💡 아래 품목 표의 <b>판관비 항목</b> 칸에서 품목마다 판관비 항목을 지정하면, 승인 후 매출현황 &gt; 영업이익 탭에 <b>항목별로 자동 합산</b>됩니다. 판관비가 아닌 품목은 비워두세요.
-              </p>
-            )}
-
             {/* 결제 카드 / 구매처 */}
             {docType === '카드구매' && (
               <div className="mb-3 flex gap-2">
