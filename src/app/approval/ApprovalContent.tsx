@@ -611,10 +611,11 @@ export default function ApprovalContent() {
           alert('카드구매는 결제 카드를 선택해야 합니다.');
           setSaving(false); return;
         }
-        // 카드 관련 값은 카드구매에만. 지출결의서는 결제카드·구매처·결제예정일을 강제로 비움(한도 오차 방지)
+        // 카드구매 = 상품매입(카드). 지출결의서도 '법인카드 결제'로 카드를 연결하면 카드 결제 캘린더·한도에 반영.
         const isCard = docType === '카드구매';
-        const card = isCard ? cards.find(c => c.id === cardId) : undefined;
-        const baseDate = issueDate; // 카드구매 기준 발행일
+        const cardLinked = isCard || (docType === '지출결의서' && !!cardId); // 지출결의서 법인카드 결제
+        const card = cardLinked ? cards.find(c => c.id === cardId) : undefined;
+        const baseDate = isCard ? issueDate : (spendDate || issueDate); // 지출결의서는 지출일 기준
         const paymentDue = card ? computePaymentDate(baseDate, card.billing_day, card.close_day) : null;
         payload = {
           doc_type: docType, company,
@@ -632,11 +633,11 @@ export default function ApprovalContent() {
           approver2_status: hasStep2 ? 'pending' : null,
           final_approver_status: 'pending',
           rejection_reason: null,
-          card_id: isCard ? (cardId || null) : null,
+          card_id: cardLinked ? (cardId || null) : null,
           purchase_vendor: (isCard || docType === '발주서') ? (purchaseVendor || null) : null,
           // 판관비 항목은 품목(approval_items) 단위로 태깅 → 문서 레벨은 사용 안 함(항상 null)
           opex_category: null,
-          payment_due_date: isCard ? paymentDue : null,
+          payment_due_date: cardLinked ? paymentDue : null,
           purchase_status: 'normal',
           is_card_payment: isCard ? isPrepay : false,
           canceled_at: null, refund_due_date: null,
@@ -1713,6 +1714,26 @@ export default function ApprovalContent() {
                 ))}
               </div>
             </div>
+
+            {/* 지출결의서: 법인카드 결제(선택) — 연결하면 카드 결제 캘린더·한도에 반영 */}
+            {docType === '지출결의서' && (
+              <div className="mb-4 border border-gray-200 rounded-xl p-4 bg-gray-50/50">
+                <label className="block text-sm font-medium text-gray-500 mb-1.5">법인카드 결제 (선택)</label>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <select value={cardId} onChange={e => setCardId(e.target.value)}
+                    className="px-3 py-2 border border-gray-200 rounded-lg text-base bg-white focus:outline-none focus:ring-2 focus:ring-blue-400 min-w-[220px]">
+                    <option value="">연결 안 함 (현금·계좌이체 등)</option>
+                    {cards.map(c => (
+                      <option key={c.id} value={c.id}>[{c.card_type}] {c.card_name}{c.holder_name ? ` · ${c.holder_name}` : ''}</option>
+                    ))}
+                  </select>
+                  {cardId && paymentDuePreview && (
+                    <span className="text-sm text-blue-600">💳 결제예정일 <b>{paymentDuePreview}</b> (지출일 {spendDate} 기준)</span>
+                  )}
+                </div>
+                <p className="text-xs text-gray-400 mt-1.5">법인카드로 결제한 일반경비면 카드를 연결하세요. <b>결제예정일에 카드 결제 캘린더·한도</b>에 자동 반영됩니다. (현금·계좌결제면 연결 안 함)</p>
+              </div>
+            )}
 
             {/* 결제 카드 / 구매처 */}
             {docType === '카드구매' && (
