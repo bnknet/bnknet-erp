@@ -14,6 +14,7 @@ interface ApprovalItem {
   unit_price?: number; // 발주서 전용: 공급가(개당·VAT포함). amount = quantity × unit_price
   amount: number;
   note: string;
+  opex_category?: string; // 판관비 항목(지출결의서 품목 전용) — 영업이익 자동 합산
   sort_order: number;
   canceled?: boolean;
   refund_due_date?: string;
@@ -157,7 +158,7 @@ function statutoryLeave(hireDate?: string): number | null {
   return Math.min(25, 15 + Math.floor((years - 1) / 2));
 }
 
-const EMPTY_ITEM: ApprovalItem = { item_date: '', description: '', quantity: 0, unit_price: 0, amount: 0, note: '', sort_order: 0 };
+const EMPTY_ITEM: ApprovalItem = { item_date: '', description: '', quantity: 0, unit_price: 0, amount: 0, note: '', opex_category: '', sort_order: 0 };
 
 type View = 'list' | 'form' | 'detail' | 'leave';
 type DocType = '지출결의서' | '카드구매' | '휴가신청서' | '발주서';
@@ -254,7 +255,6 @@ export default function ApprovalContent() {
   const [account, setAccount] = useState('');
   const [cardId, setCardId] = useState('');
   const [purchaseVendor, setPurchaseVendor] = useState('');
-  const [opexCategory, setOpexCategory] = useState(''); // 판관비 항목(지출결의서 전용)
   const [opexCats, setOpexCats] = useState<OpexCatDef[]>(OPEX_CATEGORIES.map((c, i) => ({ key: c.key, label: c.label, nature: c.nature, taxable: c.taxable, sort: (i + 1) * 10, active: true })));
   const [isPrepay, setIsPrepay] = useState(false); // 카드구매(false) / 선결제·한도복구(true)
   const [cards, setCards] = useState<Card[]>([]);
@@ -634,8 +634,8 @@ export default function ApprovalContent() {
           rejection_reason: null,
           card_id: isCard ? (cardId || null) : null,
           purchase_vendor: (isCard || docType === '발주서') ? (purchaseVendor || null) : null,
-          // 판관비 항목은 지출결의서에만(매입품의서/카드구매·발주서 제외)
-          opex_category: docType === '지출결의서' ? (opexCategory || null) : null,
+          // 판관비 항목은 품목(approval_items) 단위로 태깅 → 문서 레벨은 사용 안 함(항상 null)
+          opex_category: null,
           payment_due_date: isCard ? paymentDue : null,
           purchase_status: 'normal',
           is_card_payment: isCard ? isPrepay : false,
@@ -676,6 +676,8 @@ export default function ApprovalContent() {
             method: 'POST', headers: { Prefer: 'return=minimal' },
             body: JSON.stringify(validItems.map((i, idx) => ({
               ...i, id: undefined, approval_id: approvalId, sort_order: idx,
+              // 태깅 안 한 품목은 null 저장(영업이익 자동합산 쿼리 효율·정확)
+              opex_category: (docType === '지출결의서' && i.opex_category) ? i.opex_category : null,
             }))),
           });
           if (!insRes.ok) {
@@ -840,7 +842,6 @@ export default function ApprovalContent() {
       setAccount(approval.account || '');
       setCardId(approval.card_id || '');
       setPurchaseVendor(approval.purchase_vendor || '');
-      setOpexCategory(approval.opex_category || '');
       setIsPrepay(!!approval.is_card_payment);
       setAttachments(approval.attachments || []);
       const loaded = (approval.items || []).map((i, idx) => ({ ...i, sort_order: idx }));
@@ -1033,7 +1034,7 @@ export default function ApprovalContent() {
     setCompany(me?.company || 'BNKNET');
     setIssueDate(today()); setSettleDate(today()); setSpendDate(today());
     setOrganizer(me?.name || ''); setProcessor(''); setAccount('');
-    setCardId(''); setPurchaseVendor(''); setOpexCategory(''); setIsPrepay(false); setAttachments([]);
+    setCardId(''); setPurchaseVendor(''); setIsPrepay(false); setAttachments([]);
     setItems([0,1,2,3,4].map(i => ({ ...EMPTY_ITEM, sort_order: i })));
     setVacationType('annual');
     setVacationStart(today()); setVacationEnd(today()); setVacationReason('');
@@ -1168,9 +1169,6 @@ export default function ApprovalContent() {
                   </span>
                 )}
                 <span className="text-sm text-gray-400">{selected.company}</span>
-                {selected.doc_type === '지출결의서' && selected.opex_category && (
-                  <span className="text-sm px-2 py-1 rounded-md font-medium bg-emerald-50 text-emerald-700">판관비: {opexCats.find(c => c.key === selected.opex_category)?.label || selected.opex_category}</span>
-                )}
               </div>
             </div>
             <div className="border border-gray-400">
@@ -1280,6 +1278,7 @@ export default function ApprovalContent() {
                   {(selected.doc_type === '카드구매' || selected.doc_type === '발주서') && <div className="w-24 px-2 py-2 border-r border-gray-400">수 량</div>}
                   {selected.doc_type === '발주서' && <div className="w-28 px-2 py-2 border-r border-gray-400">공급가</div>}
                   <div className="w-32 px-2 py-2 border-r border-gray-400">{selected.doc_type === '발주서' ? '합계금액' : '금 액'}</div>
+                  {selected.doc_type === '지출결의서' && <div className="w-32 px-2 py-2 border-r border-gray-400 no-print">판관비 항목</div>}
                   <div className="w-36 px-2 py-2">비 고</div>
                 </div>
                 {[...(selected.items || []), ...Array(Math.max(0, 5 - (selected.items?.length || 0))).fill(null)].map((item, i) => (
@@ -1289,6 +1288,7 @@ export default function ApprovalContent() {
                     {(selected.doc_type === '카드구매' || selected.doc_type === '발주서') && <div className="w-24 px-2 py-2 border-r border-gray-400 text-right">{item?.quantity ? item.quantity.toLocaleString() : ''}</div>}
                     {selected.doc_type === '발주서' && <div className="w-28 px-2 py-2 border-r border-gray-400 text-right">{item?.unit_price ? item.unit_price.toLocaleString() : ''}</div>}
                     <div className="w-32 px-2 py-2 border-r border-gray-400 text-right">{item?.amount ? item.amount.toLocaleString() : ''}</div>
+                    {selected.doc_type === '지출결의서' && <div className="w-32 px-2 py-2 border-r border-gray-400 text-center text-sm text-emerald-700 no-print">{item?.opex_category ? (opexCats.find(c => c.key === item.opex_category)?.label || item.opex_category) : ''}</div>}
                     <div className="w-36 px-2 py-2">{item?.note || ''}</div>
                   </div>
                 ))}
@@ -1298,6 +1298,7 @@ export default function ApprovalContent() {
                   {(selected.doc_type === '카드구매' || selected.doc_type === '발주서') && <div className="w-24 px-2 py-2 border-r border-gray-400 text-right">{(selected.items || []).reduce((s, it) => s + (Number(it.quantity) || 0), 0).toLocaleString()}</div>}
                   {selected.doc_type === '발주서' && <div className="w-28 px-2 py-2 border-r border-gray-400" />}
                   <div className="w-32 px-2 py-2 border-r border-gray-400 text-right">₩{selected.total_amount.toLocaleString()}</div>
+                  {selected.doc_type === '지출결의서' && <div className="w-32 px-2 py-2 border-r border-gray-400 no-print" />}
                   <div className="w-36 px-2 py-2" />
                 </div>
                </div>
@@ -1713,17 +1714,10 @@ export default function ApprovalContent() {
               </div>
             </div>
 
-            {/* 판관비 항목 (지출결의서 전용) — 선택 시 영업이익 탭에 자동 합산 */}
             {docType === '지출결의서' && (
-              <div className="flex items-center gap-3 mb-4 flex-wrap">
-                <span className="text-base font-medium text-gray-600">판관비 항목</span>
-                <select value={opexCategory} onChange={e => setOpexCategory(e.target.value)}
-                  className="px-3 py-2 border border-gray-200 rounded-lg text-base bg-white focus:outline-none focus:ring-2 focus:ring-blue-400 min-w-[180px]">
-                  <option value="">선택 안 함(판관비 아님)</option>
-                  {opexCats.map(c => <option key={c.key} value={c.key}>{c.label}</option>)}
-                </select>
-                <span className="text-xs text-gray-400">선택하면 매출현황 &gt; 영업이익 탭에 이 지출이 자동 반영됩니다.</span>
-              </div>
+              <p className="text-xs text-emerald-600 bg-emerald-50 border border-emerald-100 rounded-lg px-3 py-2 mb-4">
+                💡 아래 품목 표의 <b>판관비 항목</b> 칸에서 품목마다 판관비 항목을 지정하면, 승인 후 매출현황 &gt; 영업이익 탭에 <b>항목별로 자동 합산</b>됩니다. 판관비가 아닌 품목은 비워두세요.
+              </p>
             )}
 
             {/* 결제 카드 / 구매처 */}
@@ -1836,6 +1830,7 @@ export default function ApprovalContent() {
                 {(docType === '카드구매' || docType === '발주서') && <div className="w-24 px-2 py-2 border-r border-gray-400">수 량</div>}
                 {docType === '발주서' && <div className="w-28 px-2 py-2 border-r border-gray-400">공급가</div>}
                 <div className="w-32 px-2 py-2 border-r border-gray-400">{docType === '발주서' ? '합계금액' : '금 액'}</div>
+                {docType === '지출결의서' && <div className="w-32 px-2 py-2 border-r border-gray-400">판관비 항목</div>}
                 <div className="w-36 px-2 py-2">비 고</div>
               </div>
               {items.map((item, i) => (
@@ -1878,6 +1873,15 @@ export default function ApprovalContent() {
                         className="w-full px-2 py-2 text-right focus:outline-none focus:bg-blue-50 text-base" />
                     )}
                   </div>
+                  {docType === '지출결의서' && (
+                    <div className="w-32 border-r border-gray-400">
+                      <select value={item.opex_category || ''} onChange={(e) => updateItem(i, 'opex_category', e.target.value)}
+                        className="w-full px-1 py-2 text-sm bg-white focus:outline-none focus:bg-blue-50">
+                        <option value="">-</option>
+                        {opexCats.map(c => <option key={c.key} value={c.key}>{c.label}</option>)}
+                      </select>
+                    </div>
+                  )}
                   <div className="w-36">
                     <input value={item.note} onChange={(e) => updateItem(i, 'note', e.target.value)}
                       className="w-full px-2 py-2 focus:outline-none focus:bg-blue-50 text-base" />
@@ -1890,6 +1894,7 @@ export default function ApprovalContent() {
                 {(docType === '카드구매' || docType === '발주서') && <div className="w-24 px-2 py-2 border-r border-gray-400 text-right">{items.reduce((s, it) => s + (Number(it.quantity) || 0), 0).toLocaleString()}</div>}
                 {docType === '발주서' && <div className="w-28 px-2 py-2 border-r border-gray-400" />}
                 <div className="w-32 px-2 py-2 border-r border-gray-400 text-right">₩{total.toLocaleString()}</div>
+                {docType === '지출결의서' && <div className="w-32 px-2 py-2 border-r border-gray-400" />}
                 <div className="w-36 px-2 py-2" />
               </div>
             </div>

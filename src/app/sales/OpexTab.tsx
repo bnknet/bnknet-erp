@@ -98,18 +98,29 @@ export default function OpexTab({ orders, inventory, fees, bomRows, userName }: 
     } catch { setRows([]); }
     finally { setLoading(false); }
   }
-  // 승인된 지출결의서 중 판관비 항목이 태깅된 건을 사업자·항목별로 합산(지출일→없으면 발의일 기준 월 매칭)
+  // 승인된 지출결의서의 '품목별' 판관비 태깅을 사업자·항목별로 합산.
+  // (지출일→없으면 발의일 기준 월 매칭. 품목 opex_category 별로 item.amount 합)
   async function loadAutoOpex(ymStr: string) {
     try {
-      const data = await supabaseFetchAll<{ company?: string; opex_category?: string; total_amount?: number; spend_date?: string; issue_date?: string }>(
-        '/approvals?doc_type=eq.지출결의서&status=eq.approved&opex_category=not.is.null&select=company,opex_category,total_amount,spend_date,issue_date',
-      );
+      const [apps, its] = await Promise.all([
+        supabaseFetchAll<{ id: string; company?: string; spend_date?: string; issue_date?: string }>(
+          '/approvals?doc_type=eq.지출결의서&status=eq.approved&select=id,company,spend_date,issue_date',
+        ),
+        supabaseFetchAll<{ approval_id?: string; amount?: number; opex_category?: string; canceled?: boolean }>(
+          '/approval_items?opex_category=not.is.null&select=approval_id,amount,opex_category,canceled',
+        ),
+      ]);
+      const appMap = new Map<string, { company: string; ym: string }>();
+      for (const a of Array.isArray(apps) ? apps : []) {
+        appMap.set(String(a.id), { company: a.company || '미분류', ym: (a.spend_date || a.issue_date || '').slice(0, 7) });
+      }
       const m: Record<string, number> = {};
-      for (const a of Array.isArray(data) ? data : []) {
-        const d = (a.spend_date || a.issue_date || '').slice(0, 7);
-        if (d !== ymStr) continue;
-        const key = `${a.company || '미분류'}|${a.opex_category}`;
-        m[key] = (m[key] || 0) + (Number(a.total_amount) || 0);
+      for (const it of Array.isArray(its) ? its : []) {
+        if (it.canceled || !it.opex_category) continue;
+        const p = appMap.get(String(it.approval_id));
+        if (!p || p.ym !== ymStr) continue; // 승인된 지출결의서 & 해당 월만
+        const key = `${p.company}|${it.opex_category}`;
+        m[key] = (m[key] || 0) + (Number(it.amount) || 0);
       }
       setAutoMap(m);
     } catch { setAutoMap({}); }
