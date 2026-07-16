@@ -15,9 +15,16 @@ export const OPEX_CATEGORIES: OpexCategory[] = [
   { key: 'ad',        label: '광고선전비',     nature: '준변동', taxable: true,  hint: '마케팅·광고·체험단' },
   { key: 'fee',       label: '지급수수료',     nature: '변동',   taxable: true,  hint: 'PG·카드수수료·세무·플랫폼 이용료' },
   { key: 'logistics', label: '물류·보관비',    nature: '고정',   taxable: true,  hint: '고정 창고비·3PL 보관료 (※ 건당 택배비 제외 — 이미 공헌이익에서 차감됨)' },
+  { key: 'insurance', label: '4대보험',       nature: '고정',   taxable: false, hint: '국민연금·건강·고용·산재 회사부담 (급여×약9% 자동)' },
   { key: 'supplies',  label: '소모품·포장재',  nature: '변동',   taxable: true,  hint: '박스·완충재·부자재·비품' },
-  { key: 'etc',       label: '기타 운영비',    nature: '혼합',   taxable: true,  hint: '여비·통신·보험·잡비' },
+  { key: 'entertain', label: '접대비',        nature: '변동',   taxable: true,  hint: '거래처 접대·경조사비' },
+  { key: 'sales_promo', label: '영업·판촉비',  nature: '준변동', taxable: true,  hint: '영업활동·판촉·샘플·행사' },
+  { key: 'travel',    label: '여비교통비',     nature: '변동',   taxable: true,  hint: '출장·교통·주차·숙박' },
+  { key: 'etc',       label: '기타 운영비',    nature: '혼합',   taxable: true,  hint: '통신·보험·잡비 등' },
 ];
+
+// 4대보험 회사부담 추정율 (급여 대비). 정확 산정 대신 계획용 추정치 — 필요 시 조정.
+export const INSURANCE_RATE = 0.09;
 
 export const OPEX_CAT_MAP: Record<string, OpexCategory> = Object.fromEntries(
   OPEX_CATEGORIES.map((c) => [c.key, c]),

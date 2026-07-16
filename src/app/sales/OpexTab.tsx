@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { supabaseFetch, supabaseFetchAll } from '@/lib/supabase';
 import { computeOrderLines, type FullOrder, type FullInv } from '@/lib/salesStats';
 import { type MallFee } from '@/lib/mallFees';
-import { OPEX_CATEGORIES, OPEX_COMPANIES, toSupply, type OpexCatDef, type OpexRow } from '@/lib/opex';
+import { OPEX_CATEGORIES, OPEX_COMPANIES, INSURANCE_RATE, toSupply, type OpexCatDef, type OpexRow } from '@/lib/opex';
 
 interface Props {
   orders: FullOrder[];
@@ -89,6 +89,16 @@ export default function OpexTab({ orders, inventory, fees, bomRows, userName }: 
 
   // 결재(지출결의서) 자동 태깅분: `${company}|${category}` → 지급액 합
   const [autoMap, setAutoMap] = useState<Record<string, number>>({});
+  // 인사(HR) — 재직 직원 연봉·담당 사업자 → 인건비·4대보험 자동
+  const [employees, setEmployees] = useState<{ company?: string; salary?: number; status?: string }[]>([]);
+  useEffect(() => {
+    (async () => {
+      try {
+        const data = await supabaseFetchAll<{ company?: string; salary?: number; status?: string }>('/employees?select=company,salary,status');
+        setEmployees(Array.isArray(data) ? data : []);
+      } catch { setEmployees([]); }
+    })();
+  }, []);
 
   async function loadOpex(y: number, m: number) {
     setLoading(true);
@@ -138,12 +148,36 @@ export default function OpexTab({ orders, inventory, fees, bomRows, userName }: 
 
   const parse = (s: string) => Number(String(s).replace(/[^0-9.-]/g, '')) || 0;
 
-  // 결재 자동 태깅분(지급액) — 사업자별 항목 합
-  const autoPaid = (co: string, catKey: string) => autoMap[`${co}|${catKey}`] || 0;
-  const autoSupplyCompany = (co: string) => Object.entries(autoMap).reduce((a, [k, v]) => {
-    const [c2, cat] = k.split('|');
-    return c2 === co ? a + toSupply(taxMap[cat] ?? true, Number(v) || 0) : a;
-  }, 0);
+  // 인사(연봉) 자동: 재직 직원 월급여(연봉÷12) 합 → 인건비(labor), ×보험율 → 4대보험(insurance).
+  // 해당 카테고리가 존재할 때만 반영. 인건비는 매월 동일(현재 재직·연봉 기준).
+  const hrAuto = useMemo(() => {
+    const active = new Set(inputCats.map((c) => c.key));
+    const m: Record<string, number> = {};
+    for (const e of employees) {
+      if (e.status && e.status !== 'active') continue;
+      const co = e.company || '';
+      if (!OPEX_COMPANIES.includes(co)) continue;
+      const monthly = (Number(e.salary) || 0) / 12;
+      if (monthly <= 0) continue;
+      if (active.has('labor')) m[`${co}|labor`] = (m[`${co}|labor`] || 0) + monthly;
+      if (active.has('insurance')) m[`${co}|insurance`] = (m[`${co}|insurance`] || 0) + monthly * INSURANCE_RATE;
+    }
+    return m;
+  }, [employees, inputCats]);
+
+  // 자동 반영 = 결재 태깅(autoMap) + 인사 연봉(hrAuto)
+  const autoResv = (co: string, catKey: string) => autoMap[`${co}|${catKey}`] || 0;   // 결재
+  const autoHr = (co: string, catKey: string) => hrAuto[`${co}|${catKey}`] || 0;       // 인사(연봉)
+  const autoPaid = (co: string, catKey: string) => autoResv(co, catKey) + autoHr(co, catKey);
+  const autoSupplyCompany = (co: string) => {
+    const combined: Record<string, number> = {};
+    for (const [k, v] of Object.entries(autoMap)) combined[k] = (combined[k] || 0) + (Number(v) || 0);
+    for (const [k, v] of Object.entries(hrAuto)) combined[k] = (combined[k] || 0) + (Number(v) || 0);
+    return Object.entries(combined).reduce((a, [k, v]) => {
+      const [c2, cat] = k.split('|');
+      return c2 === co ? a + toSupply(taxMap[cat] ?? true, Number(v) || 0) : a;
+    }, 0);
+  };
 
   const opexPaidManual = inputCats.reduce((a, c) => a + parse(edits[c.key] || ''), 0);
   const opexSupplyManual = inputCats.reduce((a, c) => a + toSupply(c.taxable, parse(edits[c.key] || '')), 0);
@@ -346,8 +380,11 @@ export default function OpexTab({ orders, inventory, fees, bomRows, userName }: 
                   placeholder="0"
                   className="w-full px-3 py-2 rounded-lg border border-gray-200 text-base text-right tabular-nums bg-white focus:outline-none focus:ring-2 focus:ring-blue-400"
                 />
-                {autoPaid(company, c.key) > 0 && (
-                  <div className="text-xs text-emerald-600 mt-0.5 text-right">+ 결재 지출결의서 자동 {won(autoPaid(company, c.key))} (수동 입력에 더해짐)</div>
+                {autoHr(company, c.key) > 0 && (
+                  <div className="text-xs text-indigo-600 mt-0.5 text-right">+ 인사(연봉 기준) 자동 {won(autoHr(company, c.key))}{c.key === 'insurance' ? ` (급여×${Math.round(INSURANCE_RATE * 100)}%)` : ''}</div>
+                )}
+                {autoResv(company, c.key) > 0 && (
+                  <div className="text-xs text-emerald-600 mt-0.5 text-right">+ 결재 지출결의서 자동 {won(autoResv(company, c.key))}</div>
                 )}
               </div>
               <div className="w-28 flex-none text-right text-sm text-gray-400 tabular-nums">
@@ -376,7 +413,8 @@ export default function OpexTab({ orders, inventory, fees, bomRows, userName }: 
       <p className="text-xs text-gray-400">
         ⚠️ 건당 택배 실운임(2,300원)은 이미 공헌이익에서 차감됩니다. 판관비 ‘물류·보관비’에는 <b>고정 창고비만</b> 넣어주세요(이중차감 방지).
         판관비는 <b>지급액(카드·계산서 총액) 그대로</b> 입력하세요. 과세 항목은 부가세 포함 금액을 넣으면 자동으로 부가세 제외(÷1.1)되어 반영됩니다. (면세 항목은 그대로)
-        <br /><b className="text-emerald-600">결재(지출결의서)에 판관비 항목을 선택해 승인된 지출</b>은 위 초록 표시로 <b>자동 합산</b>됩니다. 그 지출은 여기서 또 입력하지 마세요(이중 반영 방지). 급여·임대료처럼 결재를 안 거치는 고정비만 수동 입력하면 됩니다.
+        <br /><b className="text-emerald-600">결재(지출결의서) 판관비 태깅분</b>과 <b className="text-indigo-600">인건비·4대보험(인사 연봉 기준)</b>은 위 색상 표시로 <b>자동 합산</b>됩니다. 자동으로 잡히는 항목은 여기서 또 입력하지 마세요(이중 반영 방지).
+        <br />인건비 = 재직 직원 <b>연봉÷12</b> 사업자별 합, 4대보험 = 급여×약{Math.round(INSURANCE_RATE * 100)}%(회사부담 추정). 임대료 등 결재·인사에 없는 고정비만 수동 입력.
       </p>
 
       {/* 항목 관리 모달 */}
