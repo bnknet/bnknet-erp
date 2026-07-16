@@ -89,16 +89,19 @@ export default function OpexTab({ orders, inventory, fees, bomRows, userName }: 
 
   // 결재(지출결의서) 자동 태깅분: `${company}|${category}` → 지급액 합
   const [autoMap, setAutoMap] = useState<Record<string, number>>({});
+  // 세부내역용: 결재 태깅 품목 목록
+  const [resvDetail, setResvDetail] = useState<{ company: string; category: string; amount: number; desc: string; label: string }[]>([]);
   // 인사(HR) — 재직 직원 연봉·담당 사업자 → 인건비·4대보험 자동
-  const [employees, setEmployees] = useState<{ company?: string; salary?: number; status?: string }[]>([]);
+  const [employees, setEmployees] = useState<{ name?: string; company?: string; salary?: number; status?: string }[]>([]);
   useEffect(() => {
     (async () => {
       try {
-        const data = await supabaseFetchAll<{ company?: string; salary?: number; status?: string }>('/employees?select=company,salary,status');
+        const data = await supabaseFetchAll<{ name?: string; company?: string; salary?: number; status?: string }>('/employees?select=name,company,salary,status');
         setEmployees(Array.isArray(data) ? data : []);
       } catch { setEmployees([]); }
     })();
   }, []);
+  const [openCat, setOpenCat] = useState<string | null>(null); // 세부내역 펼친 항목
 
   async function loadOpex(y: number, m: number) {
     setLoading(true);
@@ -113,27 +116,31 @@ export default function OpexTab({ orders, inventory, fees, bomRows, userName }: 
   async function loadAutoOpex(ymStr: string) {
     try {
       const [apps, its] = await Promise.all([
-        supabaseFetchAll<{ id: string; company?: string; spend_date?: string; issue_date?: string }>(
-          '/approvals?doc_type=eq.지출결의서&status=eq.approved&select=id,company,spend_date,issue_date',
+        supabaseFetchAll<{ id: string; company?: string; organizer?: string; spend_date?: string; issue_date?: string }>(
+          '/approvals?doc_type=eq.지출결의서&status=eq.approved&select=id,company,organizer,spend_date,issue_date',
         ),
-        supabaseFetchAll<{ approval_id?: string; amount?: number; opex_category?: string; canceled?: boolean }>(
-          '/approval_items?opex_category=not.is.null&select=approval_id,amount,opex_category,canceled',
+        supabaseFetchAll<{ approval_id?: string; amount?: number; opex_category?: string; canceled?: boolean; description?: string }>(
+          '/approval_items?opex_category=not.is.null&select=approval_id,amount,opex_category,canceled,description',
         ),
       ]);
-      const appMap = new Map<string, { company: string; ym: string }>();
+      const appMap = new Map<string, { company: string; ym: string; label: string }>();
       for (const a of Array.isArray(apps) ? apps : []) {
-        appMap.set(String(a.id), { company: a.company || '미분류', ym: (a.spend_date || a.issue_date || '').slice(0, 7) });
+        const d = (a.spend_date || a.issue_date || '');
+        appMap.set(String(a.id), { company: a.company || '미분류', ym: d.slice(0, 7), label: `${d || ''}${a.organizer ? ' · ' + a.organizer : ''}` });
       }
       const m: Record<string, number> = {};
+      const detail: { company: string; category: string; amount: number; desc: string; label: string }[] = [];
       for (const it of Array.isArray(its) ? its : []) {
         if (it.canceled || !it.opex_category) continue;
         const p = appMap.get(String(it.approval_id));
         if (!p || p.ym !== ymStr) continue; // 승인된 지출결의서 & 해당 월만
-        const key = `${p.company}|${it.opex_category}`;
-        m[key] = (m[key] || 0) + (Number(it.amount) || 0);
+        const amt = Number(it.amount) || 0;
+        m[`${p.company}|${it.opex_category}`] = (m[`${p.company}|${it.opex_category}`] || 0) + amt;
+        detail.push({ company: p.company, category: it.opex_category, amount: amt, desc: it.description || '(품목)', label: p.label });
       }
       setAutoMap(m);
-    } catch { setAutoMap({}); }
+      setResvDetail(detail);
+    } catch { setAutoMap({}); setResvDetail([]); }
   }
   useEffect(() => { loadOpex(year, month); loadAutoOpex(ym); }, [year, month, ym]);
 
@@ -366,32 +373,61 @@ export default function OpexTab({ orders, inventory, fees, bomRows, userName }: 
           <button onClick={copyPrevMonth} className="ml-auto px-3 py-1.5 rounded-lg border border-gray-200 text-sm text-gray-600 hover:bg-gray-50">전월 복사</button>
         </div>
         <div className="p-4 sm:p-5 space-y-2">
-          {inputCats.map((c) => (
-            <div key={c.key} className="flex items-center gap-3 flex-wrap">
-              <div className="w-32 flex-none">
-                <div className="text-base font-medium text-gray-700">{c.label}</div>
-                <div className="text-xs text-gray-400">{c.nature}{c.taxable ? '·과세' : '·면세'}</div>
+          {inputCats.map((c) => {
+            const hr = autoHr(company, c.key), resv = autoResv(company, c.key), man = parse(edits[c.key] || '');
+            const catTotalSupply = toSupply(c.taxable, man) + toSupply(c.taxable, hr + resv);
+            const hasDetail = man > 0 || hr > 0 || resv > 0;
+            const open = openCat === c.key;
+            const coEmp = employees.filter(e => (!e.status || e.status === 'active') && e.company === company && (Number(e.salary) || 0) > 0);
+            const resvItems = resvDetail.filter(d => d.company === company && d.category === c.key);
+            return (
+            <div key={c.key} className="border-b border-gray-50 last:border-b-0 pb-2">
+              <div className="flex items-center gap-3 flex-wrap">
+                <button type="button" onClick={() => hasDetail && setOpenCat(open ? null : c.key)}
+                  className={`w-36 flex-none text-left ${hasDetail ? 'cursor-pointer' : 'cursor-default'}`}>
+                  <div className="text-base font-medium text-gray-700 flex items-center gap-1">
+                    {hasDetail && <span className={`text-gray-400 text-xs transition-transform ${open ? 'rotate-90' : ''}`}>▸</span>}
+                    {c.label}
+                  </div>
+                  <div className="text-xs text-gray-400 pl-3.5">{c.nature}{c.taxable ? '·과세' : '·면세'}</div>
+                </button>
+                <div className="flex-1 min-w-[160px]">
+                  <input
+                    inputMode="numeric"
+                    value={edits[c.key] ? Number(parse(edits[c.key])).toLocaleString('ko-KR') : ''}
+                    onChange={(e) => setEdits((p) => ({ ...p, [c.key]: e.target.value }))}
+                    placeholder="0"
+                    className="w-full px-3 py-2 rounded-lg border border-gray-200 text-base text-right tabular-nums bg-white focus:outline-none focus:ring-2 focus:ring-blue-400"
+                  />
+                  {hr > 0 && (
+                    <div className="text-xs text-indigo-600 mt-0.5 text-right">+ 인사(연봉 기준) 자동 {won(hr)}{c.key === 'insurance' ? ` (급여×${Math.round(INSURANCE_RATE * 100)}%)` : ''}</div>
+                  )}
+                  {resv > 0 && (
+                    <div className="text-xs text-emerald-600 mt-0.5 text-right">+ 결재 지출결의서 자동 {won(resv)}</div>
+                  )}
+                </div>
+                <div className="w-28 flex-none text-right text-sm tabular-nums">
+                  <div className="text-gray-700 font-medium">{catTotalSupply > 0 ? won(catTotalSupply) : ''}</div>
+                  <div className="text-xs text-gray-400">{catTotalSupply > 0 ? (c.taxable ? '공급가' : '면세') : ''}</div>
+                </div>
               </div>
-              <div className="flex-1 min-w-[160px]">
-                <input
-                  inputMode="numeric"
-                  value={edits[c.key] ? Number(parse(edits[c.key])).toLocaleString('ko-KR') : ''}
-                  onChange={(e) => setEdits((p) => ({ ...p, [c.key]: e.target.value }))}
-                  placeholder="0"
-                  className="w-full px-3 py-2 rounded-lg border border-gray-200 text-base text-right tabular-nums bg-white focus:outline-none focus:ring-2 focus:ring-blue-400"
-                />
-                {autoHr(company, c.key) > 0 && (
-                  <div className="text-xs text-indigo-600 mt-0.5 text-right">+ 인사(연봉 기준) 자동 {won(autoHr(company, c.key))}{c.key === 'insurance' ? ` (급여×${Math.round(INSURANCE_RATE * 100)}%)` : ''}</div>
-                )}
-                {autoResv(company, c.key) > 0 && (
-                  <div className="text-xs text-emerald-600 mt-0.5 text-right">+ 결재 지출결의서 자동 {won(autoResv(company, c.key))}</div>
-                )}
-              </div>
-              <div className="w-28 flex-none text-right text-sm text-gray-400 tabular-nums">
-                {parse(edits[c.key] || '') > 0 && (c.taxable ? `공급가 ${won(toSupply(true, parse(edits[c.key])))}` : '면세')}
-              </div>
+              {open && (
+                <div className="mt-1 ml-3.5 pl-3 border-l-2 border-gray-100 text-sm space-y-0.5 py-1">
+                  {man > 0 && <div className="flex justify-between text-gray-500"><span>수동 입력</span><span className="tabular-nums">{won(man)}</span></div>}
+                  {c.key === 'labor' && coEmp.map((e, i) => (
+                    <div key={i} className="flex justify-between text-indigo-600"><span>인사 · {e.name || '(이름없음)'} (연봉 {won(Number(e.salary) || 0)}÷12)</span><span className="tabular-nums">{won((Number(e.salary) || 0) / 12)}</span></div>
+                  ))}
+                  {c.key === 'insurance' && hr > 0 && (
+                    <div className="flex justify-between text-indigo-600"><span>인사 · 급여합 {won(hr / INSURANCE_RATE)} × {Math.round(INSURANCE_RATE * 100)}%</span><span className="tabular-nums">{won(hr)}</span></div>
+                  )}
+                  {resvItems.map((d, i) => (
+                    <div key={i} className="flex justify-between text-emerald-600"><span>결재 · {d.desc} {d.label && <span className="text-gray-400">({d.label})</span>}</span><span className="tabular-nums">{won(d.amount)}</span></div>
+                  ))}
+                </div>
+              )}
             </div>
-          ))}
+            );
+          })}
           {inputCats.length === 0 && <div className="text-sm text-gray-400 py-4 text-center">활성 항목이 없습니다. ‘⚙ 항목 관리’에서 추가하세요.</div>}
         </div>
         <div className="px-5 py-4 border-t border-gray-100 bg-gray-50/60">
