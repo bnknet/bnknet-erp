@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { supabaseFetch, supabaseUpload, safeStorageKey, supabaseFetchAll } from '@/lib/supabase';
 import { getUser } from '@/lib/auth';
 import { Card, computePaymentDate, toISO, logCardChange } from '@/lib/cardBilling';
+import { OPEX_CATEGORIES, type OpexCatDef } from '@/lib/opex';
 
 interface ApprovalItem {
   id?: string;
@@ -42,6 +43,7 @@ interface Approval {
   final_approver_at?: string;
   rejection_reason?: string;
   approval_note?: string;
+  opex_category?: string; // 판관비 항목(지출결의서 전용) — 영업이익 자동 합산
   created_at: string;
   attachments?: { name: string; url: string }[];
   // 카드 매입 전용 필드 (지출결의서)
@@ -252,6 +254,8 @@ export default function ApprovalContent() {
   const [account, setAccount] = useState('');
   const [cardId, setCardId] = useState('');
   const [purchaseVendor, setPurchaseVendor] = useState('');
+  const [opexCategory, setOpexCategory] = useState(''); // 판관비 항목(지출결의서 전용)
+  const [opexCats, setOpexCats] = useState<OpexCatDef[]>(OPEX_CATEGORIES.map((c, i) => ({ key: c.key, label: c.label, nature: c.nature, taxable: c.taxable, sort: (i + 1) * 10, active: true })));
   const [isPrepay, setIsPrepay] = useState(false); // 카드구매(false) / 선결제·한도복구(true)
   const [cards, setCards] = useState<Card[]>([]);
   // 승인된 카드문서의 결제카드 교정 (카드 잘못 선택 시) — 대표·실장만
@@ -315,6 +319,15 @@ export default function ApprovalContent() {
   }, [isCeo, isAdmin, me?.name]);
 
   useEffect(() => { loadApprovals(); }, [loadApprovals]);
+  // 판관비 항목(지출결의서 태깅용) — 커스텀 항목 반영. 실패 시 코드 기본값 유지.
+  useEffect(() => {
+    (async () => {
+      try {
+        const data = await supabaseFetchAll<OpexCatDef>('/opex_category?active=eq.true&order=sort.asc&select=key,label,nature,taxable,sort,active');
+        if (Array.isArray(data) && data.length) setOpexCats(data);
+      } catch { /* 기본값 유지 */ }
+    })();
+  }, []);
 
   // 카드 목록 로드 (지출결의서 결제카드 선택용)
   useEffect(() => {
@@ -621,6 +634,8 @@ export default function ApprovalContent() {
           rejection_reason: null,
           card_id: isCard ? (cardId || null) : null,
           purchase_vendor: (isCard || docType === '발주서') ? (purchaseVendor || null) : null,
+          // 판관비 항목은 지출결의서에만(매입품의서/카드구매·발주서 제외)
+          opex_category: docType === '지출결의서' ? (opexCategory || null) : null,
           payment_due_date: isCard ? paymentDue : null,
           purchase_status: 'normal',
           is_card_payment: isCard ? isPrepay : false,
@@ -825,6 +840,7 @@ export default function ApprovalContent() {
       setAccount(approval.account || '');
       setCardId(approval.card_id || '');
       setPurchaseVendor(approval.purchase_vendor || '');
+      setOpexCategory(approval.opex_category || '');
       setIsPrepay(!!approval.is_card_payment);
       setAttachments(approval.attachments || []);
       const loaded = (approval.items || []).map((i, idx) => ({ ...i, sort_order: idx }));
@@ -1017,7 +1033,7 @@ export default function ApprovalContent() {
     setCompany(me?.company || 'BNKNET');
     setIssueDate(today()); setSettleDate(today()); setSpendDate(today());
     setOrganizer(me?.name || ''); setProcessor(''); setAccount('');
-    setCardId(''); setPurchaseVendor(''); setIsPrepay(false); setAttachments([]);
+    setCardId(''); setPurchaseVendor(''); setOpexCategory(''); setIsPrepay(false); setAttachments([]);
     setItems([0,1,2,3,4].map(i => ({ ...EMPTY_ITEM, sort_order: i })));
     setVacationType('annual');
     setVacationStart(today()); setVacationEnd(today()); setVacationReason('');
@@ -1152,6 +1168,9 @@ export default function ApprovalContent() {
                   </span>
                 )}
                 <span className="text-sm text-gray-400">{selected.company}</span>
+                {selected.doc_type === '지출결의서' && selected.opex_category && (
+                  <span className="text-sm px-2 py-1 rounded-md font-medium bg-emerald-50 text-emerald-700">판관비: {opexCats.find(c => c.key === selected.opex_category)?.label || selected.opex_category}</span>
+                )}
               </div>
             </div>
             <div className="border border-gray-400">
@@ -1693,6 +1712,19 @@ export default function ApprovalContent() {
                 ))}
               </div>
             </div>
+
+            {/* 판관비 항목 (지출결의서 전용) — 선택 시 영업이익 탭에 자동 합산 */}
+            {docType === '지출결의서' && (
+              <div className="flex items-center gap-3 mb-4 flex-wrap">
+                <span className="text-base font-medium text-gray-600">판관비 항목</span>
+                <select value={opexCategory} onChange={e => setOpexCategory(e.target.value)}
+                  className="px-3 py-2 border border-gray-200 rounded-lg text-base bg-white focus:outline-none focus:ring-2 focus:ring-blue-400 min-w-[180px]">
+                  <option value="">선택 안 함(판관비 아님)</option>
+                  {opexCats.map(c => <option key={c.key} value={c.key}>{c.label}</option>)}
+                </select>
+                <span className="text-xs text-gray-400">선택하면 매출현황 &gt; 영업이익 탭에 이 지출이 자동 반영됩니다.</span>
+              </div>
+            )}
 
             {/* 결제 카드 / 구매처 */}
             {docType === '카드구매' && (
