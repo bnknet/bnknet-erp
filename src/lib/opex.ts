@@ -17,7 +17,7 @@ export const OPEX_CATEGORIES: OpexCategory[] = [
   { key: 'logistics', label: '물류·보관비',    nature: '고정',   taxable: true,  hint: '고정 창고비·3PL 보관료 (※ 건당 택배비 제외 — 이미 공헌이익에서 차감됨)' },
   { key: 'insurance', label: '4대보험',       nature: '고정',   taxable: false, hint: '국민연금·건강·고용·산재 회사부담 (급여×약9% 자동)' },
   { key: 'supplies',  label: '소모품·포장재',  nature: '변동',   taxable: true,  hint: '박스·완충재·부자재·비품' },
-  { key: 'entertain', label: '접대비',        nature: '변동',   taxable: true,  hint: '거래처 접대·경조사비' },
+  { key: 'entertain', label: '접대비',        nature: '변동',   taxable: false, hint: '거래처 접대·경조사비 (부가세 매입세액 불공제 → 지급액 그대로 비용)' },
   { key: 'sales_promo', label: '영업·판촉비',  nature: '준변동', taxable: true,  hint: '영업활동·판촉·샘플·행사' },
   { key: 'travel',    label: '여비교통비',     nature: '변동',   taxable: true,  hint: '출장·교통·주차·숙박' },
   { key: 'corp_card', label: '법인카드 사용',  nature: '변동',   taxable: true,  hint: '법인카드 일반사용분(제품매입 제외). 카드명세서에서 판관비성 금액만 수기 입력' },
