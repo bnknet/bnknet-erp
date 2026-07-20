@@ -417,6 +417,7 @@ export default function CalendarContent() {
                   <label className="block text-sm font-medium text-gray-500 mb-1">종료일 (선택)</label>
                   <input type="date" value={form.end_date} min={form.start_date} onChange={e => setForm({ ...form, end_date: e.target.value })}
                     className="w-full px-3 py-2 border border-gray-200 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-blue-400" />
+                  <p className="text-xs text-gray-400 mt-1">여러 날 이어지는 일정일 때만. 하루 일정이면 비워두세요.</p>
                 </div>
               </div>
               <label className="flex items-center gap-2 text-base text-gray-600">
@@ -434,14 +435,32 @@ export default function CalendarContent() {
                         className={`px-3 py-1 rounded-lg text-sm font-medium border ${form.recur === r ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600 border-gray-200'}`}>{r}</button>
                     ))}
                   </div>
-                  {form.recur !== '없음' && (
-                    <div className="mt-2 flex items-center gap-2 flex-wrap">
-                      <span className="text-sm text-gray-500">반복 종료일</span>
-                      <input type="date" value={form.recur_until} min={form.start_date} onChange={e => setForm({ ...form, recur_until: e.target.value })}
-                        className="px-3 py-1.5 border border-gray-200 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-blue-400" />
-                      <span className="text-xs text-gray-400">{form.recur} · 이 날짜까지 매 {form.recur === '매주' ? '주' : form.recur === '매월' ? '월' : '년'} 같은 날 자동 등록</span>
-                    </div>
-                  )}
+                  {form.recur !== '없음' && (() => {
+                    const b = new Date(form.start_date + 'T00:00:00');
+                    const wd = ['일', '월', '화', '수', '목', '금', '토'][b.getDay()];
+                    const dom = b.getDate();
+                    const patternText = form.recur === '매주'
+                      ? `매주 ${wd}요일에 반복`
+                      : form.recur === '매월'
+                      ? `매월 ${dom}일에 반복${dom > 28 ? ' (해당 월에 그 날이 없으면 말일)' : ''}`
+                      : `매년 ${b.getMonth() + 1}월 ${dom}일에 반복`;
+                    return (
+                      <div className="mt-2 space-y-2">
+                        <div className="text-sm text-blue-700 font-medium">📌 시작일 기준 · {patternText}</div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-sm text-gray-500">반복 종료일</span>
+                          <input type="date" value={form.recur_until} min={form.start_date} onChange={e => setForm({ ...form, recur_until: e.target.value })}
+                            className="px-3 py-1.5 border border-gray-200 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-blue-400" />
+                          <span className="text-xs text-gray-400">이 날짜까지 위 주기로 자동 등록</span>
+                        </div>
+                        {form.end_date && form.end_date !== form.start_date && (
+                          <div className="text-xs text-red-500 bg-red-50 border border-red-100 rounded-lg px-2 py-1.5">
+                            ⚠️ 위 <b>종료일</b>이 설정돼 있어 <b>매 회차가 여러 날짜에 걸친 일정</b>이 됩니다. 하루짜리 반복이면 종료일을 비우세요.
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
                 </div>
               )}
               {!form.all_day && (
