@@ -492,7 +492,9 @@ export default function PurchasingContent() {
                                       />
                                     </label>
                                     <label className="text-sm flex-1 min-w-[180px]">
-                                      <span className="block text-gray-400 mb-0.5">재고 품목 연결</span>
+                                      <span className="block text-gray-400 mb-0.5">
+                                        재고 품목 연결 <span className="text-gray-500">· {po.company} 재고만</span>
+                                      </span>
                                       <select
                                         value={recForm.inventoryId}
                                         onChange={(e) => setRecForm({ ...recForm, inventoryId: e.target.value })}
