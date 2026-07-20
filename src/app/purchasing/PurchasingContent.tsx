@@ -71,6 +71,7 @@ export default function PurchasingContent() {
   const [openId, setOpenId] = useState<string | null>(null);
   const [recForm, setRecForm] = useState<RecForm | null>(null);
   const [saving, setSaving] = useState(false);
+  const [vendorDraft, setVendorDraft] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -159,6 +160,27 @@ export default function PurchasingContent() {
       inventoryId: matchInv(item.description, po.company),
       memo: '',
     });
+  }
+
+  // 거래처(purchase_vendor) 수정 — 발주서가 거래처 없이 올라온 경우 여기서 바로 보정
+  async function saveVendor(po: Po) {
+    const v = vendorDraft.trim();
+    if (v === (po.purchase_vendor || '')) return;
+    setSaving(true);
+    try {
+      const res = await supabaseFetch(`/approvals?id=eq.${po.id}`, {
+        method: 'PATCH',
+        headers: { Prefer: 'return=minimal' },
+        body: JSON.stringify({ purchase_vendor: v || null }),
+      });
+      if (!res.ok) {
+        alert(`거래처 저장에 실패했습니다 (HTTP ${res.status}).`);
+        return;
+      }
+      await load();
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function submitReceipt(po: Po, item: PoItem) {
@@ -358,6 +380,7 @@ export default function PurchasingContent() {
                       onClick={() => {
                         setOpenId(isOpen ? null : po.id);
                         setRecForm(null);
+                        setVendorDraft(isOpen ? '' : po.purchase_vendor || '');
                       }}
                       className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-50"
                     >
@@ -376,6 +399,23 @@ export default function PurchasingContent() {
                     {/* 상세 */}
                     {isOpen && (
                       <div className="border-t bg-gray-50/50 px-4 py-3">
+                        {/* 거래처 수정 */}
+                        <div className="flex items-center gap-2 mb-3">
+                          <span className="text-sm text-gray-400 shrink-0">거래처</span>
+                          <input
+                            value={vendorDraft}
+                            onChange={(e) => setVendorDraft(e.target.value)}
+                            placeholder="거래처명 입력"
+                            className="px-2 py-1 border rounded-lg text-base flex-1 min-w-[140px] max-w-xs"
+                          />
+                          <button
+                            onClick={() => saveVendor(po)}
+                            disabled={saving || vendorDraft.trim() === (po.purchase_vendor || '')}
+                            className="px-3 py-1.5 text-sm text-white bg-gray-700 rounded-lg hover:bg-gray-800 disabled:opacity-40"
+                          >
+                            거래처 저장
+                          </button>
+                        </div>
                         {!canReceive && (
                           <div className="mb-3 text-sm text-amber-600 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
                             아직 결재 승인 전이라 입고 처리를 할 수 없습니다. (결재 승인 후 가능)
