@@ -51,6 +51,7 @@ interface Approval {
   card_id?: string;
   purchase_vendor?: string;
   vendor_manager?: string; // 발주서 발주처 담당자명
+  vendor_manager_phone?: string; // 발주서 발주처 담당자 연락처
   is_card_payment?: boolean;
   payment_due_date?: string;
   purchase_status?: string;
@@ -257,7 +258,8 @@ export default function ApprovalContent() {
   const [cardId, setCardId] = useState('');
   const [purchaseVendor, setPurchaseVendor] = useState('');
   const [vendorManager, setVendorManager] = useState(''); // 발주서 발주처 담당자
-  const [partners, setPartners] = useState<{ id: string; name: string; manager_name?: string; company?: string }[]>([]);
+  const [vendorManagerPhone, setVendorManagerPhone] = useState(''); // 발주처 담당자 연락처
+  const [partners, setPartners] = useState<{ id: string; name: string; manager_name?: string; manager_phone?: string; company?: string }[]>([]);
   const [selectedPartnerId, setSelectedPartnerId] = useState('');
   const [opexCats, setOpexCats] = useState<OpexCatDef[]>(OPEX_CATEGORIES.map((c, i) => ({ key: c.key, label: c.label, nature: c.nature, taxable: c.taxable, sort: (i + 1) * 10, active: true })));
   const [isPrepay, setIsPrepay] = useState(false); // 카드구매(false) / 선결제·한도복구(true)
@@ -345,7 +347,7 @@ export default function ApprovalContent() {
   // 거래처 목록 로드 (발주서 발주처 선택용)
   useEffect(() => {
     (async () => {
-      const res = await supabaseFetch('/partners?select=id,name,manager_name,company&order=name.asc');
+      const res = await supabaseFetch('/partners?select=id,name,manager_name,manager_phone,company&order=name.asc');
       const data = await res.json();
       setPartners(Array.isArray(data) ? data : []);
     })();
@@ -649,6 +651,7 @@ export default function ApprovalContent() {
           card_id: isCard ? (cardId || null) : null,
           purchase_vendor: (isCard || docType === '발주서') ? (purchaseVendor || null) : null,
           vendor_manager: docType === '발주서' ? (vendorManager || null) : null,
+          vendor_manager_phone: docType === '발주서' ? (vendorManagerPhone || null) : null,
           // 판관비 항목은 품목(approval_items) 단위로 태깅 → 문서 레벨은 사용 안 함(항상 null)
           opex_category: null,
           payment_due_date: isCard ? paymentDue : null,
@@ -858,6 +861,7 @@ export default function ApprovalContent() {
       setCardId(approval.card_id || '');
       setPurchaseVendor(approval.purchase_vendor || '');
       setVendorManager(approval.vendor_manager || '');
+      setVendorManagerPhone(approval.vendor_manager_phone || '');
       setSelectedPartnerId('');
       setIsPrepay(!!approval.is_card_payment);
       setAttachments(approval.attachments || []);
@@ -1051,7 +1055,7 @@ export default function ApprovalContent() {
     setCompany(me?.company || 'BNKNET');
     setIssueDate(today()); setSettleDate(today()); setSpendDate(today());
     setOrganizer(me?.name || ''); setProcessor(''); setAccount('');
-    setCardId(''); setPurchaseVendor(''); setVendorManager(''); setSelectedPartnerId(''); setIsPrepay(false); setAttachments([]);
+    setCardId(''); setPurchaseVendor(''); setVendorManager(''); setVendorManagerPhone(''); setSelectedPartnerId(''); setIsPrepay(false); setAttachments([]);
     setItems([0,1,2,3,4].map(i => ({ ...EMPTY_ITEM, sort_order: i })));
     setVacationType('annual');
     setVacationStart(today()); setVacationEnd(today()); setVacationReason('');
@@ -1250,7 +1254,11 @@ export default function ApprovalContent() {
                   <div className="flex justify-between gap-4 mb-4 flex-wrap">
                     <div className="flex-1 min-w-[160px]">
                       <div className="border-b-2 border-gray-500 pb-1 text-lg font-semibold text-gray-800">{selected.purchase_vendor || ''} <span className="text-base font-normal text-gray-500">귀 하</span></div>
-                      {selected.vendor_manager && <div className="mt-1 text-base text-gray-600">담당: {selected.vendor_manager}</div>}
+                      {(selected.vendor_manager || selected.vendor_manager_phone) && (
+                        <div className="mt-1 text-base text-gray-600">
+                          담당: {selected.vendor_manager || ''}{selected.vendor_manager_phone ? ` (${selected.vendor_manager_phone})` : ''}
+                        </div>
+                      )}
                       <div className="mt-3 text-base text-gray-700">아래와 같이 발주합니다.</div>
                     </div>
                     <div className="border border-gray-400 text-sm self-start w-[340px] max-w-full">
@@ -1775,41 +1783,53 @@ export default function ApprovalContent() {
             )}
 
             {/* 발주서 — 거래처관리 연동: 선택하면 발주처·담당자 자동 입력 */}
-            {docType === '발주서' && (
-            <div className="grid sm:grid-cols-3 gap-3 mb-6 border rounded-xl p-4 bg-blue-50/50 border-blue-200">
-              <div>
-                <label className="block text-sm font-medium text-gray-500 mb-1">거래처 선택 (거래처관리 연동)</label>
-                <select value={selectedPartnerId}
-                  onChange={e => {
-                    const id = e.target.value;
-                    setSelectedPartnerId(id);
-                    const p = partners.find(x => x.id === id);
-                    if (p) { setPurchaseVendor(p.name); setVendorManager(p.manager_name || ''); }
-                  }}
-                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-base bg-white focus:outline-none focus:ring-2 focus:ring-blue-400">
-                  <option value="">선택하면 발주처·담당자 자동 입력</option>
-                  {partners.map(p => (
-                    <option key={p.id} value={p.id}>{p.name}{p.manager_name ? ` · ${p.manager_name}` : ''}</option>
-                  ))}
-                </select>
-                {partners.length === 0 && (
-                  <p className="text-sm text-gray-400 mt-1.5">거래처 관리 메뉴에서 거래처를 먼저 등록하세요.</p>
-                )}
+            {docType === '발주서' && (() => {
+              // 이 사업자(company)와 공통 거래처만 노출
+              const poPartners = partners.filter(p => !p.company || p.company === company || p.company === '공통');
+              return (
+              <div className="mb-6 border rounded-xl p-4 bg-blue-50/50 border-blue-200">
+                <div className="mb-3">
+                  <label className="block text-sm font-medium text-gray-500 mb-1">거래처 선택 ({company} · 공통 거래처)</label>
+                  <select value={selectedPartnerId}
+                    onChange={e => {
+                      const id = e.target.value;
+                      setSelectedPartnerId(id);
+                      const p = poPartners.find(x => x.id === id);
+                      if (p) { setPurchaseVendor(p.name); setVendorManager(p.manager_name || ''); setVendorManagerPhone(p.manager_phone || ''); }
+                    }}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-base bg-white focus:outline-none focus:ring-2 focus:ring-blue-400">
+                    <option value="">선택하면 발주처·담당자·연락처 자동 입력</option>
+                    {poPartners.map(p => (
+                      <option key={p.id} value={p.id}>{p.name}{p.manager_name ? ` · ${p.manager_name}` : ''}</option>
+                    ))}
+                  </select>
+                  {poPartners.length === 0 && (
+                    <p className="text-sm text-gray-400 mt-1.5">{company}·공통으로 등록된 거래처가 없습니다. 거래처 관리 메뉴에서 먼저 등록하세요.</p>
+                  )}
+                </div>
+                <div className="grid sm:grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-500 mb-1">발주처 (상호)</label>
+                    <input value={purchaseVendor} onChange={e => setPurchaseVendor(e.target.value)}
+                      placeholder="거래처 선택 또는 직접 입력"
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-base bg-white focus:outline-none focus:ring-2 focus:ring-blue-400" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-500 mb-1">발주처 담당자</label>
+                    <input value={vendorManager} onChange={e => setVendorManager(e.target.value)}
+                      placeholder="담당자명"
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-base bg-white focus:outline-none focus:ring-2 focus:ring-blue-400" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-500 mb-1">담당자 연락처</label>
+                    <input value={vendorManagerPhone} onChange={e => setVendorManagerPhone(e.target.value)}
+                      placeholder="010-0000-0000"
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-base bg-white focus:outline-none focus:ring-2 focus:ring-blue-400" />
+                  </div>
+                </div>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-500 mb-1">발주처 (상호)</label>
-                <input value={purchaseVendor} onChange={e => setPurchaseVendor(e.target.value)}
-                  placeholder="거래처를 선택하거나 직접 입력"
-                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-base bg-white focus:outline-none focus:ring-2 focus:ring-blue-400" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-500 mb-1">발주처 담당자</label>
-                <input value={vendorManager} onChange={e => setVendorManager(e.target.value)}
-                  placeholder="담당자명"
-                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-base bg-white focus:outline-none focus:ring-2 focus:ring-blue-400" />
-              </div>
-            </div>
-            )}
+              );
+            })()}
 
             <div className="flex items-start justify-between mb-6">
               <h2 className="text-xl sm:text-2xl font-bold text-gray-800 tracking-widest">〈 {docType === '발주서' ? '발 주 서' : docType === '카드구매' ? (isPrepay ? '카 드 선 결 제' : '매 입 품 의 서 (카드구매)') : '지 출 결 의 서'} 〉</h2>
