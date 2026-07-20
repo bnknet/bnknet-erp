@@ -171,6 +171,10 @@ export default function DashboardContent() {
   }, []);
   const docLabel = (t?: string) => t === '카드구매' ? '매입품의서(카드구매)' : (t || '문서');
 
+  // 전체 매출 합 (이번 달, 부가세 제외) — 모든 사업자 합산
+  const totalRev = Object.values(bizStats).reduce((s, v) => s + v.rev, 0);
+  const totalCnt = Object.values(bizStats).reduce((s, v) => s + v.cnt, 0);
+
   async function resolveAlert(id: string) {
     try {
       await supabaseFetch(`/ship_alerts?id=eq.${id}`, {
@@ -256,6 +260,18 @@ export default function DashboardContent() {
       {/* 사업자별 현황 카드 */}
       <div>
         <h3 className="text-base font-semibold text-gray-500 uppercase tracking-wider mb-3">사업자별 현황 <span className="normal-case text-gray-400">· 이번 달 매출(부가세 제외)</span></h3>
+
+        {/* 전체 매출 합 */}
+        <a href="/sales" className="block bg-gradient-to-r from-slate-800 to-slate-700 rounded-xl p-5 shadow-sm mb-4 hover:from-slate-700 hover:to-slate-600 transition-colors">
+          <div className="flex items-baseline justify-between gap-3">
+            <div>
+              <div className="text-sm text-slate-300 mb-1">전체 매출 합 · 이번 달 (부가세 제외)</div>
+              <div className="text-3xl font-bold text-white">{won(totalRev)}</div>
+            </div>
+            <div className="text-sm text-slate-300 whitespace-nowrap">주문 {totalCnt.toLocaleString()}건</div>
+          </div>
+        </a>
+
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           {companies.map((company) => {
             const s = bizStats[company];
