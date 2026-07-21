@@ -360,10 +360,11 @@ export default function ApprovalContent() {
     ? computePaymentDate(purchaseBaseDate, selectedCard.billing_day, selectedCard.close_day)
     : '';
 
-  // IX글로벌 선택 시 정리인·영수자를 대표(방성훈)로 자동 지정
+  // IX글로벌 선택 시 정리인·영수자를 대표(방성훈)로 자동 지정 (세무증빙용).
+  // 단, 발주서는 세무증빙이 아니라 상신 담당자가 정리인이므로 강제 고정하지 않는다.
   useEffect(() => {
-    if (company === 'IX글로벌') setOrganizer('방성훈');
-  }, [company]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (company === 'IX글로벌' && docType !== '발주서') setOrganizer('방성훈');
+  }, [company, docType]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 카드구매 선택 시 지출일을 해당 카드 결제일로 자동 설정
   useEffect(() => {
@@ -635,8 +636,8 @@ export default function ApprovalContent() {
         payload = {
           doc_type: docType, company,
           issue_date: issueDate, settle_date: settleDate, spend_date: spendDate,
-          // IX글로벌은 등록 직원이 없어 정리인·영수자를 대표(방성훈)로 고정 (작성자 무관)
-          organizer: company === 'IX글로벌' ? '방성훈' : organizer,
+          // 발주서는 상신 담당자가 정리인. 그 외 IX글로벌은 세무증빙상 대표(방성훈)로 고정.
+          organizer: docType === '발주서' ? (organizer || me?.name || '') : (company === 'IX글로벌' ? '방성훈' : organizer),
           // 발주서는 처리사항·계정과목 없음(발주처만 사용)
           processor: docType === '발주서' ? null : processor,
           account: docType === '발주서' ? null : account,
@@ -1442,8 +1443,17 @@ export default function ApprovalContent() {
               )}
 
               <div className="text-center text-base text-gray-600 border border-gray-400 py-4 mb-6">
-                <p>위 금액을 정히 영수(청구) 합니다.</p>
-                <p className="mt-1">{selected.issue_date} &nbsp;&nbsp; 영수자 [ {selected.organizer} ]</p>
+                {selected.doc_type === '발주서' ? (
+                  <>
+                    <p>위와 같이 발주합니다.</p>
+                    <p className="mt-1">{selected.issue_date} &nbsp;&nbsp; 담당자 [ {selected.submitter_name || selected.organizer} ]</p>
+                  </>
+                ) : (
+                  <>
+                    <p>위 금액을 정히 영수(청구) 합니다.</p>
+                    <p className="mt-1">{selected.issue_date} &nbsp;&nbsp; 영수자 [ {selected.organizer} ]</p>
+                  </>
+                )}
               </div>
             </>
           )}
@@ -2012,8 +2022,17 @@ export default function ApprovalContent() {
             </div>
 
             <div className="text-center text-base text-gray-600 border border-gray-400 py-3 mb-6">
-              <p>위 금액을 정히 영수(청구) 합니다.</p>
-              <p className="mt-1">{issueDate} &nbsp;&nbsp; 영수자 [ {organizer} ]</p>
+              {docType === '발주서' ? (
+                <>
+                  <p>위와 같이 발주합니다.</p>
+                  <p className="mt-1">{issueDate} &nbsp;&nbsp; 담당자 [ {organizer || me?.name} ]</p>
+                </>
+              ) : (
+                <>
+                  <p>위 금액을 정히 영수(청구) 합니다.</p>
+                  <p className="mt-1">{issueDate} &nbsp;&nbsp; 영수자 [ {organizer} ]</p>
+                </>
+              )}
             </div>
           </>
         )}
