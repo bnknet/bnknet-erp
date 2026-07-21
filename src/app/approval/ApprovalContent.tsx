@@ -1648,7 +1648,12 @@ export default function ApprovalContent() {
       {!editId && (
         <div className="flex gap-2 flex-wrap">
           {(['지출결의서', '카드구매', '발주서', '휴가신청서'] as DocType[]).map(dt => (
-            <button key={dt} onClick={() => setDocType(dt)}
+            <button key={dt} onClick={() => {
+                setDocType(dt);
+                // 발주서는 상신 담당자가 정리인/영수자. IX글로벌이라도 방성훈 강제고정 해제.
+                if (dt === '발주서') setOrganizer(me?.name || '');
+                else if (company === 'IX글로벌') setOrganizer('방성훈');
+              }}
               className={`px-4 py-2 rounded-xl text-base font-medium transition-colors ${docType === dt ? 'bg-slate-700 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
               {DOC_TYPE_LABELS[dt]}
             </button>
