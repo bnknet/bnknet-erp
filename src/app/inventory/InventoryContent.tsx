@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { supabaseFetch, supabaseFetchAll } from '@/lib/supabase';
 import { getUser } from '@/lib/auth';
-import { matchProduct, loadDbMatches } from '@/lib/orderConvert';
+import { repNameFor, loadDbMatches } from '@/lib/orderConvert';
 import * as XLSX from 'xlsx';
 
 // 큰 금액 축약 (모바일 통계용): 6.9억 / 688만 등
@@ -120,12 +120,12 @@ export default function InventoryContent() {
     try {
       await loadDbMatches(true); // 담당자 등록 매칭 반영
       // PostgREST는 한 번에 최대 1000건만 반환 → 1000건씩 모두 가져오기(페이지네이션)
-      type Row = { product_name?: string; collect_product?: string; quantity?: number; canceled?: boolean };
+      type Row = { product_name?: string; collect_product?: string; collect_option?: string; quantity?: number; canceled?: boolean };
       const data: Row[] = [];
       let start = 0;
       while (true) {
         const res = await supabaseFetch(
-          `/orders?upload_date=gte.${from}&upload_date=lte.${to}&select=product_name,collect_product,quantity,canceled`,
+          `/orders?upload_date=gte.${from}&upload_date=lte.${to}&select=product_name,collect_product,collect_option,quantity,canceled`,
           { headers: { 'Range-Unit': 'items', Range: `${start}-${start + 999}` } },
         );
         const chunk: Row[] = await res.json();
@@ -141,7 +141,7 @@ export default function InventoryContent() {
         const q = Number(r.quantity) || 0;
         if (q < 1) return;
         // 현재 매칭데이터 기준으로 대표상품명 결정 (수집상품명 우선)
-        const { name, matched } = matchProduct(r.collect_product || r.product_name || '');
+        const { name, matched } = repNameFor(r.collect_product || r.product_name || '', r.collect_option || '');
         const target = matched ? map : unmap;
         const key = matched ? name : (r.collect_product || r.product_name || '(상품명 없음)');
         if (!target[key]) target[key] = { qty: 0, count: 0 };

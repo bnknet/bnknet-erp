@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { getUser } from '@/lib/auth';
 import { supabaseFetch, supabaseFetchAll } from '@/lib/supabase';
 import { computeCostGap, type CostGapSummary, type MiniOrder, type MiniInv } from '@/lib/salesStats';
-import { matchProduct, loadDbMatches } from '@/lib/orderConvert';
+import { repNameFor, loadDbMatches } from '@/lib/orderConvert';
 
 const companies = ['BNKNET', 'SJ글로벌', '더블아이', 'IX글로벌'];
 
@@ -75,7 +75,7 @@ export default function DashboardContent() {
         const ms = monthStartStr();
         const today = dStr(new Date());
         const [ord, inv, bom] = await Promise.all([
-          supabaseFetchAll<MiniOrder>(`/orders?select=upload_date,product_name,collect_product,quantity,amount,canceled,company&upload_date=gte.${ms}`),
+          supabaseFetchAll<MiniOrder>(`/orders?select=upload_date,product_name,collect_product,collect_option,quantity,amount,canceled,company&upload_date=gte.${ms}`),
           supabaseFetchAll<MiniInv>('/inventory?select=product_name,company,cost_price'),
           supabaseFetchAll<{ set_name: string; component_name: string }>('/product_bom?select=set_name,component_name').catch(() => []),
         ]);
@@ -122,8 +122,8 @@ export default function DashboardContent() {
     (async () => {
       try {
         await loadDbMatches(true);
-        const rows = await supabaseFetchAll<{ collect_product?: string; product_name?: string; company?: string; source?: string }>(
-          '/orders?stock_deducted=eq.false&canceled=eq.false&select=collect_product,product_name,company,source',
+        const rows = await supabaseFetchAll<{ collect_product?: string; collect_option?: string; product_name?: string; company?: string; source?: string }>(
+          '/orders?stock_deducted=eq.false&canceled=eq.false&select=collect_product,collect_option,product_name,company,source',
         );
         const targets = rows.filter(o => o.source !== '과거' && o.source !== '도매'); // 과거실적·도매는 재고차감 대상 아님
         const byCo = new Map<string, { count: number; names: Set<string> }>();
@@ -131,7 +131,7 @@ export default function DashboardContent() {
           const co = o.company || '미분류';
           const e = byCo.get(co) || { count: 0, names: new Set<string>() };
           e.count++;
-          e.names.add(matchProduct(o.collect_product || o.product_name || '').name);
+          e.names.add(repNameFor(o.collect_product || o.product_name || '', o.collect_option || '').name);
           byCo.set(co, e);
         }
         setUndeducted(Array.from(byCo.entries()).map(([company, v]) => ({
