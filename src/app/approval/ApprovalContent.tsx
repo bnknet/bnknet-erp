@@ -2203,11 +2203,14 @@ export default function ApprovalContent() {
 
   // ─── 목록 ───
   const myTurnCount = approvals.filter(isMyTurn).length;
+  const mineCount = approvals.filter((a) => (a.submitter_name || '') === me?.name).length;
   const statusFiltered = filterStatus === 'myturn'
     ? approvals.filter(isMyTurn)
-    : filterStatus === 'all'
-      ? approvals
-      : approvals.filter((a) => a.status === filterStatus);
+    : filterStatus === 'mine'
+      ? approvals.filter((a) => (a.submitter_name || '') === me?.name)
+      : filterStatus === 'all'
+        ? approvals
+        : approvals.filter((a) => a.status === filterStatus);
   // 사업자·문서종류·작성자·발의일 상세 필터
   const filtered = statusFiltered.filter((a) => {
     if (filterCompany !== '전체' && a.company !== filterCompany) return false;
@@ -2249,6 +2252,12 @@ export default function ApprovalContent() {
             <button onClick={() => setFilterStatus('myturn')}
               className={`px-3 py-2 rounded-xl text-base font-medium transition-colors border ${filterStatus === 'myturn' ? 'bg-yellow-500 text-white border-yellow-500' : 'bg-yellow-50 border-yellow-200 text-yellow-700 hover:bg-yellow-100'}`}>
               ⏳ 내 결재 대기{myTurnCount > 0 ? ` (${myTurnCount})` : ''}
+            </button>
+          )}
+          {(isCeo || isAdmin) && (
+            <button onClick={() => setFilterStatus('mine')}
+              className={`px-3 py-2 rounded-xl text-base font-medium transition-colors border ${filterStatus === 'mine' ? 'bg-blue-600 text-white border-blue-600' : 'bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100'}`}>
+              📤 내가 올린{mineCount > 0 ? ` (${mineCount})` : ''}
             </button>
           )}
           {[['all','전체'], ['draft','임시저장'], ['pending','결재중'], ['approved','승인완료'], ['rejected','반려']].map(([v, l]) => (
@@ -2319,7 +2328,7 @@ export default function ApprovalContent() {
           <div className="text-center py-12 text-gray-400">불러오는 중...</div>
         ) : shown.length === 0 ? (
           <div className="text-center py-12 text-gray-400">
-            {hasDetailFilter ? '조건에 맞는 문서가 없습니다' : filterStatus === 'myturn' ? '내가 결재할 문서가 없습니다' : '결재 문서가 없습니다'}
+            {hasDetailFilter ? '조건에 맞는 문서가 없습니다' : filterStatus === 'myturn' ? '내가 결재할 문서가 없습니다' : filterStatus === 'mine' ? '내가 올린 문서가 없습니다' : '결재 문서가 없습니다'}
           </div>
         ) : (
           <>
