@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect, useMemo } from 'react';
-import { convertOrders, buildSupabaseRows, matchProduct, loadDbMatches, type ConvertedOrderRow, type RawOrderRow } from '@/lib/orderConvert';
+import { convertOrders, buildSupabaseRows, repNameFor, loadDbMatches, type ConvertedOrderRow, type RawOrderRow } from '@/lib/orderConvert';
 import { supabaseFetch, supabaseFetchAll, supabaseUpload, safeStorageKey } from '@/lib/supabase';
 import { getUser } from '@/lib/auth';
 import { computeOrderLines } from '@/lib/salesStats';
@@ -394,13 +394,13 @@ export default function OrdersContent() {
   async function refreshUndeductedCount() {
     try {
       await loadDbMatches(true); // 최신 매칭 반영해 매칭여부 판정
-      const rows = await supabaseFetchAll<{ id: string; collect_product?: string; product_name?: string; company?: string; quantity?: number; source?: string }>(
-        '/orders?stock_deducted=eq.false&canceled=eq.false&select=id,collect_product,product_name,company,quantity,source',
+      const rows = await supabaseFetchAll<{ id: string; collect_product?: string; collect_option?: string; product_name?: string; company?: string; quantity?: number; source?: string }>(
+        '/orders?stock_deducted=eq.false&canceled=eq.false&select=id,collect_product,collect_option,product_name,company,quantity,source',
       );
       const targets = rows.filter(o => o.source !== '과거' && o.source !== '도매');
       setUndeductedCount(targets.length);
       setUndeductedList(targets.map(o => {
-        const m = matchProduct(o.collect_product || o.product_name || '');
+        const m = repNameFor(o.collect_product || o.product_name || '', o.collect_option || '');
         return { id: o.id, product: m.name, company: o.company || '', qty: Number(o.quantity) || 0, matched: m.matched };
       }));
     } catch { setUndeductedCount(null); setUndeductedList([]); }
@@ -455,8 +455,8 @@ export default function OrdersContent() {
     if (!confirm('재고 자동출고가 안 된 주문들을 다시 출고 처리합니다.\n(이미 차감된 건은 건너뜁니다) 진행할까요?')) return;
     try {
       await loadDbMatches(true); // 방금 추가한 매칭까지 반영해 재출고
-      const undeducted = await supabaseFetchAll<{ id: string; collect_product?: string; product_name?: string; quantity?: number; company?: string; source?: string }>(
-        '/orders?stock_deducted=eq.false&canceled=eq.false&select=id,collect_product,product_name,quantity,company,source',
+      const undeducted = await supabaseFetchAll<{ id: string; collect_product?: string; collect_option?: string; product_name?: string; quantity?: number; company?: string; source?: string }>(
+        '/orders?stock_deducted=eq.false&canceled=eq.false&select=id,collect_product,collect_option,product_name,quantity,company,source',
       );
       const targets = undeducted.filter(o => o.source !== '과거' && o.source !== '도매'); // 사방넷/일반/수기만
       if (!targets.length) { alert('재출고할 미차감 주문이 없습니다.'); return; }
@@ -480,7 +480,7 @@ export default function OrdersContent() {
       let unmatchedCnt = 0;
       const unmatchedNames = new Set<string>();
       for (const o of targets) {
-        const rep = matchProduct(o.collect_product || o.product_name || '').name;
+        const rep = repNameFor(o.collect_product || o.product_name || '', o.collect_option || '').name;
         const qty = Number(o.quantity) || 0;
         const set = bomMap.get(rep);
         if (set) {
@@ -629,7 +629,7 @@ export default function OrdersContent() {
     XLSX.writeFile(wb, `주문변환_${today}.xlsx`);
   }
 
-  interface SavedOrder { id: string; product_name?: string; collect_product?: string; quantity?: number; company?: string }
+  interface SavedOrder { id: string; product_name?: string; collect_product?: string; collect_option?: string; quantity?: number; company?: string }
 
   async function handleSaveToDB() {
     if (!resultData.length) return;
@@ -726,7 +726,8 @@ export default function OrdersContent() {
         const missMap = new Map<string, { cnt: number; qty: number }>();
         const unknownMap = new Map<string, { cnt: number; qty: number }>(); // 매칭데이터(PRODUCT_MAP)에 없는 = 인식 못한 상품명
         for (const o of saved) {
-          const matched = matchProduct(o.collect_product || o.product_name || '');
+          // 옵션(자연갈색/흑색 등)을 반드시 넘겨 변환과 동일하게 색을 가른다. (옵션 무시 시 흑색으로 오차감)
+          const matched = repNameFor(o.collect_product || o.product_name || '', o.collect_option || '');
           const rep = matched.name;
           const qty = Number(o.quantity) || 0;
           if (!matched.matched) {

@@ -969,8 +969,15 @@ function isRepName(name: string): boolean {
 // 안전장치: 색상만 바꾼 이름이 실제 대표상품명일 때만 반영(아니면 원본 유지).
 const REP_COLOR_TOKENS = ['자연갈색', '흑색', '블랙', '갈색'];
 export function applyOptionColor(name: string, option: string): string {
-  const cm = String(option || '').match(/색상\s*[:：]\s*([가-힣A-Za-z]+)/);
-  const color = cm?.[1];
+  const opt = String(option || '');
+  const cm = opt.match(/색상\s*[:：]\s*([가-힣A-Za-z]+)/);
+  let color = cm?.[1];
+  // '색상:' 형식이 아니어도 옵션에 대표색 토큰이 있으면 사용 (블랙→흑색 정규화).
+  // 예: 옵션이 "자연갈색 6개" / "블랙 1개"처럼 색만 들어오는 몰 대응.
+  if (!color) {
+    if (opt.includes('자연갈색')) color = '자연갈색';
+    else if (opt.includes('흑색') || opt.includes('블랙')) color = '흑색';
+  }
   if (!color || name.includes(color)) return name;
   for (const c of REP_COLOR_TOKENS) {
     if (name.endsWith(c)) {
@@ -979,6 +986,14 @@ export function applyOptionColor(name: string, option: string): string {
     }
   }
   return name;
+}
+
+// 재고 차감·집계에서 쓰는 '변환과 동일한' 대표명 해석기.
+// 반드시 수집옵션(색상 등)을 함께 넘겨야 자연갈색/흑색이 옳게 갈린다.
+// convertOrders가 product_name을 만들 때와 같은 규칙(matchProduct + applyOptionColor)을 재현한다.
+export function repNameFor(collectName: string, collectOption = ''): { name: string; matched: boolean } {
+  const m = matchProduct(collectName, collectOption);
+  return { name: applyOptionColor(m.name, collectOption), matched: m.matched };
 }
 
 // 이름 끝에 수량이 없고(예: "…6박스 12개월분") 이름 속 'N박스'가 진짜 수량인 경우를 잡는다.
