@@ -1,4 +1,4 @@
-import { matchProduct } from './orderConvert';
+import { repNameFor } from './orderConvert';
 import { buildFeeMap, lookupFee, type MallFee } from './mallFees';
 
 // 매출/원가 정합성 점검용 공용 계산 (매출 현황 + 대시보드 경고 배너 공유)
@@ -91,7 +91,8 @@ export function computeOrderLines(
     const qty = Number(o.quantity) || 0;
     const amt = Number(o.amount) || 0;
     if (qty < 1 && amt === 0) continue;
-    const rep = matchProduct(o.collect_product || o.product_name || '').name;
+    // 재고/색상 매칭은 반드시 수집옵션(자연갈색/흑색 등)을 함께 넘겨 색을 가른다.
+    const rep = repNameFor(o.collect_product || o.product_name || '', String(o.collect_option || '')).name;
     const inv = (o.company ? invMap.get(`${rep}|${o.company}`) : undefined) || invByName.get(rep);
     const date = o.upload_date || '';
     if (date && (!minDate || date < minDate)) minDate = date;
@@ -172,6 +173,7 @@ export interface MiniOrder {
   upload_date?: string;
   product_name?: string;
   collect_product?: string;
+  collect_option?: string;
   quantity?: number;
   amount?: number;
   canceled?: boolean;
@@ -246,7 +248,7 @@ export function computeCostGap(
     revenue += amt;
     orderCount++;
 
-    const rep = matchProduct(o.collect_product || o.product_name || '').name;
+    const rep = repNameFor(o.collect_product || o.product_name || '', String(o.collect_option || '')).name;
     // 세트상품: 구성품이 모두 재고에 있으면 원가 확인된 것으로 간주 (세트명 자체는 재고에 없음)
     const setComps = bomMap.get(rep);
     const inv = (o.company ? byKey.get(`${rep}|${o.company}`) : undefined) || byName.get(rep);
