@@ -1139,6 +1139,14 @@ export default function ApprovalContent() {
     return false;
   }
 
+  // 내가 이 문서의 결재라인에 포함되는가 (대기·완료 무관). 대표는 전 라인 최종결재자,
+  // 실장은 BNKNET(실장 단계) + IX글로벌(대표 자격 결재)에 포함. 더블아이·SJ글로벌(담당→대표)은 미포함.
+  function inMyLine(approval: Approval): boolean {
+    if (isCeo) return true;
+    if (isAdmin) return (APPROVAL_LINES[approval.company] || []).includes('실장') || approval.company === 'IX글로벌';
+    return false;
+  }
+
   // ─── 상세 보기 ───
   if (view === 'detail' && selected) {
     const line = APPROVAL_LINES[selected.company] || [];
@@ -2203,14 +2211,17 @@ export default function ApprovalContent() {
 
   // ─── 목록 ───
   const myTurnCount = approvals.filter(isMyTurn).length;
-  const mineCount = approvals.filter((a) => (a.submitter_name || '') === me?.name).length;
+  const inLineCount = approvals.filter(inMyLine).length;
+  const offLineCount = approvals.filter((a) => !inMyLine(a)).length;
   const statusFiltered = filterStatus === 'myturn'
     ? approvals.filter(isMyTurn)
-    : filterStatus === 'mine'
-      ? approvals.filter((a) => (a.submitter_name || '') === me?.name)
-      : filterStatus === 'all'
-        ? approvals
-        : approvals.filter((a) => a.status === filterStatus);
+    : filterStatus === 'inline'
+      ? approvals.filter(inMyLine)
+      : filterStatus === 'offline'
+        ? approvals.filter((a) => !inMyLine(a))
+        : filterStatus === 'all'
+          ? approvals
+          : approvals.filter((a) => a.status === filterStatus);
   // 사업자·문서종류·작성자·발의일 상세 필터
   const filtered = statusFiltered.filter((a) => {
     if (filterCompany !== '전체' && a.company !== filterCompany) return false;
@@ -2255,9 +2266,15 @@ export default function ApprovalContent() {
             </button>
           )}
           {(isCeo || isAdmin) && (
-            <button onClick={() => setFilterStatus('mine')}
-              className={`px-3 py-2 rounded-xl text-base font-medium transition-colors border ${filterStatus === 'mine' ? 'bg-blue-600 text-white border-blue-600' : 'bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100'}`}>
-              📤 내가 올린{mineCount > 0 ? ` (${mineCount})` : ''}
+            <button onClick={() => setFilterStatus('inline')}
+              className={`px-3 py-2 rounded-xl text-base font-medium transition-colors border ${filterStatus === 'inline' ? 'bg-blue-600 text-white border-blue-600' : 'bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100'}`}>
+              🖊 내 결재라인{inLineCount > 0 ? ` (${inLineCount})` : ''}
+            </button>
+          )}
+          {(isCeo || isAdmin) && (
+            <button onClick={() => setFilterStatus('offline')}
+              className={`px-3 py-2 rounded-xl text-base font-medium transition-colors border ${filterStatus === 'offline' ? 'bg-slate-600 text-white border-slate-600' : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'}`}>
+              👁 라인 외{offLineCount > 0 ? ` (${offLineCount})` : ''}
             </button>
           )}
           {[['all','전체'], ['draft','임시저장'], ['pending','결재중'], ['approved','승인완료'], ['rejected','반려']].map(([v, l]) => (
@@ -2328,7 +2345,7 @@ export default function ApprovalContent() {
           <div className="text-center py-12 text-gray-400">불러오는 중...</div>
         ) : shown.length === 0 ? (
           <div className="text-center py-12 text-gray-400">
-            {hasDetailFilter ? '조건에 맞는 문서가 없습니다' : filterStatus === 'myturn' ? '내가 결재할 문서가 없습니다' : filterStatus === 'mine' ? '내가 올린 문서가 없습니다' : '결재 문서가 없습니다'}
+            {hasDetailFilter ? '조건에 맞는 문서가 없습니다' : filterStatus === 'myturn' ? '내가 결재할 문서가 없습니다' : filterStatus === 'inline' ? '내 결재라인 문서가 없습니다' : filterStatus === 'offline' ? '라인 외 문서가 없습니다' : '결재 문서가 없습니다'}
           </div>
         ) : (
           <>
