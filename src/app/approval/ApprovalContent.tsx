@@ -1118,7 +1118,9 @@ export default function ApprovalContent() {
     try {
       const XLSX = await import('xlsx');
       const buf = await file.arrayBuffer();
-      const wb = XLSX.read(buf, { type: 'array', cellDates: true }); // 날짜 셀을 숫자(일련번호) 대신 Date로
+      // cellDates 미사용: 날짜 셀은 일련번호(숫자)로 받아 타임존 영향 없이 분해한다.
+      // (cellDates:true → Date 변환 시 getDate()가 로컬 시간이라 KST에서 하루 밀리는 버그)
+      const wb = XLSX.read(buf, { type: 'array' });
       const ws = wb.Sheets[wb.SheetNames[0]];
       const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws, { defval: '' });
       const num = (v: unknown) => Number(String(v).replace(/[^\d.-]/g, '')) || 0;
@@ -1126,17 +1128,29 @@ export default function ApprovalContent() {
         for (const k of keys) if (r[k] !== undefined && r[k] !== '') return r[k];
         return '';
       };
-      // 월/일 셀 정규화 — 엑셀 날짜(Date/일련번호)면 MM/DD로, 텍스트면 그대로
+      // 월/일 셀 정규화 → 항상 MM/DD. 타임존 영향이 없도록 UTC/순수 계산만 사용.
+      const p2 = (n: number) => String(n).padStart(2, '0');
       const fmtItemDate = (v: unknown): string => {
         if (v == null || v === '') return '';
-        if (v instanceof Date) return `${String(v.getMonth() + 1).padStart(2, '0')}/${String(v.getDate()).padStart(2, '0')}`;
-        if (typeof v === 'number') { // 혹시 일련번호로 들어오면 SSF로 변환
+        // 엑셀 일련번호: SSF로 분해(타임존 무관) → 실패 시 UTC 기준 수동 환산
+        if (typeof v === 'number') {
           const ssf = (XLSX as unknown as { SSF?: { parse_date_code?: (n: number) => { m?: number; d?: number } } }).SSF;
           const d = ssf?.parse_date_code?.(v);
-          if (d && d.m && d.d) return `${String(d.m).padStart(2, '0')}/${String(d.d).padStart(2, '0')}`;
-          return String(v);
+          if (d && d.m && d.d) return `${p2(d.m)}/${p2(d.d)}`;
+          const dt = new Date(Date.UTC(1899, 11, 30) + Math.round(v) * 86400000);
+          return `${p2(dt.getUTCMonth() + 1)}/${p2(dt.getUTCDate())}`;
         }
-        return String(v).trim();
+        // 혹시 Date로 들어오면 로컬(getDate) 말고 UTC로 읽어 하루 밀림 방지
+        if (v instanceof Date) return `${p2(v.getUTCMonth() + 1)}/${p2(v.getUTCDate())}`;
+        // 텍스트: "2026-07-14", "07월 14일", "07/14", "7.14" 등에서 월/일만 추출
+        const s = String(v).trim();
+        let m = s.match(/^\d{4}[.\-/](\d{1,2})[.\-/](\d{1,2})/);       // YYYY-MM-DD
+        if (m) return `${p2(+m[1])}/${p2(+m[2])}`;
+        m = s.match(/(\d{1,2})\s*월\s*(\d{1,2})\s*일/);                 // MM월 DD일
+        if (m) return `${p2(+m[1])}/${p2(+m[2])}`;
+        m = s.match(/^(\d{1,2})[.\-/](\d{1,2})$/);                      // MM/DD
+        if (m) return `${p2(+m[1])}/${p2(+m[2])}`;
+        return s;
       };
       const parsed: ApprovalItem[] = rows.map((r, idx) => ({
         item_date: fmtItemDate(pick(r, ['월/일', '월일', '날짜', '일자'])),
