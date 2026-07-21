@@ -287,6 +287,9 @@ export default function ApprovalContent() {
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [refundDate, setRefundDate] = useState(today());
   const [cancelItemIds, setCancelItemIds] = useState<Set<string>>(new Set());
+  // 취소 시 첨부(취소 반영된 이용내역 등) — 원본 첨부에 추가로 붙인다
+  const [cancelUploads, setCancelUploads] = useState<{ name: string; url: string }[]>([]);
+  const [cancelUploading, setCancelUploading] = useState(false);
 
   // 휴가신청서 폼
   const [vacationType, setVacationType] = useState('annual');
@@ -1004,7 +1007,24 @@ export default function ApprovalContent() {
     // 기본: 아직 취소 안 된 항목 전체 체크
     const ids = (approval.items || []).filter(i => !i.canceled && i.id).map(i => i.id as string);
     setCancelItemIds(new Set(ids));
+    setCancelUploads([]);
     setShowCancelModal(true);
+  }
+
+  // 취소 처리 시 첨부(취소 반영된 이용내역 등) 업로드 — 이름에 [취소내역] 표시
+  async function handleCancelFileUpload(files: FileList | null) {
+    if (!files || files.length === 0) return;
+    setCancelUploading(true);
+    try {
+      const uploaded: { name: string; url: string }[] = [];
+      for (const file of Array.from(files)) {
+        const url = await supabaseUpload('approvals', safeStorageKey(file.name), file);
+        uploaded.push({ name: `[취소내역] ${file.name}`, url });
+      }
+      setCancelUploads(prev => [...prev, ...uploaded]);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : '파일 업로드에 실패했습니다.');
+    } finally { setCancelUploading(false); }
   }
 
   async function handleCancelPurchase(approval: Approval) {
@@ -1023,6 +1043,14 @@ export default function ApprovalContent() {
       method: 'PATCH', headers: { Prefer: 'return=minimal' },
       body: JSON.stringify({ purchase_status: status, canceled_at: nowIso, refund_due_date: refundDate }),
     });
+    // 취소 반영 이용내역 첨부 → 원본 첨부에 추가(대체 아님). 세무·확인용으로 상신본과 함께 보존.
+    if (cancelUploads.length) {
+      const merged = [...(approval.attachments || []), ...cancelUploads];
+      await supabaseFetch(`/approvals?id=eq.${approval.id}`, {
+        method: 'PATCH', headers: { Prefer: 'return=minimal' },
+        body: JSON.stringify({ attachments: merged }),
+      });
+    }
     const amt = items.filter(i => cancelItemIds.has(i.id || '')).reduce((s, i) => s + (i.amount || 0), 0);
     const cardName = cards.find(c => c.id === approval.card_id)?.card_name || '';
     await logCardChange('매입취소', `${approval.company} ${cardName}`,
@@ -1589,9 +1617,35 @@ export default function ApprovalContent() {
                 className="w-full px-3 py-2 border border-gray-200 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-orange-400" />
               <p className="text-sm text-gray-400 mt-1.5">보통 다음 카드 명세서에 반영됩니다. (자동 계산됨, 수정 가능)</p>
 
+              {/* 취소 반영 이용내역 첨부 — 원본 첨부에 추가로 보존 */}
+              <div className="mt-4">
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-sm font-medium text-gray-500">📎 취소 반영 내역 첨부 <span className="text-xs text-gray-400">(선택 · 세무용)</span></label>
+                  <label className="text-sm text-blue-600 hover:text-blue-700 cursor-pointer">
+                    파일 선택
+                    <input type="file" multiple className="hidden"
+                      onChange={e => { handleCancelFileUpload(e.target.files); e.target.value = ''; }} />
+                  </label>
+                </div>
+                <p className="text-xs text-gray-400 mb-2">취소분이 반영된 카드 이용내역을 올리면, 상신 때 올린 원본과 <b>함께</b> 문서에 남습니다.</p>
+                {cancelUploading ? (
+                  <div className="text-sm text-blue-600 py-2">업로드 중…</div>
+                ) : cancelUploads.length > 0 && (
+                  <div className="space-y-1">
+                    {cancelUploads.map((f, i) => (
+                      <div key={i} className="flex items-center justify-between text-sm bg-gray-50 rounded-lg px-3 py-1.5">
+                        <span className="truncate text-gray-700">{f.name}</span>
+                        <button onClick={() => setCancelUploads(prev => prev.filter((_, idx) => idx !== i))}
+                          className="text-gray-400 hover:text-red-500 flex-shrink-0 ml-2">✕</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
               <div className="flex gap-3 mt-5">
-                <button onClick={() => handleCancelPurchase(selected)}
-                  className="flex-1 px-5 py-2.5 bg-orange-500 hover:bg-orange-600 text-white rounded-xl text-base font-medium">취소 확정</button>
+                <button onClick={() => handleCancelPurchase(selected)} disabled={cancelUploading}
+                  className="flex-1 px-5 py-2.5 bg-orange-500 hover:bg-orange-600 disabled:bg-orange-300 text-white rounded-xl text-base font-medium">취소 확정</button>
                 <button onClick={() => setShowCancelModal(false)}
                   className="px-5 py-2.5 border border-gray-200 text-gray-600 rounded-xl text-base hover:bg-gray-50">닫기</button>
               </div>
