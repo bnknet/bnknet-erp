@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { supabaseFetch } from '@/lib/supabase';
 
 interface Account {
   id: string;
@@ -40,6 +41,7 @@ export default function AccountsContent() {
   const [editId, setEditId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [visiblePw, setVisiblePw] = useState<Set<string>>(new Set());
+  const [serverWarn, setServerWarn] = useState<string | null>(null);
 
   useEffect(() => { loadAccounts(); }, []);
 
@@ -47,8 +49,18 @@ export default function AccountsContent() {
     setLoading(true);
     try {
       const res = await fetch('/api/accounts');
-      const data = await res.json();
-      setAccounts(Array.isArray(data) ? data : []);
+      const data = await res.json().catch(() => null);
+      if (Array.isArray(data)) {
+        setAccounts(data);
+        setServerWarn(null);
+      } else {
+        // 서버 경유 조회 실패 → 임시로 직접 조회(RLS 켜기 전이라 안전). 데이터 유실 아님.
+        const fb = await supabaseFetch('/accounts?order=category.asc,service_name.asc');
+        const fbData = await fb.json().catch(() => []);
+        setAccounts(Array.isArray(fbData) ? fbData : []);
+        const reason = data && typeof data === 'object' && 'error' in data ? String((data as { error?: unknown }).error) : '';
+        setServerWarn(`서버 경유 조회 실패 (상태 ${res.status}${reason ? ` · ${reason}` : ''}) — 데이터는 정상, 서버 키(SUPABASE_SERVICE_ROLE_KEY) 확인 필요`);
+      }
     } catch { setAccounts([]); }
     finally { setLoading(false); }
   }
@@ -115,6 +127,11 @@ export default function AccountsContent() {
 
   return (
     <div className="space-y-4">
+      {serverWarn && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-sm text-amber-700">
+          ⚠️ {serverWarn}
+        </div>
+      )}
       {/* 상단 */}
       <div className="space-y-3">
         <div className="flex items-center justify-between gap-2">
