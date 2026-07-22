@@ -12,49 +12,53 @@ export default function LoginPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
+  // 기존(레거시) 방식 로그인 — 서버 로그인 전환기 폴백(락아웃 방지). 서버 인증이 안 될 때만 사용.
+  async function legacyLogin(): Promise<boolean> {
+    const res = await supabaseFetch(
+      `/employees?email=eq.${encodeURIComponent(email)}&status=eq.active&select=id,name,email,role,company`,
+    );
+    if (!res.ok) return false;
+    const rows = await res.json();
+    if (!Array.isArray(rows) || rows.length === 0) return false;
+    const employee = rows[0];
+    const pwRes = await supabaseFetch(
+      `/employees?id=eq.${employee.id}&password_hash=eq.${encodeURIComponent(password)}&select=id`,
+    );
+    const pwRows = await pwRes.json().catch(() => []);
+    if (!Array.isArray(pwRows) || pwRows.length === 0) return false;
+    setUser({ id: employee.id, name: employee.name, email: employee.email, role: employee.role, company: employee.company });
+    return true;
+  }
+
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
     setError('');
     setLoading(true);
 
     try {
-      const res = await supabaseFetch(
-        `/employees?email=eq.${encodeURIComponent(email)}&status=eq.active&select=id,name,email,role,company`,
-      );
+      // 1) 서버 보안 로그인 우선 (비밀번호는 서버에서만 대조)
+      try {
+        const r = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, password }),
+        });
+        const data = await r.json().catch(() => null);
+        if (data?.ok && data.user) {
+          const u = data.user;
+          setUser({ id: u.id, name: u.name, email: u.email, role: u.role, company: u.company });
+          router.push('/dashboard');
+          return;
+        }
+      } catch { /* 서버 라우트 예외 → 폴백 시도 */ }
 
-      if (!res.ok) throw new Error('서버 오류가 발생했습니다.');
-
-      const rows = await res.json();
-
-      if (!rows || rows.length === 0) {
-        setError('이메일 또는 비밀번호가 올바르지 않습니다.');
-        setLoading(false);
+      // 2) 폴백: 기존 방식(전환기 안전장치)
+      if (await legacyLogin()) {
+        router.push('/dashboard');
         return;
       }
 
-      const employee = rows[0];
-
-      // 임시: 비밀번호 체크 (추후 Supabase Auth로 교체 예정)
-      const pwRes = await supabaseFetch(
-        `/employees?id=eq.${employee.id}&password_hash=eq.${encodeURIComponent(password)}&select=id`,
-      );
-      const pwRows = await pwRes.json();
-
-      if (!pwRows || pwRows.length === 0) {
-        setError('이메일 또는 비밀번호가 올바르지 않습니다.');
-        setLoading(false);
-        return;
-      }
-
-      setUser({
-        id: employee.id,
-        name: employee.name,
-        email: employee.email,
-        role: employee.role,
-        company: employee.company,
-      });
-
-      router.push('/dashboard');
+      setError('이메일 또는 비밀번호가 올바르지 않습니다.');
     } catch {
       setError('로그인 중 오류가 발생했습니다. 다시 시도해주세요.');
     } finally {
