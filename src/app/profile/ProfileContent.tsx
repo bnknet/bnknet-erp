@@ -1,7 +1,6 @@
 'use client';
 
 import { useState } from 'react';
-import { supabaseFetch } from '@/lib/supabase';
 import { getUser } from '@/lib/auth';
 
 const ROLE_LABEL: Record<string, string> = {
@@ -29,23 +28,18 @@ export default function ProfileContent() {
 
     setSaving(true);
     try {
-      // 현재 비밀번호 확인
-      const checkRes = await supabaseFetch(
-        `/employees?id=eq.${me.id}&password_hash=eq.${encodeURIComponent(curPw)}&select=id`,
-      );
-      const checkRows = await checkRes.json();
-      if (!Array.isArray(checkRows) || checkRows.length === 0) {
-        setMsg({ type: 'err', text: '현재 비밀번호가 올바르지 않습니다.' });
+      // 서버(service_role)에서 현재 비밀번호 검증 후 employee_secrets 갱신
+      const r = await fetch('/api/auth/change-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ employeeId: me.id, currentPw: curPw, newPw }),
+      });
+      const data = await r.json().catch(() => null);
+      if (!data?.ok) {
+        setMsg({ type: 'err', text: data?.error || '비밀번호 변경에 실패했습니다.' });
         setSaving(false);
         return;
       }
-
-      // 새 비밀번호로 변경
-      await supabaseFetch(`/employees?id=eq.${me.id}`, {
-        method: 'PATCH',
-        headers: { Prefer: 'return=minimal' },
-        body: JSON.stringify({ password_hash: newPw, updated_at: new Date().toISOString() }),
-      });
 
       setCurPw(''); setNewPw(''); setNewPw2('');
       setMsg({ type: 'ok', text: '비밀번호가 변경되었습니다.' });

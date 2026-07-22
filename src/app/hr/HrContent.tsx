@@ -93,12 +93,13 @@ export default function HrContent() {
           }),
         });
       } else {
+        // 신규 직원: employees에는 비밀번호를 넣지 않고(노출 방지),
+        // 생성된 id로 employee_secrets에 별도 저장(서버 경유).
         res = await supabaseFetch('/employees', {
           method: 'POST',
-          headers: { Prefer: 'return=minimal' },
+          headers: { Prefer: 'return=representation' },
           body: JSON.stringify({
             name: form.name, email: form.email,
-            password_hash: form.password_hash,
             role: form.role, company: form.company,
             phone: form.phone || null,
             birth_date: form.birth_date || null,
@@ -113,6 +114,19 @@ export default function HrContent() {
         const err = await res.json().catch(() => ({}));
         alert(`저장 실패: ${(err as any).message || res.status}`);
         return;
+      }
+      if (!editId) {
+        const created = await res.json().catch(() => []);
+        const newId = Array.isArray(created) && created[0]?.id ? created[0].id : null;
+        if (newId) {
+          const pwRes = await fetch('/api/auth/set-password', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ employeeId: newId, password: form.password_hash || 'bnknet1234' }),
+          });
+          const pwData = await pwRes.json().catch(() => null);
+          if (!pwData?.ok) alert('직원은 등록됐지만 초기 비밀번호 저장에 실패했습니다. 인사담당에게 문의하세요.');
+        }
       }
       setView('list');
       setEditId(null);
