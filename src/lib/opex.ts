@@ -21,6 +21,7 @@ export const OPEX_CATEGORIES: OpexCategory[] = [
   { key: 'sales_promo', label: '영업·판촉비',  nature: '준변동', taxable: true,  hint: '영업활동·판촉·샘플·행사' },
   { key: 'travel',    label: '여비교통비',     nature: '변동',   taxable: true,  hint: '출장·교통·주차·숙박' },
   { key: 'corp_card', label: '법인카드 사용',  nature: '변동',   taxable: true,  hint: '법인카드 일반사용분(제품매입 제외). 카드명세서에서 판관비성 금액만 수기 입력' },
+  { key: 'vehicle',   label: '차량관리비',     nature: '변동',   taxable: true,  hint: '주유·정비·보험·검사 등 차량 유지비 (비영업용 승용차는 매입세액 불공제 가능)' },
   { key: 'etc',       label: '기타 운영비',    nature: '혼합',   taxable: true,  hint: '통신·보험·잡비 등' },
 ];
 
