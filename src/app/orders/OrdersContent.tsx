@@ -263,10 +263,11 @@ export default function OrdersContent() {
   const [editLogs, setEditLogs] = useState<{ id: string; action: string; detail?: string; changed_by?: string; created_at: string }[]>([]);
   const [editSaving, setEditSaving] = useState(false);
 
-  async function searchOrders(opts?: { from?: string; to?: string; company?: string }) {
+  async function searchOrders(opts?: { from?: string; to?: string; company?: string; wholesaleOnly?: boolean }) {
     const from = opts?.from !== undefined ? opts.from : sFrom;
     const to = opts?.to !== undefined ? opts.to : sTo;
     const comp = opts?.company !== undefined ? opts.company : sCompany;
+    const wholesale = opts?.wholesaleOnly !== undefined ? opts.wholesaleOnly : sWholesaleOnly;
     setOrderLoading(true);
     setOrderChecked(new Set());
     try {
@@ -275,11 +276,11 @@ export default function OrdersContent() {
       if (sProduct.trim()) q += `&product_name=ilike.*${encodeURIComponent(sProduct.trim())}*`;
       if (sMall.trim()) q += `&mall_name=ilike.*${encodeURIComponent(sMall.trim())}*`;
       if (comp !== '전체') q += `&company=eq.${encodeURIComponent(comp)}`;
-      if (sWholesaleOnly) q += `&source=eq.${encodeURIComponent('도매')}`;
+      if (wholesale) q += `&source=eq.${encodeURIComponent('도매')}`;
       if (from) q += `&upload_date=gte.${from}`;
       if (to) q += `&upload_date=lte.${to}`;
       // 조건(날짜/검색어)이 있으면 해당 범위 "전부" 조회(1000건 초과도 페이지네이션). 조건 없으면 최근 1000건만.
-      const hasFilter = !!(from || to || sOrderNo.trim() || sProduct.trim() || sMall.trim() || comp !== '전체' || sWholesaleOnly);
+      const hasFilter = !!(from || to || sOrderNo.trim() || sProduct.trim() || sMall.trim() || comp !== '전체' || wholesale);
       let data: OrderRow[];
       if (hasFilter) {
         data = await supabaseFetchAll<OrderRow>(q);
@@ -321,7 +322,7 @@ export default function OrdersContent() {
   // 도매처별 매출 요약 — 조회 결과 중 도매(source='도매')만 거래처별로 집계.
   // 공식은 computeOrderLines의 도매 라인과 동일: rev=amt/1.1, 이익=(amt−원가×수량−배송비)/1.1.
   type WsItem = { product: string; cnt: number; qty: number; rev: number; profit: number };
-  type WsVendor = { vendor: string; cnt: number; qty: number; rev: number; profit: number; items: Map<string, WsItem> };
+  type WsVendor = { key: string; company: string; vendor: string; cnt: number; qty: number; rev: number; profit: number; items: Map<string, WsItem> };
   const wholesaleSummary = useMemo(() => {
     const ws = orderList.filter(o => o.source === '도매' && !o.canceled);
     if (ws.length === 0) return null;
@@ -330,18 +331,20 @@ export default function OrdersContent() {
     let tCnt = 0, tQty = 0, tRev = 0, tProfit = 0;
     for (const o of ws) {
       const vendor = o.recipient_name || '(거래처 미상)';
+      const company = o.company || '미분류';
+      const key = `${company} ${vendor}`; // 같은 거래처명이라도 사업자별로 분리
       const qty = Number(o.quantity) || 0;
       const amt = Number(o.amount) || 0;
       const rev = amt / VAT;
       const profit = (amt - (Number(o.manual_cost) || 0) * qty - (Number(o.manual_shipping) || 0)) / VAT;
-      const a = byVendor.get(vendor) || { vendor, cnt: 0, qty: 0, rev: 0, profit: 0, items: new Map<string, WsItem>() };
+      const a = byVendor.get(key) || { key, company, vendor, cnt: 0, qty: 0, rev: 0, profit: 0, items: new Map<string, WsItem>() };
       a.cnt++; a.qty += qty; a.rev += rev; a.profit += profit;
       // 거래처 내 상품별 상세
       const pn = o.product_name || o.collect_product || '(상품명 없음)';
       const it = a.items.get(pn) || { product: pn, cnt: 0, qty: 0, rev: 0, profit: 0 };
       it.cnt++; it.qty += qty; it.rev += rev; it.profit += profit;
       a.items.set(pn, it);
-      byVendor.set(vendor, a);
+      byVendor.set(key, a);
       tCnt++; tQty += qty; tRev += rev; tProfit += profit;
     }
     const rows = [...byVendor.values()].map(v => ({ ...v, items: [...v.items.values()] }));
@@ -1431,7 +1434,7 @@ export default function OrdersContent() {
               <input value={sMall} onChange={e => setSMall(e.target.value)} onKeyDown={e => e.key === 'Enter' && searchOrders()}
                 placeholder="몰명" className="px-3 py-2 border border-gray-200 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-blue-400 w-28" />
               <label className="flex items-center gap-1.5 px-3 py-2 border border-gray-200 rounded-lg text-base text-gray-600 cursor-pointer hover:bg-gray-50 select-none">
-                <input type="checkbox" checked={sWholesaleOnly} onChange={e => { setSWholesaleOnly(e.target.checked); }} className="w-4 h-4 accent-blue-600" />
+                <input type="checkbox" checked={sWholesaleOnly} onChange={e => { const v = e.target.checked; setSWholesaleOnly(v); searchOrders({ wholesaleOnly: v }); }} className="w-4 h-4 accent-blue-600" />
                 도매만
               </label>
               <button onClick={() => searchOrders()} className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-base font-medium">검색</button>
@@ -1466,13 +1469,14 @@ export default function OrdersContent() {
                   </thead>
                   <tbody>
                     {wsRows.map((r, i) => {
-                      const open = openVendor === r.vendor;
+                      const open = openVendor === r.key;
                       return (
                         <Fragment key={i}>
-                          <tr onClick={() => setOpenVendor(open ? null : r.vendor)}
+                          <tr onClick={() => setOpenVendor(open ? null : r.key)}
                             className="border-b border-gray-50 hover:bg-amber-50/60 cursor-pointer">
                             <td className="py-2.5 pr-4 font-medium text-gray-800">
-                              <span className="text-gray-400 mr-1.5">{open ? '▼' : '▶'}</span>{r.vendor}
+                              <span className="text-gray-400 mr-1.5">{open ? '▼' : '▶'}</span>
+                              <span className="text-xs px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 mr-1.5 align-middle">{r.company}</span>{r.vendor}
                             </td>
                             <td className="py-2.5 px-4 text-right tabular-nums text-gray-600">{r.cnt.toLocaleString()}</td>
                             <td className="py-2.5 px-4 text-right tabular-nums text-gray-600">{r.qty.toLocaleString()}</td>
