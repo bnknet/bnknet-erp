@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { supabaseFetch } from '@/lib/supabase';
 
 interface Account {
   id: string;
@@ -47,7 +46,7 @@ export default function AccountsContent() {
   async function loadAccounts() {
     setLoading(true);
     try {
-      const res = await supabaseFetch('/accounts?order=category.asc,service_name.asc');
+      const res = await fetch('/api/accounts');
       const data = await res.json();
       setAccounts(Array.isArray(data) ? data : []);
     } catch { setAccounts([]); }
@@ -59,14 +58,15 @@ export default function AccountsContent() {
     setSaving(true);
     try {
       if (editId) {
-        await supabaseFetch(`/accounts?id=eq.${editId}`, {
+        await fetch('/api/accounts', {
           method: 'PATCH',
-          body: JSON.stringify({ ...form, updated_at: new Date().toISOString() }),
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: editId, ...form, updated_at: new Date().toISOString() }),
         });
       } else {
-        await supabaseFetch('/accounts', {
+        await fetch('/api/accounts', {
           method: 'POST',
-          headers: { Prefer: 'return=minimal' },
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(form),
         });
       }
@@ -79,7 +79,7 @@ export default function AccountsContent() {
 
   async function handleDelete(id: string) {
     if (!confirm('계정 정보를 삭제하시겠습니까?')) return;
-    await supabaseFetch(`/accounts?id=eq.${id}`, { method: 'DELETE' });
+    await fetch(`/api/accounts?id=${id}`, { method: 'DELETE' });
     await loadAccounts();
   }
 
