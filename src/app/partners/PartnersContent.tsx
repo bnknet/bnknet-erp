@@ -34,6 +34,7 @@ interface Partner {
   brand?: string;
   company: string;
   contract_url?: string;
+  business_license_url?: string;
   memo?: string;
   created_at: string;
 }
@@ -50,7 +51,7 @@ const TYPE_COLORS: Record<string, string> = {
 
 const EMPTY_FORM = {
   name: '', type: '브랜드사', manager_name: '', manager_phone: '',
-  manager_email: '', brand: '', company: '공통', contract_url: '', memo: '',
+  manager_email: '', brand: '', company: '공통', contract_url: '', business_license_url: '', memo: '',
 };
 
 type View = 'list' | 'detail' | 'form';
@@ -83,6 +84,8 @@ export default function PartnersContent() {
   const [saving, setSaving] = useState(false);
   const [contractFile, setContractFile] = useState<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [licenseFile, setLicenseFile] = useState<File | null>(null);
+  const licenseInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => { loadPartners(); loadLogs(); }, []);
 
@@ -113,7 +116,12 @@ export default function PartnersContent() {
         const path = safeStorageKey(contractFile.name);
         contractUrl = await supabaseUpload('contracts', path, contractFile);
       }
-      const payload = { ...form, contract_url: contractUrl };
+      let licenseUrl = form.business_license_url;
+      if (licenseFile) {
+        const path = safeStorageKey(licenseFile.name);
+        licenseUrl = await supabaseUpload('contracts', path, licenseFile);
+      }
+      const payload = { ...form, contract_url: contractUrl, business_license_url: licenseUrl };
       const detail = `${form.type} · ${form.company}${form.brand ? ` · ${form.brand}` : ''}`;
       if (editId) {
         await supabaseFetch(`/partners?id=eq.${editId}`, {
@@ -133,6 +141,7 @@ export default function PartnersContent() {
       setEditId(null);
       setForm({ ...EMPTY_FORM });
       setContractFile(null);
+      setLicenseFile(null);
       await loadPartners();
       await loadLogs();
     } finally { setSaving(false); }
@@ -154,12 +163,17 @@ export default function PartnersContent() {
         name: p.name, type: p.type, manager_name: p.manager_name || '',
         manager_phone: p.manager_phone || '', manager_email: p.manager_email || '',
         brand: p.brand || '', company: p.company, contract_url: p.contract_url || '',
+        business_license_url: p.business_license_url || '',
         memo: p.memo || '',
       });
+      setContractFile(null);
+      setLicenseFile(null);
       setEditId(p.id);
       setEditingName(p.name);
     } else {
       setForm({ ...EMPTY_FORM });
+      setContractFile(null);
+      setLicenseFile(null);
       setEditId(null);
       setEditingName('');
     }
@@ -362,13 +376,22 @@ export default function PartnersContent() {
                     <div className="flex-1">
                       <div className="text-lg font-semibold text-gray-800">{p.name}</div>
                       {p.brand && <div className="text-base text-gray-500 mt-0.5">{p.brand}</div>}
-                      {p.contract_url && (
-                        <a href={p.contract_url} target="_blank" rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1 text-sm text-blue-500 hover:underline mt-1">
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg>
-                          첨부파일 보기
-                        </a>
-                      )}
+                      <div className="flex items-center gap-3 flex-wrap mt-1">
+                        {p.contract_url && (
+                          <a href={p.contract_url} target="_blank" rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 text-sm text-blue-500 hover:underline">
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg>
+                            계약서
+                          </a>
+                        )}
+                        {p.business_license_url && (
+                          <a href={p.business_license_url} target="_blank" rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 text-sm text-blue-500 hover:underline">
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg>
+                            사업자등록증
+                          </a>
+                        )}
+                      </div>
                       {p.memo && <div className="text-base text-gray-600 mt-1.5 whitespace-pre-wrap">{p.memo}</div>}
                     </div>
                     <div className="flex gap-2 ml-3 flex-shrink-0">
@@ -492,6 +515,39 @@ export default function PartnersContent() {
                   className="inline-flex items-center gap-1 text-xs text-blue-500 hover:underline">
                   <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
                   현재 첨부파일 보기
+                </a>
+              )}
+            </div>
+          </div>
+          <div className="sm:col-span-2">
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">사업자등록증</label>
+            <div className="space-y-2">
+              <div
+                onClick={() => licenseInputRef.current?.click()}
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={(e) => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) setLicenseFile(f); }}
+                className="flex items-center gap-3 px-4 py-3 border-2 border-dashed border-gray-200 rounded-xl cursor-pointer hover:border-blue-400 hover:bg-blue-50/40 transition-colors">
+                <svg className="w-5 h-5 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+                </svg>
+                {licenseFile ? (
+                  <span className="text-sm text-blue-600 font-medium">{licenseFile.name}</span>
+                ) : (
+                  <span className="text-sm text-gray-400">사업자등록증 첨부 (클릭 또는 드래그) — PDF, 이미지</span>
+                )}
+                {licenseFile && (
+                  <button type="button" onClick={(e) => { e.stopPropagation(); setLicenseFile(null); }}
+                    className="ml-auto text-gray-400 hover:text-red-500 text-xs">✕ 취소</button>
+                )}
+              </div>
+              <input ref={licenseInputRef} type="file" className="hidden"
+                accept=".pdf,.png,.jpg,.jpeg"
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) setLicenseFile(f); }} />
+              {form.business_license_url && !licenseFile && (
+                <a href={form.business_license_url} target="_blank" rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-xs text-blue-500 hover:underline">
+                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                  현재 사업자등록증 보기
                 </a>
               )}
             </div>
