@@ -249,6 +249,8 @@ export default function OrdersContent() {
   const [sWholesaleOnly, setSWholesaleOnly] = useState(false); // 도매만 보기
   const [openVendor, setOpenVendor] = useState<string | null>(null); // 도매처별 상세 펼침
   const [wsSort, setWsSort] = useState<{ key: 'cnt' | 'qty' | 'rev' | 'profit' | 'margin'; dir: 'asc' | 'desc' }>({ key: 'rev', dir: 'desc' }); // 도매처별 정렬(기본 매출 내림차순)
+  const [msSort, setMsSort] = useState<{ key: 'qty' | 'rev' | 'profit' | 'margin'; dir: 'asc' | 'desc' }>({ key: 'rev', dir: 'desc' }); // 상품별 정렬(기본 매출 내림차순)
+  const [orderRowLimit, setOrderRowLimit] = useState(300); // 주문 목록 화면 표시 제한(성능)
   const [sFrom, setSFrom] = useState('');
   const [sTo, setSTo] = useState('');
   const [orderList, setOrderList] = useState<OrderRow[]>([]);
@@ -270,6 +272,7 @@ export default function OrdersContent() {
     const wholesale = opts?.wholesaleOnly !== undefined ? opts.wholesaleOnly : sWholesaleOnly;
     setOrderLoading(true);
     setOrderChecked(new Set());
+    setOrderRowLimit(300);
     try {
       let q = '/orders?select=id,upload_date,order_number,recipient_name,mall_name,product_name,collect_product,collect_option,quantity,amount,delivery_fee,tracking_number,canceled,source,company,manual_cost,manual_shipping&order=upload_date.desc';
       if (sOrderNo.trim()) q += `&order_number=ilike.*${encodeURIComponent(sOrderNo.trim())}*`;
@@ -366,6 +369,19 @@ export default function OrdersContent() {
     setWsSort(prev => prev.key === key ? { key, dir: prev.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'desc' });
   }
   const wsArrow = (key: string) => wsSort.key === key ? (wsSort.dir === 'asc' ? ' ▲' : ' ▼') : '';
+
+  // 상품별(옵션) 요약 정렬
+  const msRows = useMemo(() => {
+    if (!marginSummary) return [];
+    const { key, dir } = msSort;
+    const val = (o: { qty: number; rev: number; mrev: number; profit: number }) =>
+      key === 'margin' ? (o.mrev > 0 ? o.profit / o.mrev : 0) : o[key];
+    return [...marginSummary.rows].sort((a, b) => (val(a) - val(b)) * (dir === 'asc' ? 1 : -1));
+  }, [marginSummary, msSort]);
+  function toggleMsSort(key: 'qty' | 'rev' | 'profit' | 'margin') {
+    setMsSort(prev => prev.key === key ? { key, dir: prev.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'desc' });
+  }
+  const msArrow = (key: string) => msSort.key === key ? (msSort.dir === 'asc' ? ' ▲' : ' ▼') : '';
 
   async function cancelSelectedOrders() {
     if (orderChecked.size === 0) { alert('취소할 주문을 선택하세요.'); return; }
@@ -1521,17 +1537,17 @@ export default function OrdersContent() {
                 <div className="overflow-x-auto -mx-1">
                   <table className="w-full text-base border-collapse">
                     <thead>
-                      <tr className="text-gray-400 border-b-2 border-gray-100 text-sm">
+                      <tr className="text-gray-400 border-b-2 border-gray-100 text-sm select-none">
                         {marginSummary.multiProduct && <th className="text-left font-medium py-2.5 pr-4">상품</th>}
                         <th className="text-left font-medium py-2.5 pr-4">옵션</th>
-                        <th className="text-right font-medium py-2.5 px-4">수량</th>
-                        <th className="text-right font-medium py-2.5 px-4">매출</th>
-                        <th className="text-right font-medium py-2.5 px-4">공헌이익</th>
-                        <th className="text-right font-medium py-2.5 pl-4">이익률</th>
+                        <th onClick={() => toggleMsSort('qty')} className="text-right font-medium py-2.5 px-4 cursor-pointer hover:text-gray-600">수량{msArrow('qty')}</th>
+                        <th onClick={() => toggleMsSort('rev')} className="text-right font-medium py-2.5 px-4 cursor-pointer hover:text-gray-600">매출{msArrow('rev')}</th>
+                        <th onClick={() => toggleMsSort('profit')} className="text-right font-medium py-2.5 px-4 cursor-pointer hover:text-gray-600">공헌이익{msArrow('profit')}</th>
+                        <th onClick={() => toggleMsSort('margin')} className="text-right font-medium py-2.5 pl-4 cursor-pointer hover:text-gray-600">이익률{msArrow('margin')}</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {marginSummary.rows.map((r, i) => (
+                      {msRows.map((r, i) => (
                         <tr key={i} className="border-b border-gray-50 hover:bg-gray-50/60">
                           {marginSummary.multiProduct && <td className="py-2.5 pr-4 text-gray-600">{r.rep}</td>}
                           <td className="py-2.5 pr-4 text-gray-800 font-semibold">{r.option}{r.missCost && <span className="ml-2 text-amber-500 text-xs font-normal">(원가 일부 미확인)</span>}</td>
@@ -1583,7 +1599,7 @@ export default function OrdersContent() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-50">
-                    {orderList.map(o => (
+                    {orderList.slice(0, orderRowLimit).map(o => (
                       <tr key={o.id} className={`hover:bg-blue-50/40 ${o.canceled ? 'bg-red-50/40' : ''}`}>
                         <td className="px-3 py-2.5">
                           <input type="checkbox" checked={orderChecked.has(o.id)}
@@ -1610,6 +1626,12 @@ export default function OrdersContent() {
                     ))}
                   </tbody>
                 </table>
+              </div>
+            )}
+            {orderList.length > orderRowLimit && (
+              <div className="text-center py-3 border-t border-gray-100">
+                <span className="text-sm text-gray-400">전체 {orderList.length.toLocaleString()}건 중 상위 {orderRowLimit.toLocaleString()}건 표시 (요약은 전체 반영)</span>
+                <button onClick={() => setOrderRowLimit(l => l + 500)} className="ml-3 px-3 py-1.5 text-sm text-blue-600 border border-blue-200 rounded-lg hover:bg-blue-50">500건 더 보기</button>
               </div>
             )}
           </div>
