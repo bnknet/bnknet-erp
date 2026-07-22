@@ -246,6 +246,7 @@ export default function OrdersContent() {
   const [sProduct, setSProduct] = useState('');
   const [sMall, setSMall] = useState('');
   const [sCompany, setSCompany] = useState('전체'); // 조회·취소 탭 사업자 필터
+  const [sWholesaleOnly, setSWholesaleOnly] = useState(false); // 도매만 보기
   const [sFrom, setSFrom] = useState('');
   const [sTo, setSTo] = useState('');
   const [orderList, setOrderList] = useState<OrderRow[]>([]);
@@ -272,10 +273,11 @@ export default function OrdersContent() {
       if (sProduct.trim()) q += `&product_name=ilike.*${encodeURIComponent(sProduct.trim())}*`;
       if (sMall.trim()) q += `&mall_name=ilike.*${encodeURIComponent(sMall.trim())}*`;
       if (comp !== '전체') q += `&company=eq.${encodeURIComponent(comp)}`;
+      if (sWholesaleOnly) q += `&source=eq.${encodeURIComponent('도매')}`;
       if (from) q += `&upload_date=gte.${from}`;
       if (to) q += `&upload_date=lte.${to}`;
       // 조건(날짜/검색어)이 있으면 해당 범위 "전부" 조회(1000건 초과도 페이지네이션). 조건 없으면 최근 1000건만.
-      const hasFilter = !!(from || to || sOrderNo.trim() || sProduct.trim() || sMall.trim() || comp !== '전체');
+      const hasFilter = !!(from || to || sOrderNo.trim() || sProduct.trim() || sMall.trim() || comp !== '전체' || sWholesaleOnly);
       let data: OrderRow[];
       if (hasFilter) {
         data = await supabaseFetchAll<OrderRow>(q);
@@ -313,6 +315,29 @@ export default function OrdersContent() {
     const multiProduct = new Set(rows.map(r => r.rep)).size > 1;
     return { rows, tQty, tRev, tMrev, tProfit, tKnown, tTotal, anyMiss, cancelQty, multiProduct, ready: marginLoaded };
   }, [orderList, inv, fees, bomRows, marginLoaded]);
+
+  // 도매처별 매출 요약 — 조회 결과 중 도매(source='도매')만 거래처별로 집계.
+  // 공식은 computeOrderLines의 도매 라인과 동일: rev=amt/1.1, 이익=(amt−원가×수량−배송비)/1.1.
+  const wholesaleSummary = useMemo(() => {
+    const ws = orderList.filter(o => o.source === '도매' && !o.canceled);
+    if (ws.length === 0) return null;
+    const VAT = 1.1;
+    const byVendor = new Map<string, { vendor: string; cnt: number; qty: number; rev: number; profit: number }>();
+    let tCnt = 0, tQty = 0, tRev = 0, tProfit = 0;
+    for (const o of ws) {
+      const vendor = o.recipient_name || '(거래처 미상)';
+      const qty = Number(o.quantity) || 0;
+      const amt = Number(o.amount) || 0;
+      const rev = amt / VAT;
+      const profit = (amt - (Number(o.manual_cost) || 0) * qty - (Number(o.manual_shipping) || 0)) / VAT;
+      const a = byVendor.get(vendor) || { vendor, cnt: 0, qty: 0, rev: 0, profit: 0 };
+      a.cnt++; a.qty += qty; a.rev += rev; a.profit += profit;
+      byVendor.set(vendor, a);
+      tCnt++; tQty += qty; tRev += rev; tProfit += profit;
+    }
+    const rows = [...byVendor.values()].sort((a, b) => b.rev - a.rev);
+    return { rows, tCnt, tQty, tRev, tProfit };
+  }, [orderList]);
 
   async function cancelSelectedOrders() {
     if (orderChecked.size === 0) { alert('취소할 주문을 선택하세요.'); return; }
@@ -1380,12 +1405,57 @@ export default function OrdersContent() {
                 placeholder="상품명" className="px-3 py-2 border border-gray-200 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-blue-400 flex-1 min-w-[120px]" />
               <input value={sMall} onChange={e => setSMall(e.target.value)} onKeyDown={e => e.key === 'Enter' && searchOrders()}
                 placeholder="몰명" className="px-3 py-2 border border-gray-200 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-blue-400 w-28" />
+              <label className="flex items-center gap-1.5 px-3 py-2 border border-gray-200 rounded-lg text-base text-gray-600 cursor-pointer hover:bg-gray-50 select-none">
+                <input type="checkbox" checked={sWholesaleOnly} onChange={e => { setSWholesaleOnly(e.target.checked); }} className="w-4 h-4 accent-blue-600" />
+                도매만
+              </label>
               <button onClick={() => searchOrders()} className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-base font-medium">검색</button>
-              <button onClick={() => { setSFrom(''); setSTo(''); setSOrderNo(''); setSProduct(''); setSMall(''); setSCompany('전체'); }}
+              <button onClick={() => { setSFrom(''); setSTo(''); setSOrderNo(''); setSProduct(''); setSMall(''); setSCompany('전체'); setSWholesaleOnly(false); }}
                 className="px-3 py-2 border border-gray-200 rounded-lg text-sm text-gray-500 hover:bg-gray-50">초기화</button>
             </div>
             <p className="text-xs text-gray-400 mt-2">📅 탭 열면 <b>오늘 주문 자동 조회</b> · 업로드일(주문 변환일) 기준 · 날짜·검색어를 걸면 <b>해당 범위 전부</b> 조회(건수 제한 없음). (조회 {orderList.length.toLocaleString()}건)</p>
           </div>
+
+          {/* 도매처별 매출 요약 (조회 결과에 도매가 있을 때) */}
+          {wholesaleSummary && (
+            <div className="bg-white rounded-2xl p-5 sm:p-6 shadow-sm border border-amber-100">
+              <div className="flex items-baseline justify-between flex-wrap gap-2 mb-3">
+                <h3 className="font-bold text-gray-800">🏬 도매처별 매출 <span className="text-sm font-normal text-gray-400">(도매 {wholesaleSummary.tCnt.toLocaleString()}건)</span></h3>
+                <div className="text-sm text-gray-500">
+                  매출 <b className="text-slate-800 text-lg">₩{Math.round(wholesaleSummary.tRev).toLocaleString()}</b>
+                  <span className="ml-3">공헌이익 <b className="text-blue-700 text-lg">₩{Math.round(wholesaleSummary.tProfit).toLocaleString()}</b>
+                  {wholesaleSummary.tRev > 0 && <span className="text-blue-500 ml-1">({(wholesaleSummary.tProfit / wholesaleSummary.tRev * 100).toFixed(1)}%)</span>}</span>
+                </div>
+              </div>
+              <div className="overflow-x-auto -mx-1">
+                <table className="w-full text-base border-collapse">
+                  <thead>
+                    <tr className="text-gray-400 border-b-2 border-gray-100 text-sm">
+                      <th className="text-left font-medium py-2.5 pr-4">거래처</th>
+                      <th className="text-right font-medium py-2.5 px-4">건수</th>
+                      <th className="text-right font-medium py-2.5 px-4">수량</th>
+                      <th className="text-right font-medium py-2.5 px-4">매출</th>
+                      <th className="text-right font-medium py-2.5 px-4">공헌이익</th>
+                      <th className="text-right font-medium py-2.5 pl-4">이익률</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {wholesaleSummary.rows.map((r, i) => (
+                      <tr key={i} className="border-b border-gray-50 hover:bg-gray-50/60">
+                        <td className="py-2.5 pr-4 font-medium text-gray-800">{r.vendor}</td>
+                        <td className="py-2.5 px-4 text-right tabular-nums text-gray-600">{r.cnt.toLocaleString()}</td>
+                        <td className="py-2.5 px-4 text-right tabular-nums text-gray-600">{r.qty.toLocaleString()}</td>
+                        <td className="py-2.5 px-4 text-right tabular-nums text-slate-800">₩{Math.round(r.rev).toLocaleString()}</td>
+                        <td className="py-2.5 px-4 text-right tabular-nums text-blue-700">₩{Math.round(r.profit).toLocaleString()}</td>
+                        <td className="py-2.5 pl-4 text-right tabular-nums text-blue-500">{r.rev > 0 ? (r.profit / r.rev * 100).toFixed(1) + '%' : '-'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <p className="text-xs text-gray-400 mt-2">도매 매출·공헌이익은 부가세 제외(÷1.1) 기준 · 원가·배송비는 등록 시 입력값 반영.</p>
+            </div>
+          )}
 
           {marginSummary && (
             <div className="bg-white rounded-2xl p-5 sm:p-6 shadow-sm border border-gray-100">
