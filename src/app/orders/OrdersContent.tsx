@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useEffect, useMemo } from 'react';
+import { useState, useRef, useEffect, useMemo, Fragment } from 'react';
 import { convertOrders, buildSupabaseRows, repNameFor, loadDbMatches, type ConvertedOrderRow, type RawOrderRow } from '@/lib/orderConvert';
 import { supabaseFetch, supabaseFetchAll, supabaseUpload, safeStorageKey } from '@/lib/supabase';
 import { getUser } from '@/lib/auth';
@@ -247,6 +247,7 @@ export default function OrdersContent() {
   const [sMall, setSMall] = useState('');
   const [sCompany, setSCompany] = useState('전체'); // 조회·취소 탭 사업자 필터
   const [sWholesaleOnly, setSWholesaleOnly] = useState(false); // 도매만 보기
+  const [openVendor, setOpenVendor] = useState<string | null>(null); // 도매처별 상세 펼침
   const [sFrom, setSFrom] = useState('');
   const [sTo, setSTo] = useState('');
   const [orderList, setOrderList] = useState<OrderRow[]>([]);
@@ -318,11 +319,13 @@ export default function OrdersContent() {
 
   // 도매처별 매출 요약 — 조회 결과 중 도매(source='도매')만 거래처별로 집계.
   // 공식은 computeOrderLines의 도매 라인과 동일: rev=amt/1.1, 이익=(amt−원가×수량−배송비)/1.1.
+  type WsItem = { product: string; cnt: number; qty: number; rev: number; profit: number };
+  type WsVendor = { vendor: string; cnt: number; qty: number; rev: number; profit: number; items: Map<string, WsItem> };
   const wholesaleSummary = useMemo(() => {
     const ws = orderList.filter(o => o.source === '도매' && !o.canceled);
     if (ws.length === 0) return null;
     const VAT = 1.1;
-    const byVendor = new Map<string, { vendor: string; cnt: number; qty: number; rev: number; profit: number }>();
+    const byVendor = new Map<string, WsVendor>();
     let tCnt = 0, tQty = 0, tRev = 0, tProfit = 0;
     for (const o of ws) {
       const vendor = o.recipient_name || '(거래처 미상)';
@@ -330,12 +333,19 @@ export default function OrdersContent() {
       const amt = Number(o.amount) || 0;
       const rev = amt / VAT;
       const profit = (amt - (Number(o.manual_cost) || 0) * qty - (Number(o.manual_shipping) || 0)) / VAT;
-      const a = byVendor.get(vendor) || { vendor, cnt: 0, qty: 0, rev: 0, profit: 0 };
+      const a = byVendor.get(vendor) || { vendor, cnt: 0, qty: 0, rev: 0, profit: 0, items: new Map<string, WsItem>() };
       a.cnt++; a.qty += qty; a.rev += rev; a.profit += profit;
+      // 거래처 내 상품별 상세
+      const pn = o.product_name || o.collect_product || '(상품명 없음)';
+      const it = a.items.get(pn) || { product: pn, cnt: 0, qty: 0, rev: 0, profit: 0 };
+      it.cnt++; it.qty += qty; it.rev += rev; it.profit += profit;
+      a.items.set(pn, it);
       byVendor.set(vendor, a);
       tCnt++; tQty += qty; tRev += rev; tProfit += profit;
     }
-    const rows = [...byVendor.values()].sort((a, b) => b.rev - a.rev);
+    const rows = [...byVendor.values()]
+      .sort((a, b) => b.rev - a.rev)
+      .map(v => ({ ...v, items: [...v.items.values()].sort((x, y) => y.rev - x.rev) }));
     return { rows, tCnt, tQty, tRev, tProfit };
   }, [orderList]);
 
@@ -1440,16 +1450,34 @@ export default function OrdersContent() {
                     </tr>
                   </thead>
                   <tbody>
-                    {wholesaleSummary.rows.map((r, i) => (
-                      <tr key={i} className="border-b border-gray-50 hover:bg-gray-50/60">
-                        <td className="py-2.5 pr-4 font-medium text-gray-800">{r.vendor}</td>
-                        <td className="py-2.5 px-4 text-right tabular-nums text-gray-600">{r.cnt.toLocaleString()}</td>
-                        <td className="py-2.5 px-4 text-right tabular-nums text-gray-600">{r.qty.toLocaleString()}</td>
-                        <td className="py-2.5 px-4 text-right tabular-nums text-slate-800">₩{Math.round(r.rev).toLocaleString()}</td>
-                        <td className="py-2.5 px-4 text-right tabular-nums text-blue-700">₩{Math.round(r.profit).toLocaleString()}</td>
-                        <td className="py-2.5 pl-4 text-right tabular-nums text-blue-500">{r.rev > 0 ? (r.profit / r.rev * 100).toFixed(1) + '%' : '-'}</td>
-                      </tr>
-                    ))}
+                    {wholesaleSummary.rows.map((r, i) => {
+                      const open = openVendor === r.vendor;
+                      return (
+                        <Fragment key={i}>
+                          <tr onClick={() => setOpenVendor(open ? null : r.vendor)}
+                            className="border-b border-gray-50 hover:bg-amber-50/60 cursor-pointer">
+                            <td className="py-2.5 pr-4 font-medium text-gray-800">
+                              <span className="text-gray-400 mr-1.5">{open ? '▼' : '▶'}</span>{r.vendor}
+                            </td>
+                            <td className="py-2.5 px-4 text-right tabular-nums text-gray-600">{r.cnt.toLocaleString()}</td>
+                            <td className="py-2.5 px-4 text-right tabular-nums text-gray-600">{r.qty.toLocaleString()}</td>
+                            <td className="py-2.5 px-4 text-right tabular-nums text-slate-800">₩{Math.round(r.rev).toLocaleString()}</td>
+                            <td className="py-2.5 px-4 text-right tabular-nums text-blue-700">₩{Math.round(r.profit).toLocaleString()}</td>
+                            <td className="py-2.5 pl-4 text-right tabular-nums text-blue-500">{r.rev > 0 ? (r.profit / r.rev * 100).toFixed(1) + '%' : '-'}</td>
+                          </tr>
+                          {open && r.items.map((it, j) => (
+                            <tr key={`${i}-${j}`} className="border-b border-gray-50 bg-amber-50/30 text-sm">
+                              <td className="py-2 pr-4 pl-6 text-gray-600">└ {it.product}</td>
+                              <td className="py-2 px-4 text-right tabular-nums text-gray-400">{it.cnt.toLocaleString()}</td>
+                              <td className="py-2 px-4 text-right tabular-nums text-gray-600">{it.qty.toLocaleString()}</td>
+                              <td className="py-2 px-4 text-right tabular-nums text-slate-700">₩{Math.round(it.rev).toLocaleString()}</td>
+                              <td className="py-2 px-4 text-right tabular-nums text-blue-600">₩{Math.round(it.profit).toLocaleString()}</td>
+                              <td className="py-2 pl-4 text-right tabular-nums text-blue-400">{it.rev > 0 ? (it.profit / it.rev * 100).toFixed(1) + '%' : '-'}</td>
+                            </tr>
+                          ))}
+                        </Fragment>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
