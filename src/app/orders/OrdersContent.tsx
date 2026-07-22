@@ -248,6 +248,7 @@ export default function OrdersContent() {
   const [sCompany, setSCompany] = useState('전체'); // 조회·취소 탭 사업자 필터
   const [sWholesaleOnly, setSWholesaleOnly] = useState(false); // 도매만 보기
   const [openVendor, setOpenVendor] = useState<string | null>(null); // 도매처별 상세 펼침
+  const [wsSort, setWsSort] = useState<{ key: 'cnt' | 'qty' | 'rev' | 'profit' | 'margin'; dir: 'asc' | 'desc' }>({ key: 'rev', dir: 'desc' }); // 도매처별 정렬(기본 매출 내림차순)
   const [sFrom, setSFrom] = useState('');
   const [sTo, setSTo] = useState('');
   const [orderList, setOrderList] = useState<OrderRow[]>([]);
@@ -343,11 +344,25 @@ export default function OrdersContent() {
       byVendor.set(vendor, a);
       tCnt++; tQty += qty; tRev += rev; tProfit += profit;
     }
-    const rows = [...byVendor.values()]
-      .sort((a, b) => b.rev - a.rev)
-      .map(v => ({ ...v, items: [...v.items.values()].sort((x, y) => y.rev - x.rev) }));
+    const rows = [...byVendor.values()].map(v => ({ ...v, items: [...v.items.values()] }));
     return { rows, tCnt, tQty, tRev, tProfit };
   }, [orderList]);
+
+  // 도매처별 정렬 적용 — 거래처 행과 그 안 상품 상세를 같은 기준으로 정렬.
+  const wsRows = useMemo(() => {
+    if (!wholesaleSummary) return [];
+    const { key, dir } = wsSort;
+    type Num = { cnt: number; qty: number; rev: number; profit: number };
+    const val = (o: Num) => key === 'margin' ? (o.rev > 0 ? o.profit / o.rev : 0) : o[key];
+    const cmp = (a: Num, b: Num) => (val(a) - val(b)) * (dir === 'asc' ? 1 : -1);
+    return wholesaleSummary.rows
+      .map(r => ({ ...r, items: [...r.items].sort(cmp) }))
+      .sort(cmp);
+  }, [wholesaleSummary, wsSort]);
+  function toggleWsSort(key: 'cnt' | 'qty' | 'rev' | 'profit' | 'margin') {
+    setWsSort(prev => prev.key === key ? { key, dir: prev.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'desc' });
+  }
+  const wsArrow = (key: string) => wsSort.key === key ? (wsSort.dir === 'asc' ? ' ▲' : ' ▼') : '';
 
   async function cancelSelectedOrders() {
     if (orderChecked.size === 0) { alert('취소할 주문을 선택하세요.'); return; }
@@ -1440,17 +1455,17 @@ export default function OrdersContent() {
               <div className="overflow-x-auto -mx-1">
                 <table className="w-full text-base border-collapse">
                   <thead>
-                    <tr className="text-gray-400 border-b-2 border-gray-100 text-sm">
+                    <tr className="text-gray-400 border-b-2 border-gray-100 text-sm select-none">
                       <th className="text-left font-medium py-2.5 pr-4">거래처</th>
-                      <th className="text-right font-medium py-2.5 px-4">건수</th>
-                      <th className="text-right font-medium py-2.5 px-4">수량</th>
-                      <th className="text-right font-medium py-2.5 px-4">매출</th>
-                      <th className="text-right font-medium py-2.5 px-4">공헌이익</th>
-                      <th className="text-right font-medium py-2.5 pl-4">이익률</th>
+                      <th onClick={() => toggleWsSort('cnt')} className="text-right font-medium py-2.5 px-4 cursor-pointer hover:text-gray-600">건수{wsArrow('cnt')}</th>
+                      <th onClick={() => toggleWsSort('qty')} className="text-right font-medium py-2.5 px-4 cursor-pointer hover:text-gray-600">수량{wsArrow('qty')}</th>
+                      <th onClick={() => toggleWsSort('rev')} className="text-right font-medium py-2.5 px-4 cursor-pointer hover:text-gray-600">매출{wsArrow('rev')}</th>
+                      <th onClick={() => toggleWsSort('profit')} className="text-right font-medium py-2.5 px-4 cursor-pointer hover:text-gray-600">공헌이익{wsArrow('profit')}</th>
+                      <th onClick={() => toggleWsSort('margin')} className="text-right font-medium py-2.5 pl-4 cursor-pointer hover:text-gray-600">이익률{wsArrow('margin')}</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {wholesaleSummary.rows.map((r, i) => {
+                    {wsRows.map((r, i) => {
                       const open = openVendor === r.vendor;
                       return (
                         <Fragment key={i}>
