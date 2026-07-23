@@ -14,6 +14,11 @@ interface Props {
   userName?: string;
 }
 
+// 수동 추가 항목(카테고리당 여러 건)
+type OpexItem = { id?: string; company: string; year: number; month: number; category: string; label?: string; amount: number };
+// 카테고리 세부내역 한 줄(수동 = 기존 opex 1건 + 추가 opex_item 여러 건)
+type ManualEntry = { id: string; source: 'legacy' | 'item'; label: string; amount: number };
+
 const won = (n: number) => `${Math.round(n).toLocaleString('ko-KR')}원`;
 const NATURES = ['고정', '변동', '준변동', '혼합'];
 const nowYm = () => {
@@ -37,15 +42,21 @@ export default function OpexTab({ orders, inventory, fees, bomRows, userName }: 
   const [ym, setYm] = useState(nowYm());
   const [company, setCompany] = useState(OPEX_COMPANIES[0]);
   const [allCats, setAllCats] = useState<OpexCatDef[]>(FALLBACK_CATS);
-  const [rows, setRows] = useState<OpexRow[]>([]);
-  const [edits, setEdits] = useState<Record<string, string>>({});
+  const [rows, setRows] = useState<OpexRow[]>([]);       // 기존 opex(카테고리당 1건)
+  const [items, setItems] = useState<OpexItem[]>([]);    // 추가 등록분(카테고리당 여러 건)
   const [loading, setLoading] = useState(false);
-  const [saving, setSaving] = useState(false);
+  const [busy, setBusy] = useState(false);
 
   // 항목 관리 패널
   const [manageOpen, setManageOpen] = useState(false);
   const [draft, setDraft] = useState<(OpexCatDef & { _new?: boolean })[]>([]);
   const [catSaving, setCatSaving] = useState(false);
+
+  // 판관비 추가등록 모달
+  const [addOpen, setAddOpen] = useState(false);
+  const [addCat, setAddCat] = useState('');
+  const [addLabel, setAddLabel] = useState('');
+  const [addAmount, setAddAmount] = useState('');
 
   const [year, month] = ym.split('-').map(Number);
 
@@ -101,14 +112,18 @@ export default function OpexTab({ orders, inventory, fees, bomRows, userName }: 
       } catch { setEmployees([]); }
     })();
   }, []);
-  const [openCat, setOpenCat] = useState<string | null>(null); // 세부내역 펼친 항목
+  const [openCats, setOpenCats] = useState<Set<string>>(new Set()); // 세부내역 펼친 항목(복수)
 
   async function loadOpex(y: number, m: number) {
     setLoading(true);
     try {
-      const data = await supabaseFetchAll<OpexRow>(`/opex?year=eq.${y}&month=eq.${m}&select=id,company,year,month,category,amount,memo`);
-      setRows(Array.isArray(data) ? data : []);
-    } catch { setRows([]); }
+      const [op, it] = await Promise.all([
+        supabaseFetchAll<OpexRow>(`/opex?year=eq.${y}&month=eq.${m}&select=id,company,year,month,category,amount,memo`),
+        supabaseFetchAll<OpexItem>(`/opex_item?year=eq.${y}&month=eq.${m}&select=id,company,year,month,category,label,amount`),
+      ]);
+      setRows(Array.isArray(op) ? op : []);
+      setItems(Array.isArray(it) ? it : []);
+    } catch { setRows([]); setItems([]); }
     finally { setLoading(false); }
   }
   // 승인된 지출결의서의 '품목별' 판관비 태깅을 사업자·항목별로 합산.
@@ -142,16 +157,7 @@ export default function OpexTab({ orders, inventory, fees, bomRows, userName }: 
       setResvDetail(detail);
     } catch { setAutoMap({}); setResvDetail([]); }
   }
-  useEffect(() => { loadOpex(year, month); loadAutoOpex(ym); }, [year, month, ym]);
-
-  useEffect(() => {
-    const e: Record<string, string> = {};
-    for (const c of inputCats) {
-      const r = rows.find((x) => x.company === company && x.category === c.key);
-      e[c.key] = r && r.amount ? String(r.amount) : '';
-    }
-    setEdits(e);
-  }, [rows, company, inputCats]);
+  useEffect(() => { loadOpex(year, month); loadAutoOpex(ym); setOpenCats(new Set()); }, [year, month, ym]);
 
   const parse = (s: string) => Number(String(s).replace(/[^0-9.-]/g, '')) || 0;
 
@@ -186,48 +192,88 @@ export default function OpexTab({ orders, inventory, fees, bomRows, userName }: 
     }, 0);
   };
 
-  const opexPaidManual = inputCats.reduce((a, c) => a + parse(edits[c.key] || ''), 0);
-  const opexSupplyManual = inputCats.reduce((a, c) => a + toSupply(c.taxable, parse(edits[c.key] || '')), 0);
+  // 수동 세부: 기존 opex 1건 + 추가 opex_item 여러 건
+  const manualList = (co: string, cat: string): ManualEntry[] => {
+    const out: ManualEntry[] = [];
+    for (const r of rows) if (r.company === co && r.category === cat && (Number(r.amount) || 0) > 0) out.push({ id: String(r.id), source: 'legacy', label: r.memo || '수동 입력', amount: Number(r.amount) || 0 });
+    for (const it of items) if (it.company === co && it.category === cat) out.push({ id: String(it.id), source: 'item', label: it.label || '추가 항목', amount: Number(it.amount) || 0 });
+    return out;
+  };
+  // 사업자 수동 합(지급액/공급가액) — 롤업·요약 공용
+  const manualPaidCompany = (co: string) =>
+    rows.filter((r) => r.company === co).reduce((a, r) => a + (Number(r.amount) || 0), 0)
+    + items.filter((it) => it.company === co).reduce((a, it) => a + (Number(it.amount) || 0), 0);
+  const manualSupplyCompany = (co: string) =>
+    rows.filter((r) => r.company === co).reduce((a, r) => a + toSupply(taxMap[r.category] ?? true, Number(r.amount) || 0), 0)
+    + items.filter((it) => it.company === co).reduce((a, it) => a + toSupply(taxMap[it.category] ?? true, Number(it.amount) || 0), 0);
+
   const opexAutoSupply = autoSupplyCompany(company);
-  const opexPaid = opexPaidManual + inputCats.reduce((a, c) => a + autoPaid(company, c.key), 0);
-  const opexSupply = opexSupplyManual + opexAutoSupply;
+  const opexPaid = manualPaidCompany(company) + inputCats.reduce((a, c) => a + autoPaid(company, c.key), 0);
+  const opexSupply = manualSupplyCompany(company) + opexAutoSupply;
 
   const cur = monthAgg.map.get(company) || { rev: 0, prof: 0, mrev: 0, cnt: 0 };
   const operProfit = cur.prof - opexSupply;
   const operMargin = cur.mrev > 0 ? (operProfit / cur.mrev) * 100 : null;
 
-  async function save() {
-    setSaving(true);
+  // ── 추가등록 ──
+  function openAdd(catKey?: string) {
+    setAddCat(catKey || inputCats[0]?.key || '');
+    setAddLabel('');
+    setAddAmount('');
+    setAddOpen(true);
+  }
+  async function addItem() {
+    const amt = parse(addAmount);
+    if (!addCat) { alert('항목(카테고리)을 선택해주세요.'); return; }
+    if (amt <= 0) { alert('금액을 입력해주세요.'); return; }
+    setBusy(true);
     try {
-      const payload = inputCats.map((c) => ({
-        company, year, month, category: c.key,
-        amount: parse(edits[c.key] || ''), created_by: userName || '',
-        updated_at: new Date().toISOString(),
-      }));
-      const res = await supabaseFetch('/opex?on_conflict=company,year,month,category', {
+      const res = await supabaseFetch('/opex_item', {
         method: 'POST',
-        headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
-        body: JSON.stringify(payload),
+        headers: { Prefer: 'return=minimal' },
+        body: JSON.stringify([{ company, year, month, category: addCat, label: addLabel.trim() || null, amount: amt, created_by: userName || '' }]),
       });
       if (!res.ok) throw new Error(String(res.status));
       await loadOpex(year, month);
-      alert('저장되었습니다.');
+      setOpenCats((p) => new Set(p).add(addCat));
+      setAddOpen(false);
     } catch (e) {
-      alert(`저장 실패 (${e instanceof Error ? e.message : ''}). db/opex.sql 적용 여부를 확인해주세요.`);
-    } finally { setSaving(false); }
+      alert(`추가 실패 (${e instanceof Error ? e.message : ''}). db/opex_item.sql 적용 여부를 확인해주세요.`);
+    } finally { setBusy(false); }
+  }
+  async function delManual(m: ManualEntry) {
+    if (!confirm(`'${m.label}' 항목을 삭제할까요?`)) return;
+    setBusy(true);
+    try {
+      const path = m.source === 'item' ? `/opex_item?id=eq.${m.id}` : `/opex?id=eq.${m.id}`;
+      const res = await supabaseFetch(path, { method: 'DELETE', headers: { Prefer: 'return=minimal' } });
+      if (!res.ok) throw new Error(String(res.status));
+      await loadOpex(year, month);
+    } catch (e) {
+      alert(`삭제 실패 (${e instanceof Error ? e.message : ''}).`);
+    } finally { setBusy(false); }
   }
 
   async function copyPrevMonth() {
     const pv = prevYm(ym);
     const [py, pm] = pv.split('-').map(Number);
+    setBusy(true);
     try {
-      const prev = await supabaseFetchAll<OpexRow>(`/opex?year=eq.${py}&month=eq.${pm}&company=eq.${encodeURIComponent(company)}&select=category,amount`);
-      if (!prev.length) { alert(`${py}년 ${pm}월 ${company} 판관비 데이터가 없습니다.`); return; }
-      const e: Record<string, string> = { ...edits };
-      for (const r of prev) if (r.amount) e[r.category] = String(r.amount);
-      setEdits(e);
-      alert(`${py}년 ${pm}월 값을 불러왔습니다. 확인 후 저장을 눌러주세요.`);
-    } catch { alert('전월 데이터를 불러오지 못했습니다.'); }
+      const [prevOp, prevIt] = await Promise.all([
+        supabaseFetchAll<OpexRow>(`/opex?year=eq.${py}&month=eq.${pm}&company=eq.${encodeURIComponent(company)}&select=category,amount,memo`),
+        supabaseFetchAll<OpexItem>(`/opex_item?year=eq.${py}&month=eq.${pm}&company=eq.${encodeURIComponent(company)}&select=category,label,amount`),
+      ]);
+      const payload: Record<string, unknown>[] = [];
+      for (const r of prevOp) if (Number(r.amount) || 0) payload.push({ company, year, month, category: r.category, label: r.memo || null, amount: Number(r.amount) || 0, created_by: userName || '' });
+      for (const it of prevIt) if (Number(it.amount) || 0) payload.push({ company, year, month, category: it.category, label: it.label || null, amount: Number(it.amount) || 0, created_by: userName || '' });
+      if (!payload.length) { alert(`${py}년 ${pm}월 ${company} 판관비 데이터가 없습니다.`); return; }
+      if (!confirm(`${py}년 ${pm}월 ${company} 판관비 ${payload.length}건을 이번 달에 추가합니다. (중복 주의)`)) return;
+      const res = await supabaseFetch('/opex_item', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify(payload) });
+      if (!res.ok) throw new Error(String(res.status));
+      await loadOpex(year, month);
+      alert(`${payload.length}건을 불러왔습니다.`);
+    } catch (e) { alert(`전월 데이터를 불러오지 못했습니다 (${e instanceof Error ? e.message : ''}).`); }
+    finally { setBusy(false); }
   }
 
   // ── 항목 관리 ──
@@ -281,10 +327,7 @@ export default function OpexTab({ orders, inventory, fees, bomRows, userName }: 
   // 전사 롤업
   const companyRollup = OPEX_COMPANIES.map((co) => {
     const agg = monthAgg.map.get(co) || { rev: 0, prof: 0, mrev: 0, cnt: 0 };
-    const manualSupply = rows.filter((r) => r.company === co)
-      .reduce((a, r) => a + toSupply(taxMap[r.category] ?? true, Number(r.amount) || 0), 0);
-    // 선택 사업자는 화면 입력값(opexSupply=수동+자동), 나머지는 저장된 수동 + 결재 자동
-    const liveSupply = co === company ? opexSupply : (manualSupply + autoSupplyCompany(co));
+    const liveSupply = manualSupplyCompany(co) + autoSupplyCompany(co);
     return { co, rev: agg.rev, prof: agg.prof, mrev: agg.mrev, opex: liveSupply, oper: agg.prof - liveSupply };
   });
   const totalProf = companyRollup.reduce((a, r) => a + r.prof, 0) + monthAgg.othersProf;
@@ -292,6 +335,13 @@ export default function OpexTab({ orders, inventory, fees, bomRows, userName }: 
   const totalOpex = companyRollup.reduce((a, r) => a + r.opex, 0);
   const totalMrev = companyRollup.reduce((a, r) => a + r.mrev, 0) + monthAgg.othersMrev;
   const totalOper = totalProf - totalOpex;
+
+  // 전체 펼치기/접기 대상 = 세부내역이 있는 카테고리
+  const detailCatKeys = inputCats
+    .filter((c) => manualList(company, c.key).length > 0 || autoHr(company, c.key) > 0 || autoResv(company, c.key) > 0)
+    .map((c) => c.key);
+  const allOpen = detailCatKeys.length > 0 && detailCatKeys.every((k) => openCats.has(k));
+  const toggleAll = () => setOpenCats(allOpen ? new Set() : new Set(detailCatKeys));
 
   return (
     <div className="space-y-5">
@@ -370,50 +420,64 @@ export default function OpexTab({ orders, inventory, fees, bomRows, userName }: 
               </button>
             ))}
           </div>
-          <button onClick={copyPrevMonth} className="ml-auto px-3 py-1.5 rounded-lg border border-gray-200 text-sm text-gray-600 hover:bg-gray-50">전월 복사</button>
+          <div className="ml-auto flex items-center gap-2">
+            <button onClick={() => openAdd()} disabled={busy || inputCats.length === 0}
+              className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium disabled:opacity-50">+ 판관비 추가등록</button>
+            {detailCatKeys.length > 0 && (
+              <button onClick={toggleAll} className="px-3 py-1.5 rounded-lg border border-gray-200 text-sm text-gray-600 hover:bg-gray-50">{allOpen ? '전체 접기' : '전체 펼치기'}</button>
+            )}
+            <button onClick={copyPrevMonth} disabled={busy} className="px-3 py-1.5 rounded-lg border border-gray-200 text-sm text-gray-600 hover:bg-gray-50 disabled:opacity-50">전월 복사</button>
+          </div>
         </div>
         <div className="p-4 sm:p-5 space-y-2">
           {inputCats.map((c) => {
-            const hr = autoHr(company, c.key), resv = autoResv(company, c.key), man = parse(edits[c.key] || '');
-            const catTotalSupply = toSupply(c.taxable, man) + toSupply(c.taxable, hr + resv);
-            const hasDetail = man > 0 || hr > 0 || resv > 0;
-            const open = openCat === c.key;
+            const hr = autoHr(company, c.key), resv = autoResv(company, c.key);
+            const mans = manualList(company, c.key);
+            const manTotal = mans.reduce((a, x) => a + x.amount, 0);
+            const catTotalSupply = toSupply(c.taxable, manTotal) + toSupply(c.taxable, hr + resv);
+            const hasDetail = manTotal > 0 || hr > 0 || resv > 0;
+            const open = openCats.has(c.key);
             const coEmp = employees.filter(e => (!e.status || e.status === 'active') && e.company === company && (Number(e.salary) || 0) > 0);
             const resvItems = resvDetail.filter(d => d.company === company && d.category === c.key);
             return (
             <div key={c.key} className="border-b border-gray-50 last:border-b-0 pb-2">
               <div className="flex items-center gap-3 flex-wrap">
-                <button type="button" onClick={() => hasDetail && setOpenCat(open ? null : c.key)}
-                  className={`w-36 flex-none text-left ${hasDetail ? 'cursor-pointer' : 'cursor-default'}`}>
+                <button type="button" onClick={() => hasDetail && setOpenCats((p) => { const n = new Set(p); if (n.has(c.key)) n.delete(c.key); else n.add(c.key); return n; })}
+                  className={`w-40 flex-none text-left ${hasDetail ? 'cursor-pointer' : 'cursor-default'}`}>
                   <div className="text-base font-medium text-gray-700 flex items-center gap-1">
                     {hasDetail && <span className={`text-gray-400 text-xs transition-transform ${open ? 'rotate-90' : ''}`}>▸</span>}
                     {c.label}
                   </div>
                   <div className="text-xs text-gray-400 pl-3.5">{c.nature}{c.taxable ? '·과세' : '·면세'}</div>
                 </button>
-                <div className="flex-1 min-w-[160px]">
-                  <input
-                    inputMode="numeric"
-                    value={edits[c.key] ? Number(parse(edits[c.key])).toLocaleString('ko-KR') : ''}
-                    onChange={(e) => setEdits((p) => ({ ...p, [c.key]: e.target.value }))}
-                    placeholder="0"
-                    className="w-full px-3 py-2 rounded-lg border border-gray-200 text-base text-right tabular-nums bg-white focus:outline-none focus:ring-2 focus:ring-blue-400"
-                  />
+                <div className="flex-1 min-w-[160px] space-y-0.5 text-right">
+                  {manTotal > 0 && <div className="text-xs text-gray-500">수동 {won(manTotal)}{mans.length > 1 ? ` · ${mans.length}건` : ''}</div>}
                   {hr > 0 && (
-                    <div className="text-xs text-indigo-600 mt-0.5 text-right">+ 인사(연봉 기준) 자동 {won(hr)}{c.key === 'insurance' ? ` (급여×${Math.round(INSURANCE_RATE * 100)}%)` : ''}</div>
+                    <div className="text-xs text-indigo-600">+ 인사(연봉 기준) 자동 {won(hr)}{c.key === 'insurance' ? ` (급여×${Math.round(INSURANCE_RATE * 100)}%)` : ''}</div>
                   )}
                   {resv > 0 && (
-                    <div className="text-xs text-emerald-600 mt-0.5 text-right">+ 결재 지출결의서 자동 {won(resv)}</div>
+                    <div className="text-xs text-emerald-600">+ 결재 지출결의서 자동 {won(resv)}</div>
                   )}
+                  {!hasDetail && <div className="text-xs text-gray-300">입력 없음</div>}
                 </div>
-                <div className="w-28 flex-none text-right text-sm tabular-nums">
-                  <div className="text-gray-700 font-medium">{catTotalSupply > 0 ? won(catTotalSupply) : ''}</div>
-                  <div className="text-xs text-gray-400">{catTotalSupply > 0 ? (c.taxable ? '공급가' : '면세') : ''}</div>
+                <div className="w-32 flex-none text-right">
+                  <div className="text-base font-semibold text-gray-800 tabular-nums">{catTotalSupply > 0 ? won(catTotalSupply) : '−'}</div>
+                  <div className="text-xs text-gray-400">{catTotalSupply > 0 ? (c.taxable ? '통합·공급가' : '통합·면세') : ''}</div>
                 </div>
+                <button type="button" onClick={() => openAdd(c.key)} disabled={busy}
+                  className="flex-none px-2 py-1 rounded-md border border-gray-200 text-xs text-gray-500 hover:bg-gray-50 disabled:opacity-50" title="이 항목에 추가 등록">+ 추가</button>
               </div>
               {open && (
                 <div className="mt-1 ml-3.5 pl-3 border-l-2 border-gray-100 text-sm space-y-0.5 py-1">
-                  {man > 0 && <div className="flex justify-between text-gray-500"><span>수동 입력</span><span className="tabular-nums">{won(man)}</span></div>}
+                  {mans.map((m) => (
+                    <div key={`${m.source}-${m.id}`} className="flex justify-between items-center text-gray-600 group">
+                      <span>수동 · {m.label}</span>
+                      <span className="flex items-center gap-2">
+                        <span className="tabular-nums">{won(m.amount)}</span>
+                        <button onClick={() => delManual(m)} disabled={busy} className="text-gray-300 hover:text-red-600 text-xs" title="삭제">×</button>
+                      </span>
+                    </div>
+                  ))}
                   {c.key === 'labor' && coEmp.map((e, i) => (
                     <div key={i} className="flex justify-between text-indigo-600"><span>인사 · {e.name || '(이름없음)'} (연봉 {won(Number(e.salary) || 0)}÷12)</span><span className="tabular-nums">{won((Number(e.salary) || 0) / 12)}</span></div>
                   ))}
@@ -438,10 +502,6 @@ export default function OpexTab({ orders, inventory, fees, bomRows, userName }: 
               {opexPaid !== opexSupply && <span className="text-xs text-gray-400"> (지급 {won(opexPaid)})</span>}</span>
             <span className="text-gray-500">영업이익 <b className={operProfit >= 0 ? 'text-green-700' : 'text-red-600'}>{won(operProfit)}</b>
               {operMargin !== null && <span className="text-gray-400 text-sm"> ({operMargin.toFixed(1)}%)</span>}</span>
-            <button onClick={save} disabled={saving || loading}
-              className="ml-auto px-5 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-base font-medium disabled:opacity-50">
-              {saving ? '저장 중…' : '저장'}
-            </button>
           </div>
         </div>
       </div>
@@ -449,9 +509,47 @@ export default function OpexTab({ orders, inventory, fees, bomRows, userName }: 
       <p className="text-xs text-gray-400">
         ⚠️ 건당 택배 실운임(2,300원)은 이미 공헌이익에서 차감됩니다. 판관비 ‘물류·보관비’에는 <b>고정 창고비만</b> 넣어주세요(이중차감 방지).
         판관비는 <b>지급액(카드·계산서 총액) 그대로</b> 입력하세요. 과세 항목은 부가세 포함 금액을 넣으면 자동으로 부가세 제외(÷1.1)되어 반영됩니다. (면세 항목은 그대로)
+        <br />각 항목의 금액은 <b>수동 추가 + 자동(결재·인사)을 모두 합산한 통합 금액</b>입니다. ‘+ 추가’ 또는 상단 <b>판관비 추가등록</b>으로 항목별 금액을 등록하면 기존 내용과 합산됩니다.
         <br /><b className="text-emerald-600">결재(지출결의서) 판관비 태깅분</b>과 <b className="text-indigo-600">인건비·4대보험(인사 연봉 기준)</b>은 위 색상 표시로 <b>자동 합산</b>됩니다. 자동으로 잡히는 항목은 여기서 또 입력하지 마세요(이중 반영 방지).
         <br />인건비 = 재직 직원 <b>연봉÷12</b> 사업자별 합, 4대보험 = 급여×약{Math.round(INSURANCE_RATE * 100)}%(회사부담 추정). 임대료 등 결재·인사에 없는 고정비만 수동 입력.
       </p>
+
+      {/* 판관비 추가등록 모달 */}
+      {addOpen && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-start justify-center p-4 overflow-y-auto" onClick={() => setAddOpen(false)}>
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md my-8" onClick={(e) => e.stopPropagation()}>
+            <div className="px-5 py-4 border-b border-gray-100 flex items-center">
+              <div className="text-lg font-semibold text-gray-800">판관비 추가등록 · {company}</div>
+              <button onClick={() => setAddOpen(false)} className="ml-auto text-gray-400 hover:text-gray-600 text-xl leading-none">×</button>
+            </div>
+            <div className="p-5 space-y-3">
+              <div>
+                <label className="block text-sm font-medium text-gray-600 mb-1">항목(카테고리)</label>
+                <select value={addCat} onChange={(e) => setAddCat(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg border border-gray-200 text-base bg-white focus:outline-none focus:ring-2 focus:ring-blue-400">
+                  {inputCats.map((c) => <option key={c.key} value={c.key}>{c.label}{c.taxable ? ' (과세)' : ' (면세)'}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-600 mb-1">판관비 내용 <span className="text-gray-400">(선택)</span></label>
+                <input value={addLabel} onChange={(e) => setAddLabel(e.target.value)} placeholder="예: 사무실 정수기 렌탈"
+                  className="w-full px-3 py-2 rounded-lg border border-gray-200 text-base bg-white focus:outline-none focus:ring-2 focus:ring-blue-400" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-600 mb-1">금액(지급액)</label>
+                <input inputMode="numeric" value={addAmount ? Number(parse(addAmount)).toLocaleString('ko-KR') : ''}
+                  onChange={(e) => setAddAmount(e.target.value)} placeholder="0"
+                  className="w-full px-3 py-2 rounded-lg border border-gray-200 text-base text-right tabular-nums bg-white focus:outline-none focus:ring-2 focus:ring-blue-400" />
+                <div className="text-xs text-gray-400 mt-1">과세 항목은 부가세 포함 금액 입력 → 계산 시 자동 ÷1.1 반영.</div>
+              </div>
+            </div>
+            <div className="px-5 py-4 border-t border-gray-100 flex gap-2 justify-end">
+              <button onClick={() => setAddOpen(false)} className="px-4 py-2 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50">취소</button>
+              <button onClick={addItem} disabled={busy} className="px-5 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-medium disabled:opacity-50">{busy ? '저장 중…' : '추가'}</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 항목 관리 모달 */}
       {manageOpen && (
