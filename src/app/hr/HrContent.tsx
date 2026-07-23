@@ -17,6 +17,7 @@ interface Employee {
   salary?: number;
   pay_day?: string;      // 급여일 (예: '25', '10', '말일')
   salary_bank?: string;  // 급여 통장 (은행 + 계좌)
+  salary_alloc?: Record<string, number> | null; // 사업자별 급여 배분 (두 곳 이상 나눠 받을 때)
 }
 
 const ROLE_LABELS: Record<string, string> = {
@@ -58,15 +59,26 @@ export default function HrContent() {
   const [selected, setSelected] = useState<Employee | null>(null);
   const [loading, setLoading] = useState(true);
   const [form, setForm] = useState({ ...EMPTY_FORM });
+  const [allocRows, setAllocRows] = useState<{ company: string; amount: string }[]>([]); // 사업자별 급여 배분
   const [editId, setEditId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+
+  // 배분 rows → { 사업자: 연 금액 } (금액>0만). 비어있으면 null.
+  function buildAlloc(): Record<string, number> | null {
+    const obj: Record<string, number> = {};
+    for (const r of allocRows) {
+      const amt = Number(String(r.amount).replace(/[^0-9]/g, '')) || 0;
+      if (r.company && amt > 0) obj[r.company] = (obj[r.company] || 0) + amt;
+    }
+    return Object.keys(obj).length ? obj : null;
+  }
 
   useEffect(() => { loadEmployees(); }, []);
 
   async function loadEmployees() {
     setLoading(true);
     try {
-      const res = await supabaseFetch('/employees?order=created_at.asc&select=id,name,email,role,company,phone,birth_date,hire_date,status,salary,pay_day,salary_bank');
+      const res = await supabaseFetch('/employees?order=created_at.asc&select=id,name,email,role,company,phone,birth_date,hire_date,status,salary,pay_day,salary_bank,salary_alloc');
       const data = await res.json();
       setEmployees(Array.isArray(data) ? data : []);
     } catch { setEmployees([]); }
@@ -89,6 +101,7 @@ export default function HrContent() {
             position: (form as any).position || null,
             salary: form.salary ? Number(String(form.salary).replace(/[^0-9]/g, '')) : null,
             pay_day: form.pay_day || null, salary_bank: form.salary_bank || null,
+            salary_alloc: buildAlloc(),
             status: form.status, updated_at: new Date().toISOString(),
           }),
         });
@@ -106,6 +119,7 @@ export default function HrContent() {
             hire_date: form.hire_date || null,
             salary: form.salary ? Number(String(form.salary).replace(/[^0-9]/g, '')) : null,
             pay_day: form.pay_day || null, salary_bank: form.salary_bank || null,
+            salary_alloc: buildAlloc(),
             status: form.status,
           }),
         });
@@ -131,6 +145,7 @@ export default function HrContent() {
       setView('list');
       setEditId(null);
       setForm({ ...EMPTY_FORM });
+      setAllocRows([]);
       await loadEmployees();
     } finally { setSaving(false); }
   }
@@ -156,9 +171,13 @@ export default function HrContent() {
         salary: emp.salary != null ? String(emp.salary) : '',
         pay_day: emp.pay_day || '', salary_bank: emp.salary_bank || '',
       });
+      setAllocRows(emp.salary_alloc && typeof emp.salary_alloc === 'object'
+        ? Object.entries(emp.salary_alloc).map(([company, amount]) => ({ company, amount: String(amount) }))
+        : []);
       setEditId(emp.id);
     } else {
       setForm({ ...EMPTY_FORM });
+      setAllocRows([]);
       setEditId(null);
     }
     setView('form');
@@ -321,6 +340,16 @@ export default function HrContent() {
               <div className="text-base font-medium text-gray-700">{item.value}</div>
             </div>
           ))}
+          {selected.salary_alloc && Object.keys(selected.salary_alloc).length > 0 && (
+            <div className="bg-gray-50 rounded-xl px-4 py-3 sm:col-span-2">
+              <div className="text-sm text-gray-400 mb-1">사업자별 급여 배분</div>
+              <div className="flex flex-wrap gap-x-5 gap-y-1">
+                {Object.entries(selected.salary_alloc).map(([co, amt]) => (
+                  <span key={co} className="text-base font-medium text-gray-700">{co} <b className="text-blue-700">{won(Number(amt))}</b></span>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -406,6 +435,40 @@ export default function HrContent() {
               placeholder="예: 국민은행 818502-04-202430"
               className="w-full px-4 py-3 border border-gray-200 rounded-xl text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
+          </div>
+
+          <div className="sm:col-span-2">
+            <label className="block text-base font-medium text-gray-700 mb-1.5">사업자별 급여 배분 <span className="text-sm text-gray-400 font-normal">(두 곳 이상에서 나눠 받을 때만)</span></label>
+            <div className="space-y-2">
+              {allocRows.map((r, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <select
+                    value={r.company}
+                    onChange={(e) => setAllocRows((rows) => rows.map((x, idx) => idx === i ? { ...x, company: e.target.value } : x))}
+                    className="w-40 px-3 py-2.5 border border-gray-200 rounded-xl text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="">사업자 선택</option>
+                    {COMPANIES.map((c) => <option key={c}>{c}</option>)}
+                  </select>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    value={r.amount ? Number(String(r.amount).replace(/[^0-9]/g, '')).toLocaleString('ko-KR') : ''}
+                    onChange={(e) => setAllocRows((rows) => rows.map((x, idx) => idx === i ? { ...x, amount: e.target.value.replace(/[^0-9]/g, '') } : x))}
+                    placeholder="연 금액 (예: 60,000,000)"
+                    className="flex-1 px-4 py-2.5 border border-gray-200 rounded-xl text-gray-800 text-right tabular-nums focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                  <button type="button" onClick={() => setAllocRows((rows) => rows.filter((_, idx) => idx !== i))}
+                    className="px-2 py-2 text-gray-400 hover:text-red-600" title="삭제">×</button>
+                </div>
+              ))}
+              <button type="button" onClick={() => setAllocRows((rows) => [...rows, { company: '', amount: '' }])}
+                className="px-3 py-2 rounded-xl border border-dashed border-gray-300 text-sm text-gray-500 hover:bg-gray-50">+ 사업자 추가</button>
+            </div>
+            <p className="text-xs text-gray-400 mt-1.5 leading-relaxed">
+              여기에 사업자별 연 금액을 나눠 넣으면, <b>영업이익</b>의 인건비·4대보험이 사업자별로 그 금액 기준(÷12)으로 자동 반영됩니다.
+              비워두면 위 ‘소속 사업자·연봉’으로 한 곳에 전액 반영됩니다.
+            </p>
           </div>
 
           {!editId && (

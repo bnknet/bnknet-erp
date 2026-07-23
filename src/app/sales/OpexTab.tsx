@@ -103,11 +103,11 @@ export default function OpexTab({ orders, inventory, fees, bomRows, userName }: 
   // 세부내역용: 결재 태깅 품목 목록
   const [resvDetail, setResvDetail] = useState<{ company: string; category: string; amount: number; desc: string; label: string }[]>([]);
   // 인사(HR) — 재직 직원 연봉·담당 사업자 → 인건비·4대보험 자동
-  const [employees, setEmployees] = useState<{ name?: string; company?: string; salary?: number; status?: string }[]>([]);
+  const [employees, setEmployees] = useState<{ name?: string; company?: string; salary?: number; status?: string; salary_alloc?: Record<string, number> | null }[]>([]);
   useEffect(() => {
     (async () => {
       try {
-        const data = await supabaseFetchAll<{ name?: string; company?: string; salary?: number; status?: string }>('/employees?select=name,company,salary,status');
+        const data = await supabaseFetchAll<{ name?: string; company?: string; salary?: number; status?: string; salary_alloc?: Record<string, number> | null }>('/employees?select=name,company,salary,status,salary_alloc');
         setEmployees(Array.isArray(data) ? data : []);
       } catch { setEmployees([]); }
     })();
@@ -161,22 +161,38 @@ export default function OpexTab({ orders, inventory, fees, bomRows, userName }: 
 
   const parse = (s: string) => Number(String(s).replace(/[^0-9.-]/g, '')) || 0;
 
-  // 인사(연봉) 자동: 재직 직원 월급여(연봉÷12) 합 → 인건비(labor), ×보험율 → 4대보험(insurance).
+  // 직원별 사업자 기여(월 급여): 배분(salary_alloc)이 있으면 사업자별로 나눠서, 없으면 소속 1곳에 연봉÷12.
+  const empContribs = useMemo(() => {
+    const out: { name: string; company: string; monthly: number; annual: number; alloc: boolean }[] = [];
+    for (const e of employees) {
+      if (e.status && e.status !== 'active') continue;
+      const name = e.name || '(이름없음)';
+      const alloc = e.salary_alloc && typeof e.salary_alloc === 'object' && Object.keys(e.salary_alloc).length ? e.salary_alloc : null;
+      if (alloc) {
+        for (const [co, annual] of Object.entries(alloc)) {
+          const a = Number(annual) || 0;
+          if (a > 0) out.push({ name, company: co, monthly: a / 12, annual: a, alloc: true });
+        }
+      } else {
+        const a = Number(e.salary) || 0;
+        if (a > 0) out.push({ name, company: e.company || '', monthly: a / 12, annual: a, alloc: false });
+      }
+    }
+    return out;
+  }, [employees]);
+
+  // 인사(연봉) 자동: 위 기여를 사업자별로 합 → 인건비(labor), ×보험율 → 4대보험(insurance).
   // 해당 카테고리가 존재할 때만 반영. 인건비는 매월 동일(현재 재직·연봉 기준).
   const hrAuto = useMemo(() => {
     const active = new Set(inputCats.map((c) => c.key));
     const m: Record<string, number> = {};
-    for (const e of employees) {
-      if (e.status && e.status !== 'active') continue;
-      const co = e.company || '';
-      if (!OPEX_COMPANIES.includes(co)) continue;
-      const monthly = (Number(e.salary) || 0) / 12;
-      if (monthly <= 0) continue;
-      if (active.has('labor')) m[`${co}|labor`] = (m[`${co}|labor`] || 0) + monthly;
-      if (active.has('insurance')) m[`${co}|insurance`] = (m[`${co}|insurance`] || 0) + monthly * INSURANCE_RATE;
+    for (const x of empContribs) {
+      if (!OPEX_COMPANIES.includes(x.company) || x.monthly <= 0) continue;
+      if (active.has('labor')) m[`${x.company}|labor`] = (m[`${x.company}|labor`] || 0) + x.monthly;
+      if (active.has('insurance')) m[`${x.company}|insurance`] = (m[`${x.company}|insurance`] || 0) + x.monthly * INSURANCE_RATE;
     }
     return m;
-  }, [employees, inputCats]);
+  }, [empContribs, inputCats]);
 
   // 자동 반영 = 결재 태깅(autoMap) + 인사 연봉(hrAuto)
   const autoResv = (co: string, catKey: string) => autoMap[`${co}|${catKey}`] || 0;   // 결재
@@ -437,7 +453,7 @@ export default function OpexTab({ orders, inventory, fees, bomRows, userName }: 
             const catTotalSupply = toSupply(c.taxable, manTotal) + toSupply(c.taxable, hr + resv);
             const hasDetail = manTotal > 0 || hr > 0 || resv > 0;
             const open = openCats.has(c.key);
-            const coEmp = employees.filter(e => (!e.status || e.status === 'active') && e.company === company && (Number(e.salary) || 0) > 0);
+            const coLabor = empContribs.filter(x => x.company === company && x.monthly > 0);
             const resvItems = resvDetail.filter(d => d.company === company && d.category === c.key);
             return (
             <div key={c.key} className="border-b border-gray-50 last:border-b-0 pb-2">
@@ -478,8 +494,8 @@ export default function OpexTab({ orders, inventory, fees, bomRows, userName }: 
                       </span>
                     </div>
                   ))}
-                  {c.key === 'labor' && coEmp.map((e, i) => (
-                    <div key={i} className="flex justify-between text-indigo-600"><span>인사 · {e.name || '(이름없음)'} (연봉 {won(Number(e.salary) || 0)}÷12)</span><span className="tabular-nums">{won((Number(e.salary) || 0) / 12)}</span></div>
+                  {c.key === 'labor' && coLabor.map((e, i) => (
+                    <div key={i} className="flex justify-between text-indigo-600"><span>인사 · {e.name} ({e.alloc ? `${company} 배분 ` : '연봉 '}{won(e.annual)}÷12)</span><span className="tabular-nums">{won(e.monthly)}</span></div>
                   ))}
                   {c.key === 'insurance' && hr > 0 && (
                     <div className="flex justify-between text-indigo-600"><span>인사 · 급여합 {won(hr / INSURANCE_RATE)} × {Math.round(INSURANCE_RATE * 100)}%</span><span className="tabular-nums">{won(hr)}</span></div>
