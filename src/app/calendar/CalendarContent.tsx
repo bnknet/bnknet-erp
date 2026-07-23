@@ -486,8 +486,8 @@ export default function CalendarContent() {
               <div>
                 <label className="block text-sm font-medium text-gray-500 mb-1">메모</label>
                 <textarea value={form.description} onChange={e => setForm({ ...form, description: e.target.value })}
-                  rows={2} placeholder="상세 내용"
-                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-blue-400 resize-none" />
+                  rows={8} placeholder="상세 내용 (회의록·업무 목록 등 길게 작성 가능)"
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-blue-400 resize-y min-h-[180px]" />
               </div>
             </div>
             <div className="flex gap-3 mt-6">
