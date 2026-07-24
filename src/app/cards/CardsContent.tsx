@@ -489,7 +489,7 @@ export default function CardsContent() {
   // 폰에서 바로 보이는 표 모달 (+ 인쇄/PDF). 엑셀이 안 열리는 기기 대응.
   const tableViewModal = tableView && (
     <div className="fixed inset-0 bg-black/40 z-[60] flex items-end sm:items-center justify-center sm:p-4">
-      <div className="bg-white w-full sm:max-w-3xl rounded-t-2xl sm:rounded-2xl shadow-xl max-h-[92vh] flex flex-col">
+      <div className="bg-white w-full sm:max-w-6xl rounded-t-2xl sm:rounded-2xl shadow-xl max-h-[92vh] flex flex-col">
         <div className="no-print flex items-center justify-between gap-2 px-4 py-3 border-b border-gray-100">
           <div className="min-w-0">
             <div className="font-bold text-gray-800 truncate">{tableView.title}</div>
