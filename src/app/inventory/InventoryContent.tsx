@@ -496,9 +496,10 @@ export default function InventoryContent() {
   const snapTotalQty = filteredSnap.reduce((a, s) => a + s.quantity, 0);
   const snapTotalCost = filteredSnap.reduce((a, s) => a + s.quantity * (s.cost_price || 0), 0);
 
-  // 일자별 출고 — 사업자/도매제외 필터 적용해 대표상품명별 집계
+  // 일자별 출고 — 사업자/도매제외 필터 적용해 대표상품명별 집계 (사업자·도매 내역 포함)
   const outAgg = (() => {
-    const map: Record<string, { qty: number; count: number }> = {};   // 매칭된 상품
+    type Val = { qty: number; count: number; byCompany: Record<string, number>; wholesaleQty: number };
+    const map: Record<string, Val> = {};                               // 매칭된 상품
     const unmap: Record<string, { qty: number; count: number }> = {};  // 매칭 안 된 상품(알림용)
     for (const r of outRaw) {
       if (r.canceled) continue;
@@ -508,13 +509,24 @@ export default function InventoryContent() {
       if (outExcludeWholesale && r.source === '도매') continue;                 // 도매 제외
       // 현재 매칭데이터 기준으로 대표상품명 결정 (수집상품명 우선, 옵션 반영)
       const { name, matched } = repNameFor(r.collect_product || r.product_name || '', r.collect_option || '');
-      const target = matched ? map : unmap;
-      const key = matched ? name : (r.collect_product || r.product_name || '(상품명 없음)');
-      if (!target[key]) target[key] = { qty: 0, count: 0 };
-      target[key].qty += q; target[key].count += 1;
+      if (matched) {
+        if (!map[name]) map[name] = { qty: 0, count: 0, byCompany: {}, wholesaleQty: 0 };
+        const v = map[name];
+        v.qty += q; v.count += 1;
+        const co = r.company || '미지정';
+        v.byCompany[co] = (v.byCompany[co] || 0) + q;
+        if (r.source === '도매') v.wholesaleQty += q;
+      } else {
+        const key = r.collect_product || r.product_name || '(상품명 없음)';
+        if (!unmap[key]) unmap[key] = { qty: 0, count: 0 };
+        unmap[key].qty += q; unmap[key].count += 1;
+      }
     }
     return {
-      rows: Object.entries(map).map(([product, v]) => ({ product, qty: v.qty, count: v.count })).sort((a, b) => b.qty - a.qty),
+      rows: Object.entries(map).map(([product, v]) => ({
+        product, qty: v.qty, count: v.count, wholesaleQty: v.wholesaleQty,
+        companies: Object.entries(v.byCompany).map(([co, cq]) => ({ co, qty: cq })).sort((a, b) => b.qty - a.qty),
+      })).sort((a, b) => b.qty - a.qty),
       unmatched: Object.entries(unmap).map(([product, v]) => ({ product, qty: v.qty, count: v.count })).sort((a, b) => b.count - a.count),
     };
   })();
@@ -1055,10 +1067,20 @@ export default function InventoryContent() {
                 <tbody className="divide-y divide-gray-50">
                   {outFiltered.map((r, i) => (
                     <tr key={i} className="hover:bg-blue-50/40">
-                      <td className="px-4 py-2.5 text-gray-400 text-sm">{i + 1}</td>
-                      <td className="px-4 py-2.5 text-gray-700">{r.product}</td>
-                      <td className="px-4 py-2.5 text-center text-gray-500">{r.count}건</td>
-                      <td className="px-4 py-2.5 text-right font-bold text-gray-800">{r.qty.toLocaleString()}개</td>
+                      <td className="px-4 py-2.5 text-gray-400 text-sm align-top">{i + 1}</td>
+                      <td className="px-4 py-2.5 text-gray-700">
+                        <div>{r.product}</div>
+                        <div className="mt-1 flex flex-wrap gap-1">
+                          {r.companies.map((c) => (
+                            <span key={c.co} className="text-xs bg-slate-100 text-slate-600 rounded px-1.5 py-0.5">{c.co} {c.qty.toLocaleString()}개</span>
+                          ))}
+                          {r.wholesaleQty > 0 && (
+                            <span className="text-xs bg-amber-100 text-amber-700 rounded px-1.5 py-0.5 font-medium">그중 도매 {r.wholesaleQty.toLocaleString()}개</span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-4 py-2.5 text-center text-gray-500 align-top">{r.count}건</td>
+                      <td className="px-4 py-2.5 text-right font-bold text-gray-800 align-top">{r.qty.toLocaleString()}개</td>
                     </tr>
                   ))}
                 </tbody>
