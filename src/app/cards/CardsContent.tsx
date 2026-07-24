@@ -92,6 +92,7 @@ export default function CardsContent() {
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth()); // 0-11
   const [typeFilter, setTypeFilter] = useState<string>('all'); // 사업자(카드종류)별 필터
+  const [openLimitGroups, setOpenLimitGroups] = useState<Set<string>>(new Set()); // 한도현황 사용내역 펼침
   const [detailEvent, setDetailEvent] = useState<PayEvent | null>(null);
   const [detailItems, setDetailItems] = useState<PurchaseItem[]>([]);
   const [cancelChecked, setCancelChecked] = useState<Set<string>>(new Set());
@@ -357,6 +358,25 @@ export default function CardsContent() {
         return s;
       }, 0);
   }
+  // 한도현황 '사용내역' — 지금 한도를 소진 중인 미결제 결재건 목록(+ 선결제 복구 크레딧).
+  // used에는 기준값(6/30) 이전 사용분(pastUsed)도 포함되는데, 그건 개별 결재내역이 없어 별도 안내한다.
+  type OutItem = { p: CardPurchase; net: number; kind: 'charge' | 'prepay' };
+  function groupOutstandingItems(gcards: Card[]): OutItem[] {
+    const ids = new Set(gcards.map(c => c.id));
+    const out: OutItem[] = [];
+    for (const p of purchases) {
+      if (!ids.has(p.card_id)) continue;
+      if (p.is_card_payment) {
+        const amt = p.total_amount || 0;
+        if (amt) out.push({ p, net: -amt, kind: 'prepay' }); // 선결제 = 한도 복구(크레딧)
+      } else if (p.payment_due_date && p.payment_due_date >= todayStr) {
+        const net = Math.max(0, (p.total_amount || 0) - (canceledAmtByPurchase[p.id] || 0) - (prepaidAmtByPurchase[p.id] || 0));
+        if (net > 0) out.push({ p, net, kind: 'charge' });
+      }
+    }
+    return out.sort((a, b) => Math.abs(b.net) - Math.abs(a.net));
+  }
+
   // 한도 그룹 묶기 (limit_group 같으면 한도 공유, 없으면 카드 단독)
   const limitGroups = (() => {
     const seen = new Set<string>();
@@ -882,6 +902,51 @@ export default function CardsContent() {
                         </div>
                       )}
                     </div>
+
+                    {/* 사용내역 — 이 한도를 소진 중인 미결제 결재건 */}
+                    {(() => {
+                      const items = groupOutstandingItems(g.cards);
+                      const open = openLimitGroups.has(g.key);
+                      const pastUsed = g.hasOpening ? Math.max(0, g.limit - g.opening) : 0;
+                      return (
+                        <div className="mt-3 border-t border-gray-100 pt-2">
+                          <button onClick={() => setOpenLimitGroups(s => { const n = new Set(s); n.has(g.key) ? n.delete(g.key) : n.add(g.key); return n; })}
+                            className="w-full text-xs text-blue-600 hover:text-blue-700 flex items-center justify-center gap-1 py-1">
+                            {open ? '▲ 사용내역 접기' : `▼ 사용내역 보기 (미결제 ${items.filter(i => i.kind === 'charge').length}건)`}
+                          </button>
+                          {open && (
+                            <div className="mt-1 space-y-1.5 max-h-72 overflow-y-auto">
+                              {pastUsed > 0 && (
+                                <div className="text-xs text-gray-400 bg-gray-50 rounded px-2 py-1">
+                                  기준값(6/30) 이전 사용분 {won(pastUsed)}원 · 개별 결재내역 없음
+                                </div>
+                              )}
+                              {items.length === 0 ? (
+                                <div className="text-xs text-gray-400 text-center py-2">미결제 결재 내역이 없습니다</div>
+                              ) : items.map((it, idx) => (
+                                <div key={idx} className="flex items-start justify-between gap-2 text-sm">
+                                  <div className="min-w-0">
+                                    <div className="text-gray-700 truncate">
+                                      {it.p.purchase_vendor || '(구매처 미상)'}
+                                      {it.kind === 'prepay' && <span className="ml-1 text-xs text-green-600 bg-green-50 rounded px-1">선결제 복구</span>}
+                                    </div>
+                                    <div className="text-xs text-gray-400">
+                                      {(it.p.spend_date || it.p.payment_due_date || '').slice(0, 10)} · {it.p.organizer || '-'}
+                                      {it.kind === 'charge' && it.p.payment_due_date && ` · 결제예정 ${it.p.payment_due_date.slice(5, 10)}`}
+                                    </div>
+                                  </div>
+                                  <span className={`tabular-nums flex-shrink-0 font-medium ${it.net < 0 ? 'text-green-600' : 'text-gray-800'}`}>{it.net < 0 ? '+' : ''}{won(Math.abs(it.net))}원</span>
+                                </div>
+                              ))}
+                              <div className="flex justify-between text-xs font-semibold border-t border-gray-100 pt-1.5 mt-1">
+                                <span className="text-gray-500">결재 미결제 합</span>
+                                <span className="text-gray-700">{won(g.erpUsed)}원</span>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
                   </div>
                 );
               })}
