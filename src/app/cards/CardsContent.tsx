@@ -438,6 +438,7 @@ export default function CardsContent() {
       .sort((a, b) => (a.spend_date || '').localeCompare(b.spend_date || ''))
       .map(p => ({
         구매일: p.spend_date || '',
+        상신일자: p.issue_date || '',
         사업자: p.company,
         카드: cardName(p.card_id),
         구매처: p.purchase_vendor || '',
@@ -472,6 +473,7 @@ export default function CardsContent() {
   function viewPurchase() {
     const rows = purchases.slice().sort((a, b) => (a.spend_date || '').localeCompare(b.spend_date || '')).map(p => [
       p.spend_date || '',
+      p.issue_date || '',
       p.company,
       cardName(p.card_id),
       p.purchase_vendor || '',
@@ -481,7 +483,7 @@ export default function CardsContent() {
       p.purchase_status === 'canceled' ? '취소' : p.purchase_status === 'partial' ? '부분취소' : '정상',
     ]);
     if (!rows.length) { alert('카드 구매내역이 없습니다.'); return; }
-    setTableView({ title: '카드 구매내역 (세무)', subtitle: `${rows.length}건 · ${todayStr}`, headers: ['구매일', '사업자', '카드', '구매처', '담당', '금액', '결제예정일', '상태'], rows });
+    setTableView({ title: '카드 구매내역 (세무)', subtitle: `${rows.length}건 · ${todayStr}`, headers: ['구매일', '상신일자', '사업자', '카드', '구매처', '담당', '금액', '결제예정일', '상태'], rows });
   }
 
   // 폰에서 바로 보이는 표 모달 (+ 인쇄/PDF). 엑셀이 안 열리는 기기 대응.
