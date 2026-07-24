@@ -28,6 +28,7 @@ interface CardPurchase {
   purchase_status: string;     // normal / canceled
   refund_due_date?: string;
   spend_date?: string;
+  issue_date?: string;     // 상신(발의)일
   purchase_vendor?: string;
   is_card_payment?: boolean;
 }
@@ -120,7 +121,7 @@ export default function CardsContent() {
     // 카드 매입은 계속 누적 → 1000건 넘어도 전부 가져오기
     const data = await supabaseFetchAll<CardPurchase>(
       '/approvals?doc_type=in.(지출결의서,카드구매)&status=eq.approved&card_id=not.is.null' +
-      '&select=id,company,organizer,total_amount,card_id,payment_due_date,purchase_status,refund_due_date,spend_date,purchase_vendor,is_card_payment&order=payment_due_date.asc'
+      '&select=id,company,organizer,total_amount,card_id,payment_due_date,purchase_status,refund_due_date,spend_date,issue_date,purchase_vendor,is_card_payment&order=payment_due_date.asc'
     );
     setPurchases(data);
     // 취소된 항목(부분취소 포함) — 환불 이벤트/한도 계산용
@@ -1250,6 +1251,7 @@ export default function CardsContent() {
                 { l: '결제카드', v: cardLabel(detailEvent.cardId) },
                 { l: '사업자', v: detailEvent.purchase.company },
                 { l: '담당', v: detailEvent.purchase.organizer },
+                { l: '상신일자', v: detailEvent.purchase.issue_date || '-' },
                 { l: '구매처', v: detailEvent.purchase.purchase_vendor || '-' },
                 { l: '구매일', v: detailEvent.purchase.spend_date || '-' },
                 { l: detailEvent.type === 'refund' ? '환불예정일' : detailEvent.type === 'prepay' ? '선결제일' : '결제예정일', v: detailEvent.date },
