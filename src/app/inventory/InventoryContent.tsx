@@ -67,6 +67,8 @@ interface InventoryLog {
 }
 
 const COMPANIES = ['전체', '더블아이', 'BNKNET', 'SJ글로벌', 'IX글로벌'];
+// 일자별 출고 집계용 주문행
+type OutOrderRow = { product_name?: string; collect_product?: string; collect_option?: string; quantity?: number; canceled?: boolean; company?: string; source?: string };
 const CATEGORIES = ['전체', '뷰티', '건강기능식품', '식품', '생활용품', '기타'];
 const LOG_TYPES = [
   { value: '입고', label: '입고', color: 'text-blue-600 bg-blue-50' },
@@ -110,46 +112,32 @@ export default function InventoryContent() {
   const outToday = new Date().toISOString().slice(0, 10);
   const [outFrom, setOutFrom] = useState(outToday);
   const [outTo, setOutTo] = useState(outToday);
-  const [outRows, setOutRows] = useState<{ product: string; qty: number; count: number }[]>([]);
-  const [outUnmatched, setOutUnmatched] = useState<{ product: string; qty: number; count: number }[]>([]);
+  const [outRaw, setOutRaw] = useState<OutOrderRow[]>([]); // 원본 주문행(필터는 화면에서 즉시 적용)
   const [outLoading, setOutLoading] = useState(false);
   const [outSearch, setOutSearch] = useState(''); // 일자별 출고 상품명 검색
+  const [outCompany, setOutCompany] = useState('전체'); // 사업자 필터
+  const [outExcludeWholesale, setOutExcludeWholesale] = useState(false); // 도매(소스=도매) 제외
 
   async function loadOutbound(from: string, to: string) {
     setOutLoading(true);
     try {
       await loadDbMatches(true); // 담당자 등록 매칭 반영
       // PostgREST는 한 번에 최대 1000건만 반환 → 1000건씩 모두 가져오기(페이지네이션)
-      type Row = { product_name?: string; collect_product?: string; collect_option?: string; quantity?: number; canceled?: boolean };
-      const data: Row[] = [];
+      const data: OutOrderRow[] = [];
       let start = 0;
       while (true) {
         const res = await supabaseFetch(
-          `/orders?upload_date=gte.${from}&upload_date=lte.${to}&select=product_name,collect_product,collect_option,quantity,canceled`,
+          `/orders?upload_date=gte.${from}&upload_date=lte.${to}&select=product_name,collect_product,collect_option,quantity,canceled,company,source`,
           { headers: { 'Range-Unit': 'items', Range: `${start}-${start + 999}` } },
         );
-        const chunk: Row[] = await res.json();
+        const chunk: OutOrderRow[] = await res.json();
         if (!Array.isArray(chunk) || chunk.length === 0) break;
         data.push(...chunk);
         if (chunk.length < 1000) break;
         start += 1000;
       }
-      const map: Record<string, { qty: number; count: number }> = {};          // 매칭된 상품
-      const unmap: Record<string, { qty: number; count: number }> = {};         // 매칭 안 된 상품(알림용)
-      (Array.isArray(data) ? data : []).forEach((r) => {
-        if (r.canceled) return;
-        const q = Number(r.quantity) || 0;
-        if (q < 1) return;
-        // 현재 매칭데이터 기준으로 대표상품명 결정 (수집상품명 우선)
-        const { name, matched } = repNameFor(r.collect_product || r.product_name || '', r.collect_option || '');
-        const target = matched ? map : unmap;
-        const key = matched ? name : (r.collect_product || r.product_name || '(상품명 없음)');
-        if (!target[key]) target[key] = { qty: 0, count: 0 };
-        target[key].qty += q; target[key].count += 1;
-      });
-      setOutRows(Object.entries(map).map(([product, v]) => ({ product, qty: v.qty, count: v.count })).sort((a, b) => b.qty - a.qty));
-      setOutUnmatched(Object.entries(unmap).map(([product, v]) => ({ product, qty: v.qty, count: v.count })).sort((a, b) => b.count - a.count));
-    } catch { setOutRows([]); setOutUnmatched([]); }
+      setOutRaw(Array.isArray(data) ? data : []);
+    } catch { setOutRaw([]); }
     finally { setOutLoading(false); }
   }
 
@@ -507,6 +495,31 @@ export default function InventoryContent() {
   );
   const snapTotalQty = filteredSnap.reduce((a, s) => a + s.quantity, 0);
   const snapTotalCost = filteredSnap.reduce((a, s) => a + s.quantity * (s.cost_price || 0), 0);
+
+  // 일자별 출고 — 사업자/도매제외 필터 적용해 대표상품명별 집계
+  const outAgg = (() => {
+    const map: Record<string, { qty: number; count: number }> = {};   // 매칭된 상품
+    const unmap: Record<string, { qty: number; count: number }> = {};  // 매칭 안 된 상품(알림용)
+    for (const r of outRaw) {
+      if (r.canceled) continue;
+      const q = Number(r.quantity) || 0;
+      if (q < 1) continue;
+      if (outCompany !== '전체' && (r.company || '') !== outCompany) continue; // 사업자 필터
+      if (outExcludeWholesale && r.source === '도매') continue;                 // 도매 제외
+      // 현재 매칭데이터 기준으로 대표상품명 결정 (수집상품명 우선, 옵션 반영)
+      const { name, matched } = repNameFor(r.collect_product || r.product_name || '', r.collect_option || '');
+      const target = matched ? map : unmap;
+      const key = matched ? name : (r.collect_product || r.product_name || '(상품명 없음)');
+      if (!target[key]) target[key] = { qty: 0, count: 0 };
+      target[key].qty += q; target[key].count += 1;
+    }
+    return {
+      rows: Object.entries(map).map(([product, v]) => ({ product, qty: v.qty, count: v.count })).sort((a, b) => b.qty - a.qty),
+      unmatched: Object.entries(unmap).map(([product, v]) => ({ product, qty: v.qty, count: v.count })).sort((a, b) => b.count - a.count),
+    };
+  })();
+  const outRows = outAgg.rows;
+  const outUnmatched = outAgg.unmatched;
 
   // 일자별 출고 — 상품명 검색 필터
   const outQuery = outSearch.trim().toLowerCase();
@@ -956,6 +969,23 @@ export default function InventoryContent() {
                 <button onClick={() => outQuick('month')} className="px-2.5 py-1.5 text-sm border border-gray-200 rounded-lg text-gray-500 hover:bg-gray-50">이번달</button>
               </div>
             </div>
+            {/* 사업자 · 도매 제외 필터 (조회 없이 즉시 적용) */}
+            <div className="mt-3 flex items-center gap-2 flex-wrap">
+              <span className="text-sm text-gray-400">사업자</span>
+              <div className="flex gap-1 flex-wrap">
+                {COMPANIES.map((c) => (
+                  <button key={c} onClick={() => setOutCompany(c)}
+                    className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${outCompany === c ? 'bg-slate-700 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
+                    {c}
+                  </button>
+                ))}
+              </div>
+              <label className="ml-1 flex items-center gap-1.5 cursor-pointer text-sm text-gray-600 select-none">
+                <input type="checkbox" checked={outExcludeWholesale} onChange={(e) => setOutExcludeWholesale(e.target.checked)}
+                  className="w-4 h-4 rounded border-gray-300 text-blue-600" />
+                도매 제외 <span className="text-gray-400">(소매만 보기)</span>
+              </label>
+            </div>
             {/* 상품명 검색 필터 */}
             {outRows.length > 0 && (
               <div className="mt-3 flex items-center gap-2 bg-gray-50 border border-gray-100 rounded-xl px-3 py-2">
@@ -966,7 +996,11 @@ export default function InventoryContent() {
                 {outSearch && <button onClick={() => setOutSearch('')} className="text-sm text-gray-400 hover:text-gray-600 flex-shrink-0">지우기</button>}
               </div>
             )}
-            <p className="text-sm text-gray-400 mt-2">매칭데이터 기준 대표상품명으로 합산 · 취소건 제외 · 출고수량 많은 순</p>
+            <p className="text-sm text-gray-400 mt-2">
+              매칭데이터 기준 대표상품명으로 합산 · 취소건 제외 · 출고수량 많은 순
+              {outCompany !== '전체' && <span className="text-slate-600 font-medium"> · 사업자: {outCompany}</span>}
+              {outExcludeWholesale && <span className="text-blue-600 font-medium"> · 도매 제외(소매만)</span>}
+            </p>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
