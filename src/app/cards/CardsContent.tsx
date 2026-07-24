@@ -924,7 +924,10 @@ export default function CardsContent() {
                               {items.length === 0 ? (
                                 <div className="text-xs text-gray-400 text-center py-2">미결제 결재 내역이 없습니다</div>
                               ) : items.map((it, idx) => (
-                                <div key={idx} className="flex items-start justify-between gap-2 text-sm">
+                                <div key={idx}
+                                  onClick={() => openPurchaseDetail({ date: it.p.payment_due_date || it.p.spend_date || '', cardId: it.p.card_id, amount: it.net, type: it.kind === 'prepay' ? 'prepay' : 'charge', purchase: it.p })}
+                                  className="flex items-start justify-between gap-2 text-sm cursor-pointer hover:bg-blue-50/60 rounded-md px-1.5 py-1 -mx-1.5"
+                                  title="결재서(기안) 내용 보기">
                                   <div className="min-w-0">
                                     <div className="text-gray-700 truncate">
                                       {it.p.purchase_vendor || '(구매처 미상)'}
@@ -935,7 +938,10 @@ export default function CardsContent() {
                                       {it.kind === 'charge' && it.p.payment_due_date && ` · 결제예정 ${it.p.payment_due_date.slice(5, 10)}`}
                                     </div>
                                   </div>
-                                  <span className={`tabular-nums flex-shrink-0 font-medium ${it.net < 0 ? 'text-green-600' : 'text-gray-800'}`}>{it.net < 0 ? '+' : ''}{won(Math.abs(it.net))}원</span>
+                                  <span className="flex items-center gap-1 flex-shrink-0">
+                                    <span className={`tabular-nums font-medium ${it.net < 0 ? 'text-green-600' : 'text-gray-800'}`}>{it.net < 0 ? '+' : ''}{won(Math.abs(it.net))}원</span>
+                                    <span className="text-gray-300">›</span>
+                                  </span>
                                 </div>
                               ))}
                               <div className="flex justify-between text-xs font-semibold border-t border-gray-100 pt-1.5 mt-1">
