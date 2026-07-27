@@ -1237,8 +1237,8 @@ export default function CardsContent() {
       {/* 결제 내역 상세 모달 */}
       {detailEvent && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-start justify-center p-4 overflow-y-auto" onClick={() => setDetailEvent(null)}>
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6 my-6 max-h-[92vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-            <div className="flex items-start justify-between mb-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg my-6 max-h-[92vh] flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div className="flex items-start justify-between p-5 border-b border-gray-100 flex-none">
               <div>
                 <span className={`text-xs px-2 py-0.5 rounded-md font-medium ${detailEvent.type === 'refund' ? 'bg-red-50 text-red-500' : detailEvent.type === 'prepay' ? 'bg-green-50 text-green-600' : 'bg-blue-50 text-blue-600'}`}>
                   {detailEvent.type === 'refund' ? '환불' : detailEvent.type === 'prepay' ? '선결제(한도복구)' : '카드 매입'}
@@ -1248,6 +1248,7 @@ export default function CardsContent() {
               <button onClick={() => setDetailEvent(null)} className="text-gray-400 text-lg">✕</button>
             </div>
 
+            <div className="p-5 overflow-y-auto flex-1">
             <div className="grid grid-cols-2 gap-3 text-sm mb-4">
               {[
                 { l: '결제카드', v: cardLabel(detailEvent.cardId) },
@@ -1320,6 +1321,7 @@ export default function CardsContent() {
                 ⚠️ {detailEvent.purchase.purchase_status === 'canceled' ? '전체 취소됨' : '일부 항목 취소됨'} (위 취소 표시 항목 참고)
               </div>
             )}
+            </div>
           </div>
         </div>
       )}
