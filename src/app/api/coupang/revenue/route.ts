@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { coupangCall, coupangConfigured, coupangVendorId } from '@/lib/coupang';
+import { coupangCall, coupangConfigured, coupangAccounts, type CoupangAccount } from '@/lib/coupang';
 
 // 쿠팡 로켓그로스 매출내역(revenue-history) 조회 — 서버(HMAC 서명) 경유 전용.
-// 정산은 제외, "몇 개 팔렸고 매출 얼마"만 확인하는 용도. 실제 응답 필드를 확인하기 위해
-// 우선 raw 데이터를 그대로 돌려준다(키 주입 후 응답 스키마 확정 → 매출·수량·공헌이익 매핑/화면 붙임).
+// 사업자(SJ글로벌·IX글로벌)별로 각각 호출해 회사 태깅. 정산 제외, "몇 개·매출 얼마"만 확인 용도.
+// 실제 응답 필드 확정 전까지 raw 데이터를 그대로 돌려준다.
 // 사용: GET /api/coupang/revenue?from=YYYY-MM-DD&to=YYYY-MM-DD
 export const runtime = 'nodejs';
 
@@ -17,19 +17,8 @@ interface RawResp {
   message?: string;
 }
 
-export async function GET(req: NextRequest) {
-  if (!coupangConfigured()) {
-    return NextResponse.json(
-      { error: '쿠팡 키가 설정되지 않았습니다. Vercel 환경변수 COUPANG_ACCESS_KEY / COUPANG_SECRET_KEY / COUPANG_VENDOR_ID 를 확인해주세요.' },
-      { status: 500 },
-    );
-  }
-  const sp = new URL(req.url).searchParams;
-  const to = sp.get('to') || kstToday();
-  const from = sp.get('from') || to;
-  const vendorId = coupangVendorId();
+async function fetchAccount(acc: CoupangAccount, from: string, to: string) {
   const path = '/v2/providers/openapi/apis/api/v1/revenue-history';
-
   const items: unknown[] = [];
   let token = '';
   let pages = 0;
@@ -37,14 +26,13 @@ export async function GET(req: NextRequest) {
   try {
     do {
       const query =
-        `vendorId=${encodeURIComponent(vendorId)}` +
+        `vendorId=${encodeURIComponent(acc.vendorId)}` +
         `&recognitionDateFrom=${from}&recognitionDateTo=${to}&maxPerPage=100` +
         (token ? `&token=${encodeURIComponent(token)}` : '');
-      const res = await coupangCall('GET', path, query);
+      const res = await coupangCall(acc, 'GET', path, query);
       const raw = (await res.json().catch(() => null)) as RawResp | null;
       if (!res.ok) {
-        // 서명/권한/파라미터 문제 진단을 위해 쿠팡 응답 원문을 그대로 노출(민감정보 아님).
-        return NextResponse.json({ ok: false, status: res.status, from, to, raw }, { status: 200 });
+        return { company: acc.company, vendorId: acc.vendorId, ok: false, status: res.status, raw };
       }
       lastRaw = raw;
       const data = (raw?.data ?? raw?.content ?? raw) as unknown;
@@ -57,17 +45,27 @@ export async function GET(req: NextRequest) {
       token = String(raw?.nextToken || (data as { nextToken?: string })?.nextToken || '');
       pages++;
     } while (token && pages < 50);
-
-    return NextResponse.json({
-      ok: true,
-      from,
-      to,
-      count: items.length,
-      pages,
-      sample: items[0] ?? lastRaw, // 첫 항목(필드 확인용)
-      items,
-    });
+    return { company: acc.company, vendorId: acc.vendorId, ok: true, count: items.length, pages, sample: items[0] ?? lastRaw, items };
   } catch (e) {
-    return NextResponse.json({ ok: false, error: e instanceof Error ? e.message : String(e) }, { status: 200 });
+    return { company: acc.company, vendorId: acc.vendorId, ok: false, error: e instanceof Error ? e.message : String(e) };
   }
+}
+
+export async function GET(req: NextRequest) {
+  if (!coupangConfigured()) {
+    return NextResponse.json(
+      { error: '쿠팡 키가 설정되지 않았습니다. Vercel 환경변수 COUPANG_SJ_* / COUPANG_IX_* (ACCESS_KEY·SECRET_KEY·VENDOR_ID)를 확인해주세요.' },
+      { status: 500 },
+    );
+  }
+  const sp = new URL(req.url).searchParams;
+  const to = sp.get('to') || kstToday();
+  const from = sp.get('from') || to;
+
+  const accounts = coupangAccounts();
+  const results = [];
+  for (const acc of accounts) {
+    results.push(await fetchAccount(acc, from, to));
+  }
+  return NextResponse.json({ ok: true, from, to, accounts: results });
 }
