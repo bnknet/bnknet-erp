@@ -19,7 +19,11 @@ export function coupangAccounts(): CoupangAccount[] {
   const add = (company: string, a?: string, s?: string, v?: string) => {
     if (a && s && v) out.push({ company, accessKey: a, secretKey: s, vendorId: v });
   };
-  add('SJ글로벌', process.env.COUPANG_SJ_ACCESS_KEY, process.env.COUPANG_SJ_SECRET_KEY, process.env.COUPANG_SJ_VENDOR_ID);
+  // SJ글로벌: 접두어 세트 우선, 없으면 기본(COUPANG_*) 세트를 SJ글로벌로 사용(하위호환)
+  add('SJ글로벌',
+    process.env.COUPANG_SJ_ACCESS_KEY || process.env.COUPANG_ACCESS_KEY,
+    process.env.COUPANG_SJ_SECRET_KEY || process.env.COUPANG_SECRET_KEY,
+    process.env.COUPANG_SJ_VENDOR_ID || process.env.COUPANG_VENDOR_ID);
   add('IX글로벌', process.env.COUPANG_IX_ACCESS_KEY, process.env.COUPANG_IX_SECRET_KEY, process.env.COUPANG_IX_VENDOR_ID);
   return out;
 }
