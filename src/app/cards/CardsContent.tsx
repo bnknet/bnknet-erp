@@ -1272,7 +1272,7 @@ export default function CardsContent() {
                 <div className="w-16 px-2 py-2 text-right">수량</div>
                 <div className="w-28 px-3 py-2 text-right">금액</div>
               </div>
-              <div className="max-h-[42vh] overflow-y-auto">
+              <div>
               {detailItems.length === 0 ? (
                 <div className="text-center py-4 text-sm text-gray-400">상세 품목이 없습니다</div>
               ) : detailItems.map((it, i) => (
