@@ -1590,8 +1590,8 @@ export default function ApprovalContent() {
 
         {/* 카드 매입 취소 모달 (항목별 부분취소) */}
         {showCancelModal && (
-          <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4 overflow-y-auto">
-            <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 my-8">
+          <div className="fixed inset-0 bg-black/40 z-50 flex items-start justify-center p-4 overflow-y-auto">
+            <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 my-8 max-h-[92vh] overflow-y-auto">
               <h3 className="text-lg font-bold text-gray-800 mb-1">구매 취소 (환불 처리)</h3>
               <p className="text-sm text-gray-500 mb-4">취소할 항목을 선택하세요. 일부만 선택하면 부분취소됩니다.</p>
 
