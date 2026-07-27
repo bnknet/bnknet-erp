@@ -56,7 +56,7 @@ const menuItems: MenuGroup[] = [
   {
     group: '관리',
     items: [
-      { href: '/cards', label: '카드·매입', icon: '💳' },
+      { href: '/cards', label: '카드·매입', icon: '💳', roles: ['ceo', 'admin', 'manager', 'sales', 'inventory'] },
       { href: '/partners', label: '거래처 관리', icon: '🤝' },
       { href: '/accounts', label: '계정 관리', icon: '🔑' },
     ],

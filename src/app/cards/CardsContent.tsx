@@ -74,7 +74,7 @@ type Tab = 'calendar' | 'limit' | 'cards' | 'log';
 export default function CardsContent() {
   const me = getUser();
   const canManage = me?.role === 'ceo' || me?.role === 'admin'; // 등록·수정·삭제 = 대표·실장
-  const canView = !!me; // 조회 = 전 직원
+  const canView = !!me && me.role !== 'md'; // 조회 = 전 직원(단 MD 제외)
 
   const [tab, setTab] = useState<Tab>('calendar');
   const [cards, setCards] = useState<Card[]>([]);
