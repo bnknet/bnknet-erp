@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { supabaseFetch } from '@/lib/supabase';
 import { getUser } from '@/lib/auth';
+import RichEditor from '@/components/RichEditor';
 import * as XLSX from 'xlsx';
 
 interface Worklog {
@@ -28,6 +29,9 @@ const EMPTY_FORM = {
 };
 
 type View = 'list' | 'detail' | 'form';
+
+// 서식(HTML) 저장분에서 태그 제거 — 엑셀·필수값 검증용 순수 텍스트
+const stripHtml = (h: string) => (h || '').replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').trim();
 
 export default function WorklogContent() {
   const me = getUser();
@@ -61,7 +65,7 @@ export default function WorklogContent() {
   }
 
   async function handleSave() {
-    if (!form.work_date || !form.author_name.trim() || !form.in_progress.trim()) return;
+    if (!form.work_date || !form.author_name.trim() || !stripHtml(form.in_progress)) return;
     setSaving(true);
     try {
       const payload = { ...form, updated_at: new Date().toISOString() };
@@ -127,9 +131,9 @@ export default function WorklogContent() {
       날짜: l.work_date,
       작성자: l.author_name,
       사업자: l.company,
-      진행업무: l.in_progress || '',
-      예정업무: l.planned || '',
-      특이사항: l.notes || '',
+      진행업무: stripHtml(l.in_progress),
+      예정업무: stripHtml(l.planned),
+      특이사항: stripHtml(l.notes),
     }));
     const ws = XLSX.utils.json_to_sheet(data);
     ws['!cols'] = [{ wch: 12 }, { wch: 10 }, { wch: 10 }, { wch: 40 }, { wch: 40 }, { wch: 30 }];
@@ -223,15 +227,15 @@ export default function WorklogContent() {
                     <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-3">
                       <div>
                         <div className="text-sm text-blue-400 font-medium mb-1">진행업무</div>
-                        <p className="text-base text-gray-700 line-clamp-2 whitespace-pre-line">{log.in_progress || '-'}</p>
+                        <div className="text-base text-gray-700 line-clamp-2" style={{ whiteSpace: 'pre-wrap' }} dangerouslySetInnerHTML={{ __html: log.in_progress || '-' }} />
                       </div>
                       <div>
                         <div className="text-sm text-orange-400 font-medium mb-1">예정업무</div>
-                        <p className="text-base text-gray-700 line-clamp-2 whitespace-pre-line">{log.planned || '-'}</p>
+                        <div className="text-base text-gray-700 line-clamp-2" style={{ whiteSpace: 'pre-wrap' }} dangerouslySetInnerHTML={{ __html: log.planned || '-' }} />
                       </div>
                       <div>
                         <div className="text-sm text-purple-400 font-medium mb-1">특이사항</div>
-                        <p className="text-base text-gray-700 line-clamp-2 whitespace-pre-line">{log.notes || '-'}</p>
+                        <div className="text-base text-gray-700 line-clamp-2" style={{ whiteSpace: 'pre-wrap' }} dangerouslySetInnerHTML={{ __html: log.notes || '-' }} />
                       </div>
                     </div>
                   </div>
@@ -277,8 +281,8 @@ export default function WorklogContent() {
           ].map(({ label, value, color }) => (
             <div key={label}>
               <div className={`text-sm font-semibold mb-2 text-${color}-500`}>{label}</div>
-              <div className="bg-gray-50 rounded-xl px-4 py-3 text-base text-gray-700 whitespace-pre-line min-h-[60px]">
-                {value || <span className="text-gray-300">내용 없음</span>}
+              <div className="bg-gray-50 rounded-xl px-4 py-3 text-base text-gray-700 min-h-[60px]" style={{ whiteSpace: 'pre-wrap' }}>
+                {value ? <span dangerouslySetInnerHTML={{ __html: value }} /> : <span className="text-gray-300">내용 없음</span>}
               </div>
             </div>
           ))}
@@ -321,13 +325,8 @@ export default function WorklogContent() {
             { key: 'notes', label: '특이사항', placeholder: '특이사항, 이슈, 메모 등을 입력하세요', color: 'purple' },
           ].map(({ key, label, placeholder, color }) => (
             <div key={key}>
-              <label className={`block text-base font-medium text-${color}-500 mb-1.5`}>{label}</label>
-              <textarea
-                value={(form as any)[key]}
-                onChange={(e) => setForm({ ...form, [key]: e.target.value })}
-                placeholder={placeholder}
-                rows={8}
-                className="w-full px-4 py-3 border border-gray-200 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-blue-500 resize-y min-h-[160px]" />
+              <label className={`block text-base font-medium text-${color}-500 mb-1.5`}>{label} <span className="text-xs text-gray-400 font-normal">(굵게·기울임·색상·글자크기 지원)</span></label>
+              <RichEditor key={editId || 'new'} value={(form as any)[key] || ''} onChange={(html) => setForm({ ...form, [key]: html })} minHeight="160px" />
             </div>
           ))}
         </div>
