@@ -326,8 +326,8 @@ export default function WorklogContent() {
                 value={(form as any)[key]}
                 onChange={(e) => setForm({ ...form, [key]: e.target.value })}
                 placeholder={placeholder}
-                rows={4}
-                className="w-full px-4 py-3 border border-gray-200 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none" />
+                rows={8}
+                className="w-full px-4 py-3 border border-gray-200 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-blue-500 resize-y min-h-[160px]" />
             </div>
           ))}
         </div>
