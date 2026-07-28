@@ -751,10 +751,11 @@ export default function CardsContent() {
                 className="w-full px-3 py-2 border border-gray-200 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-blue-400" />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-500 mb-1">6/30 잔여한도 (참고)</label>
+              <label className="block text-sm font-medium text-gray-500 mb-1">기준 잔여한도 (참고)</label>
               <input type="number" value={form.opening_balance || ''} onChange={e => setForm({ ...form, opening_balance: Number(e.target.value) })}
                 placeholder="15000000"
                 className="w-full px-3 py-2 border border-gray-200 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-blue-400" />
+              <p className="text-xs text-gray-400 mt-1">등록 시점의 실제 잔여한도. 신규·미사용 카드면 전체 한도와 동일하게 입력.</p>
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3">
@@ -771,6 +772,7 @@ export default function CardsContent() {
           </div>
           <p className="text-sm text-gray-400">
             {formatBillingCycle({ ...form, id: '', is_active: true } as Card)}
+            <span className="block text-xs text-gray-300 mt-0.5">전월 1일~말일 사용분을 결제하는 카드면 ‘사용 마감일’을 31(말일)로 하세요.</span>
           </p>
           <div>
             <label className="block text-sm font-medium text-gray-500 mb-1">주요 혜택 / 제휴 메모</label>
@@ -850,7 +852,7 @@ export default function CardsContent() {
             )}
           </div>
           <div className="flex items-center justify-between gap-2 flex-wrap">
-            <p className="text-xs text-gray-400">💡 잔여한도(실시간) = 6/30 잔여 기준값에서 시작 · 카드구매 결재 −차감 / 선결제 결재 +복구. (6/30 기준값은 카드 수정에서 확인·변경)</p>
+            <p className="text-xs text-gray-400">💡 잔여한도(실시간) = 기준 잔여값에서 시작 · 카드구매 결재 −차감 / 선결제 결재 +복구. (기준 잔여값은 카드 수정에서 확인·변경)</p>
             {canManage && (
               <button onClick={() => { setPrepayDate(todayStr); setPrepayItemChecked(new Set()); setPrepayExpanded(new Set()); setPrepayItemsMap({}); setPrepayOpen(true); }}
                 className="px-4 py-2 text-sm font-medium bg-green-600 hover:bg-green-700 text-white rounded-lg whitespace-nowrap">💚 선결제 처리</button>
@@ -921,7 +923,7 @@ export default function CardsContent() {
                             <div className="mt-1 space-y-1.5 max-h-72 overflow-y-auto">
                               {pastUsed > 0 && (
                                 <div className="text-xs text-gray-400 bg-gray-50 rounded px-2 py-1">
-                                  기준값(6/30) 이전 사용분 {won(pastUsed)}원 · 개별 결재내역 없음
+                                  기준값 이전 사용분 {won(pastUsed)}원 · 개별 결재내역 없음
                                 </div>
                               )}
                               {items.length === 0 ? (
