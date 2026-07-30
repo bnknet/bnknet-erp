@@ -253,14 +253,14 @@ export default function ReportsContent() {
               <RichEditor key={editId || 'new'} value={form.content || ''} onChange={html => setForm({ ...form, content: html })} />
             </div>
             {[
-              { key: 'result', label: '결과', rows: 3, ph: '결정 사항 / 결과' },
-              { key: 'next_action', label: '후속 조치', rows: 3, ph: '다음에 할 일' },
+              { key: 'result', label: '결과', rows: 6, ph: '결정 사항 / 결과' },
+              { key: 'next_action', label: '후속 조치', rows: 6, ph: '다음에 할 일' },
             ].map(f => (
               <div key={f.key}>
                 <label className="block text-sm font-medium text-gray-500 mb-1">{f.label}</label>
                 <textarea value={form[f.key as 'result' | 'next_action']} rows={f.rows} placeholder={f.ph}
                   onChange={e => setForm({ ...form, [f.key]: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-blue-400 resize-none" />
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-blue-400 resize-y min-h-[8rem]" />
               </div>
             ))}
           </div>
