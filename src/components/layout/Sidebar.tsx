@@ -6,62 +6,10 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { clearUser, getUser, ROLE_ALLOWED_PATHS } from '@/lib/auth';
 import { supabaseFetch } from '@/lib/supabase';
+import { MENU_GROUPS } from '@/lib/menuConfig';
+import { loadMenuPerms, isMenuAllowed, EMPTY_PERMS, type PermMap } from '@/lib/menuPerms';
 
-type MenuItem = { href: string; label: string; icon: string; badge?: boolean; roles?: string[] };
-type MenuGroup = { group: string; items: MenuItem[] };
 
-const menuItems: MenuGroup[] = [
-  {
-    group: '홈',
-    items: [
-      { href: '/notices', label: '공지사항', icon: '📢' },
-      { href: '/dashboard', label: '대시보드', icon: '📊' },
-    ],
-  },
-  {
-    group: '매출 관리',
-    items: [
-      { href: '/sales', label: '매출 현황', icon: '💰' },
-      { href: '/orders', label: '주문 변환', icon: '📦' },
-      { href: '/sales-target', label: '매출 목표', icon: '🎯' },
-      { href: '/mall-fees', label: '몰 수수료', icon: '🧾', roles: ['ceo', 'admin', 'sales'] },
-    ],
-  },
-  {
-    group: '재고·상품',
-    items: [
-      { href: '/inventory', label: '재고 관리', icon: '🏭' },
-      { href: '/purchasing', label: '발주·입고', icon: '🚚', roles: ['ceo', 'admin', 'sales', 'inventory'] },
-      { href: '/products', label: '상품 마스터', icon: '🛍️' },
-      { href: '/product-sets', label: '세트 구성', icon: '🎁', roles: ['ceo', 'admin', 'sales', 'inventory'] },
-      { href: '/product-matches', label: '상품 매칭', icon: '🔗', roles: ['ceo', 'admin', 'sales', 'inventory'] },
-    ],
-  },
-  {
-    group: '결재·업무',
-    items: [
-      { href: '/approval', label: '결재', icon: '✍️', badge: true },
-      { href: '/reports', label: '보고서', icon: '📋' },
-      { href: '/worklog', label: '업무일지', icon: '📝' },
-      { href: '/calendar', label: '행사 및 일정', icon: '📅' },
-    ],
-  },
-  {
-    group: '인사·조직',
-    items: [
-      { href: '/hr', label: '인사 관리', icon: '👥', roles: ['ceo', 'admin'] },
-      { href: '/attendance', label: '출·퇴근', icon: '⏰' },
-    ],
-  },
-  {
-    group: '관리',
-    items: [
-      { href: '/cards', label: '카드·매입', icon: '💳', roles: ['ceo', 'admin', 'manager', 'sales', 'inventory'] },
-      { href: '/partners', label: '거래처 관리', icon: '🤝' },
-      { href: '/accounts', label: '계정 관리', icon: '🔑' },
-    ],
-  },
-];
 
 interface SidebarProps {
   mobileOpen: boolean;
@@ -75,6 +23,8 @@ export default function Sidebar({ mobileOpen, onClose }: SidebarProps) {
   const isCeo = user?.role === 'ceo';
   const isAdmin = user?.role === 'admin';
   const [pendingCount, setPendingCount] = useState(0);
+  const [perms, setPerms] = useState<PermMap>(EMPTY_PERMS); // 역할·메뉴 접근 권한 (기본은 하드코딩 유지)
+  useEffect(() => { loadMenuPerms().then(setPerms).catch(() => {}); }, []);
 
   useEffect(() => {
     if (!isCeo && !isAdmin) return;
@@ -143,11 +93,12 @@ export default function Sidebar({ mobileOpen, onClose }: SidebarProps) {
 
         {/* 메뉴 */}
         <nav className="flex-1 overflow-y-auto py-4 px-3">
-          {menuItems.map((group) => {
-            const allowPaths = user?.role ? ROLE_ALLOWED_PATHS[user.role] : undefined;
-            const visibleItems = group.items.filter(
-              (item) => (!item.roles || item.roles.includes(user?.role || ''))
-                && (!allowPaths || allowPaths.includes(item.href))
+          {MENU_GROUPS.map((group) => {
+            const role = user?.role || '';
+            const allowPaths = role ? ROLE_ALLOWED_PATHS[role] : undefined;
+            const visibleItems = group.items.filter((item) =>
+              // partner 등 경로제한 역할은 허용목록만, 그 외는 역할·메뉴 접근권한으로 판정
+              allowPaths ? allowPaths.includes(item.href) : isMenuAllowed(role, item.href, perms)
             );
             if (visibleItems.length === 0) return null;
             return (
