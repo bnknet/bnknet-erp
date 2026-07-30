@@ -1,10 +1,13 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { supabaseFetch } from '@/lib/supabase';
+import { supabaseFetch, supabaseUpload, safeStorageKey } from '@/lib/supabase';
 import { getUser } from '@/lib/auth';
 import RichEditor from '@/components/RichEditor';
 import * as XLSX from 'xlsx';
+
+type Attach = { name: string; url: string };
+type AttachMap = { in_progress: Attach[]; planned: Attach[]; notes: Attach[] };
 
 interface Worklog {
   id: string;
@@ -14,10 +17,14 @@ interface Worklog {
   in_progress: string;
   planned: string;
   notes: string;
+  attachments?: Partial<AttachMap> | null;
   created_at: string;
 }
 
 const COMPANIES = ['전체', 'BNKNET', '더블아이', 'SJ글로벌', 'IX글로벌'];
+const FIELD_KEYS: (keyof AttachMap)[] = ['in_progress', 'planned', 'notes'];
+
+const emptyAttach = (): AttachMap => ({ in_progress: [], planned: [], notes: [] });
 
 const EMPTY_FORM = {
   work_date: new Date().toISOString().slice(0, 10),
@@ -26,6 +33,7 @@ const EMPTY_FORM = {
   in_progress: '',
   planned: '',
   notes: '',
+  attachments: emptyAttach(),
 };
 
 type View = 'list' | 'detail' | 'form';
@@ -46,9 +54,28 @@ export default function WorklogContent() {
   const firstOfMonth = today.slice(0, 7) + '-01';
   const [dateFrom, setDateFrom] = useState(firstOfMonth);
   const [dateTo, setDateTo] = useState(today);
-  const [form, setForm] = useState({ ...EMPTY_FORM, author_name: me?.name || '' });
+  const [form, setForm] = useState({ ...EMPTY_FORM, attachments: emptyAttach(), author_name: me?.name || '' });
   const [editId, setEditId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState<string | null>(null); // 업로드 중인 항목 key
+  const [selectedAuthors, setSelectedAuthors] = useState<Set<string>>(new Set()); // 담당자 필터(체크)
+
+  async function handleFiles(field: keyof AttachMap, files: FileList | null) {
+    if (!files || !files.length) return;
+    setUploading(field);
+    try {
+      const added: Attach[] = [];
+      for (const file of Array.from(files)) {
+        const url = await supabaseUpload('approvals', 'worklog/' + safeStorageKey(file.name), file);
+        added.push({ name: file.name, url });
+      }
+      setForm((f) => ({ ...f, attachments: { ...f.attachments, [field]: [...(f.attachments[field] || []), ...added] } }));
+    } catch (e) { alert('파일 업로드 실패: ' + (e instanceof Error ? e.message : '')); }
+    finally { setUploading(null); }
+  }
+  function removeAttach(field: keyof AttachMap, idx: number) {
+    setForm((f) => ({ ...f, attachments: { ...f.attachments, [field]: (f.attachments[field] || []).filter((_, i) => i !== idx) } }));
+  }
 
   useEffect(() => { loadLogs(); }, [filterCompany, dateFrom, dateTo]);
 
@@ -90,7 +117,7 @@ export default function WorklogContent() {
       }
       setView('list');
       setEditId(null);
-      setForm({ ...EMPTY_FORM, author_name: me?.name || '' });
+      setForm({ ...EMPTY_FORM, attachments: emptyAttach(), author_name: me?.name || '' });
       await loadLogs();
     } finally { setSaving(false); }
   }
@@ -117,10 +144,11 @@ export default function WorklogContent() {
         in_progress: log.in_progress || '',
         planned: log.planned || '',
         notes: log.notes || '',
+        attachments: { ...emptyAttach(), ...(log.attachments || {}) },
       });
       setEditId(log.id);
     } else {
-      setForm({ ...EMPTY_FORM, author_name: me?.name || '' });
+      setForm({ ...EMPTY_FORM, attachments: emptyAttach(), author_name: me?.name || '' });
       setEditId(null);
     }
     setView('form');
@@ -142,8 +170,13 @@ export default function WorklogContent() {
     XLSX.writeFile(wb, `업무일지_${dateFrom}_${dateTo}.xlsx`);
   }
 
+  // 담당자 목록(현재 기간 내) + 체크 필터 적용
+  const authors = Array.from(new Set(logs.map((l) => l.author_name).filter(Boolean))).sort();
+  const shownLogs = selectedAuthors.size ? logs.filter((l) => selectedAuthors.has(l.author_name)) : logs;
+  const toggleAuthor = (name: string) => setSelectedAuthors((prev) => { const n = new Set(prev); n.has(name) ? n.delete(name) : n.add(name); return n; });
+
   // 날짜별 그룹
-  const grouped = logs.reduce<Record<string, Worklog[]>>((acc, log) => {
+  const grouped = shownLogs.reduce<Record<string, Worklog[]>>((acc, log) => {
     (acc[log.work_date] = acc[log.work_date] || []).push(log);
     return acc;
   }, {});
@@ -195,6 +228,19 @@ export default function WorklogContent() {
           </button>
         </div>
       </div>
+
+      {/* 담당자 필터 (체크한 사람만 보기) */}
+      {authors.length > 0 && (
+        <div className="flex items-center gap-2 flex-wrap bg-white border border-gray-100 rounded-xl px-3 py-2">
+          <span className="text-sm text-gray-400">담당자</span>
+          <button onClick={() => setSelectedAuthors(new Set())}
+            className={`px-2.5 py-1 rounded-lg text-sm font-medium ${selectedAuthors.size === 0 ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>전체</button>
+          {authors.map((name) => (
+            <button key={name} onClick={() => toggleAuthor(name)}
+              className={`px-2.5 py-1 rounded-lg text-sm font-medium ${selectedAuthors.has(name) ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>{name}</button>
+          ))}
+        </div>
+      )}
 
       {/* 목록 */}
       {loading ? (
@@ -274,18 +320,29 @@ export default function WorklogContent() {
         </div>
 
         <div className="space-y-5">
-          {[
-            { label: '진행업무', value: selected.in_progress, color: 'blue' },
-            { label: '예정업무', value: selected.planned, color: 'orange' },
-            { label: '특이사항', value: selected.notes, color: 'purple' },
-          ].map(({ label, value, color }) => (
+          {([
+            { key: 'in_progress', label: '진행업무', value: selected.in_progress, color: 'blue' },
+            { key: 'planned', label: '예정업무', value: selected.planned, color: 'orange' },
+            { key: 'notes', label: '특이사항', value: selected.notes, color: 'purple' },
+          ] as const).map(({ key, label, value, color }) => {
+            const atts = selected.attachments?.[key] || [];
+            return (
             <div key={label}>
               <div className={`text-sm font-semibold mb-2 text-${color}-500`}>{label}</div>
               <div className="bg-gray-50 rounded-xl px-4 py-3 text-base text-gray-700 min-h-[60px]" style={{ whiteSpace: 'pre-wrap' }}>
                 {value ? <span dangerouslySetInnerHTML={{ __html: value }} /> : <span className="text-gray-300">내용 없음</span>}
               </div>
+              {atts.length > 0 && (
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {atts.map((a, i) => (
+                    <a key={i} href={a.url} target="_blank" rel="noreferrer"
+                      className="inline-flex items-center gap-1 text-sm bg-blue-50 text-blue-700 rounded-lg px-2.5 py-1 hover:bg-blue-100">📎 {a.name}</a>
+                  ))}
+                </div>
+              )}
             </div>
-          ))}
+            );
+          })}
         </div>
       </div>
     </div>
@@ -327,6 +384,19 @@ export default function WorklogContent() {
             <div key={key}>
               <label className={`block text-base font-medium text-${color}-500 mb-1.5`}>{label} <span className="text-xs text-gray-400 font-normal">(굵게·기울임·색상·글자크기 지원)</span></label>
               <RichEditor key={editId || 'new'} value={(form as any)[key] || ''} onChange={(html) => setForm({ ...form, [key]: html })} minHeight="160px" />
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <label className="inline-flex items-center gap-1 text-sm text-gray-600 hover:text-blue-600 cursor-pointer border border-gray-200 rounded-lg px-2.5 py-1">
+                  📎 파일 첨부
+                  <input type="file" multiple className="hidden" onChange={(e) => { handleFiles(key as keyof AttachMap, e.target.files); e.currentTarget.value = ''; }} />
+                </label>
+                {uploading === key && <span className="text-xs text-gray-400">업로드 중…</span>}
+                {(form.attachments[key as keyof AttachMap] || []).map((a, i) => (
+                  <span key={i} className="inline-flex items-center gap-1 text-sm bg-gray-100 rounded-lg px-2 py-1">
+                    <a href={a.url} target="_blank" rel="noreferrer" className="text-gray-700 hover:text-blue-600 truncate max-w-[180px]">{a.name}</a>
+                    <button type="button" onClick={() => removeAttach(key as keyof AttachMap, i)} className="text-gray-400 hover:text-red-500">×</button>
+                  </span>
+                ))}
+              </div>
             </div>
           ))}
         </div>
