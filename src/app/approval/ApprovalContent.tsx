@@ -317,9 +317,15 @@ export default function ApprovalContent() {
     try {
       // 전체 로드 후 화면에서 필터링 (상태 필터 + 내 결재 대기 필터)
       let query = '/approvals?order=created_at.desc';
-      // 대표·실장은 전체, 일반 직원은 본인이 작성한 문서만
+      // 대표·실장은 전체, 일반 직원은 본인이 작성한 문서만.
+      // 단, 재무 확인 등을 위해 특정 직원은 지정한 다른 직원의 결재도 볼 수 있게 함.
+      //   예) 강웅구(재무)는 박정진의 결재도 열람.
+      const VIEW_EXTRA_SUBMITTERS: Record<string, string[]> = {
+        '강웅구': ['박정진'],
+      };
       if (!isCeo && !isAdmin && me?.name) {
-        query += `&submitter_name=eq.${encodeURIComponent(me.name)}`;
+        const names = [me.name, ...(VIEW_EXTRA_SUBMITTERS[me.name] || [])];
+        query += `&submitter_name=in.(${names.map(n => encodeURIComponent(`"${n}"`)).join(',')})`;
       }
       const data = await supabaseFetchAll<Approval>(query);
       setApprovals(data);
