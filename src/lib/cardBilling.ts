@@ -134,6 +134,9 @@ export function toISO(d: Date): string {
 }
 
 export function formatBillingCycle(card: Card): string {
-  const close = card.close_day >= 31 ? '말일' : `${card.close_day}일`;
-  return `매월 ${close} 마감 · ${card.billing_day}일 결제`;
+  if (card.close_day >= 31) {
+    return `매월 1일~말일 사용 · 말일 마감 · ${card.billing_day}일 결제`;
+  }
+  // 마감일이 당월 close_day면, 사용 기간은 전월 (close_day+1)일 ~ 당월 close_day일
+  return `매월 ${card.close_day + 1}일~익월 ${card.close_day}일 사용 · ${card.close_day}일 마감 · ${card.billing_day}일 결제`;
 }

@@ -772,7 +772,7 @@ export default function CardsContent() {
           </div>
           <p className="text-sm text-gray-400">
             {formatBillingCycle({ ...form, id: '', is_active: true } as Card)}
-            <span className="block text-xs text-gray-300 mt-0.5">전월 1일~말일 사용분을 결제하는 카드면 ‘사용 마감일’을 31(말일)로 하세요.</span>
+            <span className="block text-xs text-gray-300 mt-0.5">‘사용 마감일’만 넣으면 시작일은 자동입니다. 예: 전월 13일~당월 12일 → 12 입력. 전월 1일~말일 → 31(말일).</span>
           </p>
           <div>
             <label className="block text-sm font-medium text-gray-500 mb-1">주요 혜택 / 제휴 메모</label>
