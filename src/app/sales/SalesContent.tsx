@@ -117,6 +117,7 @@ export default function SalesContent() {
   const [bomRows, setBomRows] = useState<{ set_name: string; component_name: string; component_qty: number }[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [loadedFull, setLoadedFull] = useState(false); // 전체(전 기간) 로드 여부. 기본은 최근 3개월만 로드해 빠르게.
 
   const [period, setPeriod] = useState<Period>('day');
   const [companyFilter, setCompanyFilter] = useState('전체');
@@ -141,15 +142,25 @@ export default function SalesContent() {
   const [costEdits, setCostEdits] = useState<Record<string, string>>({});
   const [savingCost, setSavingCost] = useState<string | null>(null);
 
-  async function loadAll() {
+  async function loadAll(full = false) {
     setLoading(true); setLoadError(null);
     try {
       await loadDbMatches(true); // 담당자 등록 매칭을 집계 전에 반영
+      // 기본은 최근 3개월 주문만 로드(빠름). '전체 불러오기' 시 전 기간.
+      const cutoff = (() => {
+        const d = new Date(Date.now() + 9 * 3600 * 1000); // KST
+        d.setMonth(d.getMonth() - 3);
+        return d.toISOString().slice(0, 10);
+      })();
+      const orderQuery = '/orders?select=upload_date,mall_name,product_name,collect_product,collect_option,quantity,amount,canceled,company,order_number,delivery_fee,source,manual_cost,manual_shipping,shipping_method,courier_count'
+        + (full ? '' : `&upload_date=gte.${cutoff}`)
+        + '&order=upload_date.asc';
       const [ord, inv, fee] = await Promise.all([
-        supabaseFetchAll<OrderRow>('/orders?select=upload_date,mall_name,product_name,collect_product,collect_option,quantity,amount,canceled,company,order_number,delivery_fee,source,manual_cost,manual_shipping,shipping_method,courier_count&order=upload_date.asc'),
+        supabaseFetchAll<OrderRow>(orderQuery),
         supabaseFetchAll<InvRow>('/inventory?select=product_name,company,brand,cost_price'),
         supabaseFetchAll<MallFee>('/mall_fees?select=company,mall,rate'),
       ]);
+      setLoadedFull(full);
       setOrders(ord);
       setInventory(inv);
       setFees(fee);
@@ -450,16 +461,28 @@ export default function SalesContent() {
         )}
 
         <span className="text-sm text-gray-400">{ranges.label} · {ranges.curStart}{ranges.curStart !== ranges.curEnd ? ` ~ ${ranges.curEnd}` : ''}</span>
-        <button onClick={loadAll} disabled={loading}
-          className="ml-auto px-3 py-2 rounded-lg border border-gray-200 text-base text-gray-600 hover:bg-gray-50 disabled:opacity-50">
-          {loading ? '불러오는 중…' : '새로고침'}
-        </button>
+        <div className="ml-auto flex items-center gap-2">
+          {!loadedFull && (
+            <button onClick={() => loadAll(true)} disabled={loading}
+              className="px-3 py-2 rounded-lg border border-blue-200 text-base text-blue-600 hover:bg-blue-50 disabled:opacity-50 whitespace-nowrap">전체 기간 불러오기</button>
+          )}
+          <button onClick={() => loadAll(loadedFull)} disabled={loading}
+            className="px-3 py-2 rounded-lg border border-gray-200 text-base text-gray-600 hover:bg-gray-50 disabled:opacity-50">
+            {loading ? '불러오는 중…' : '새로고침'}
+          </button>
+        </div>
       </div>
+
+      {!loadedFull && !loading && (
+        <div className="bg-blue-50/60 border border-blue-100 rounded-xl px-4 py-2.5 text-sm text-blue-700">
+          ⚡ 빠른 조회를 위해 <b>최근 3개월</b> 주문만 불러왔습니다. 그 이전 기간·누적을 보려면 <b>‘전체 기간 불러오기’</b>를 눌러주세요.
+        </div>
+      )}
 
       {loadError && (
         <div className="bg-red-50 border border-red-200 rounded-xl px-5 py-4 text-base text-red-600">
           ⚠️ 데이터를 불러오지 못했습니다 — 숫자가 실제보다 적게 나올 수 있습니다. ({loadError})
-          <button onClick={loadAll} className="ml-3 underline">다시 시도</button>
+          <button onClick={() => loadAll(loadedFull)} className="ml-3 underline">다시 시도</button>
         </div>
       )}
 
