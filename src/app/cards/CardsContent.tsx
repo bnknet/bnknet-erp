@@ -78,6 +78,7 @@ export default function CardsContent() {
 
   const [tab, setTab] = useState<Tab>('calendar');
   const [cards, setCards] = useState<Card[]>([]);
+  const [empNames, setEmpNames] = useState<string[]>([]); // 인사관리 재직 인원 이름
   const [purchases, setPurchases] = useState<CardPurchase[]>([]);
   const [logs, setLogs] = useState<CardLog[]>([]);
   const [loading, setLoading] = useState(true);
@@ -132,6 +133,14 @@ export default function CardsContent() {
     setPrepaidItems(pData);
   }, []);
 
+  const loadEmployees = useCallback(async () => {
+    try {
+      const res = await supabaseFetch('/employees?select=name,status&status=eq.active&order=created_at.asc');
+      const data = await res.json();
+      setEmpNames(Array.isArray(data) ? data.map((e: { name?: string }) => e.name || '').filter(Boolean) : []);
+    } catch { setEmpNames([]); }
+  }, []);
+
   const loadLogs = useCallback(async () => {
     const res = await supabaseFetch('/card_logs?order=created_at.desc&limit=200');
     const data = await res.json();
@@ -151,10 +160,10 @@ export default function CardsContent() {
   useEffect(() => {
     (async () => {
       setLoading(true);
-      await Promise.all([loadCards(), loadPurchases(), loadLogs()]);
+      await Promise.all([loadCards(), loadPurchases(), loadLogs(), loadEmployees()]);
       setLoading(false);
     })();
-  }, [loadCards, loadPurchases, loadLogs]);
+  }, [loadCards, loadPurchases, loadLogs, loadEmployees]);
 
   // ── 카드 저장 ──
   async function saveCard() {
@@ -299,8 +308,15 @@ export default function CardsContent() {
   }
 
   const cardTypeOf = (id: string) => cards.find(c => c.id === id)?.card_type || '';
-  // 사업자(카드종류)별로 사용되는 종류 목록 (CARD_TYPES 지정 순서대로)
-  const usedTypes = CARD_TYPES.filter(t => cards.some(c => c.card_type === t));
+  // 카드 종류 선택지: 법인·개인사업자 + 인사관리 재직 인원(이름카드) + 기존 등록된 종류. test 제외.
+  const cardTypes = Array.from(new Set([
+    '법인카드', '개인사업자카드',
+    ...empNames.map(n => `${n}카드`),
+    ...CARD_TYPES,
+    ...cards.map(c => c.card_type),
+  ])).filter(t => t && !/test|테스트/i.test(t));
+  // 사업자(카드종류)별로 사용되는 종류 목록 (선택지 순서대로)
+  const usedTypes = cardTypes.filter(t => cards.some(c => c.card_type === t));
   const filteredEvents = typeFilter === 'all' ? events : events.filter(e => cardTypeOf(e.cardId) === typeFilter);
   // 기간 조회 결과
   const rangeEvents = (rangeFrom && rangeTo)
@@ -718,7 +734,7 @@ export default function CardsContent() {
               <label className="block text-sm font-medium text-gray-500 mb-1">종류</label>
               <select value={form.card_type} onChange={e => setForm({ ...form, card_type: e.target.value })}
                 className="w-full px-3 py-2 border border-gray-200 rounded-lg text-base focus:outline-none">
-                {CARD_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                {cardTypes.map(t => <option key={t} value={t}>{t}</option>)}
               </select>
             </div>
             <div>
