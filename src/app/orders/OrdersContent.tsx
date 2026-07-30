@@ -246,7 +246,7 @@ export default function OrdersContent() {
   const [sProduct, setSProduct] = useState('');
   const [sMall, setSMall] = useState('');
   const [sCompany, setSCompany] = useState('전체'); // 조회·취소 탭 사업자 필터
-  const [sWholesaleOnly, setSWholesaleOnly] = useState(false); // 도매만 보기
+  const [sWsMode, setSWsMode] = useState<'all' | 'only' | 'exclude'>('all'); // 도매 필터: 전체/도매만/도매 제외
   const [openVendor, setOpenVendor] = useState<string | null>(null); // 도매처별 상세 펼침
   const [wsSort, setWsSort] = useState<{ key: 'cnt' | 'qty' | 'rev' | 'profit' | 'margin'; dir: 'asc' | 'desc' }>({ key: 'rev', dir: 'desc' }); // 도매처별 정렬(기본 매출 내림차순)
   const [msSort, setMsSort] = useState<{ key: 'qty' | 'rev' | 'profit' | 'margin'; dir: 'asc' | 'desc' }>({ key: 'rev', dir: 'desc' }); // 상품별 정렬(기본 매출 내림차순)
@@ -265,11 +265,11 @@ export default function OrdersContent() {
   const [editLogs, setEditLogs] = useState<{ id: string; action: string; detail?: string; changed_by?: string; created_at: string }[]>([]);
   const [editSaving, setEditSaving] = useState(false);
 
-  async function searchOrders(opts?: { from?: string; to?: string; company?: string; wholesaleOnly?: boolean }) {
+  async function searchOrders(opts?: { from?: string; to?: string; company?: string; wsMode?: 'all' | 'only' | 'exclude' }) {
     const from = opts?.from !== undefined ? opts.from : sFrom;
     const to = opts?.to !== undefined ? opts.to : sTo;
     const comp = opts?.company !== undefined ? opts.company : sCompany;
-    const wholesale = opts?.wholesaleOnly !== undefined ? opts.wholesaleOnly : sWholesaleOnly;
+    const wsMode = opts?.wsMode !== undefined ? opts.wsMode : sWsMode;
     setOrderLoading(true);
     setOrderChecked(new Set());
     setOrderRowLimit(300);
@@ -279,11 +279,12 @@ export default function OrdersContent() {
       if (sProduct.trim()) q += `&product_name=ilike.*${encodeURIComponent(sProduct.trim())}*`;
       if (sMall.trim()) q += `&mall_name=ilike.*${encodeURIComponent(sMall.trim())}*`;
       if (comp !== '전체') q += `&company=eq.${encodeURIComponent(comp)}`;
-      if (wholesale) q += `&source=eq.${encodeURIComponent('도매')}`;
+      if (wsMode === 'only') q += `&source=eq.${encodeURIComponent('도매')}`;
+      else if (wsMode === 'exclude') q += `&or=(source.neq.${encodeURIComponent('도매')},source.is.null)`; // 도매 제외(도매 아닌·미지정 전부)
       if (from) q += `&upload_date=gte.${from}`;
       if (to) q += `&upload_date=lte.${to}`;
       // 조건(날짜/검색어)이 있으면 해당 범위 "전부" 조회(1000건 초과도 페이지네이션). 조건 없으면 최근 1000건만.
-      const hasFilter = !!(from || to || sOrderNo.trim() || sProduct.trim() || sMall.trim() || comp !== '전체' || wholesale);
+      const hasFilter = !!(from || to || sOrderNo.trim() || sProduct.trim() || sMall.trim() || comp !== '전체' || wsMode !== 'all');
       let data: OrderRow[];
       if (hasFilter) {
         data = await supabaseFetchAll<OrderRow>(q);
@@ -1449,12 +1450,14 @@ export default function OrdersContent() {
                 placeholder="상품명" className="px-3 py-2 border border-gray-200 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-blue-400 flex-1 min-w-[120px]" />
               <input value={sMall} onChange={e => setSMall(e.target.value)} onKeyDown={e => e.key === 'Enter' && searchOrders()}
                 placeholder="몰명" className="px-3 py-2 border border-gray-200 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-blue-400 w-28" />
-              <label className="flex items-center gap-1.5 px-3 py-2 border border-gray-200 rounded-lg text-base text-gray-600 cursor-pointer hover:bg-gray-50 select-none">
-                <input type="checkbox" checked={sWholesaleOnly} onChange={e => { const v = e.target.checked; setSWholesaleOnly(v); searchOrders({ wholesaleOnly: v }); }} className="w-4 h-4 accent-blue-600" />
-                도매만
-              </label>
+              <div className="flex items-center gap-0.5 border border-gray-200 rounded-lg p-0.5">
+                {([['all', '전체'], ['only', '도매만'], ['exclude', '도매 제외']] as const).map(([v, label]) => (
+                  <button key={v} type="button" onClick={() => { setSWsMode(v); searchOrders({ wsMode: v }); }}
+                    className={`px-3 py-1.5 rounded-md text-base font-medium transition-colors ${sWsMode === v ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-50'}`}>{label}</button>
+                ))}
+              </div>
               <button onClick={() => searchOrders()} className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-base font-medium">검색</button>
-              <button onClick={() => { setSFrom(''); setSTo(''); setSOrderNo(''); setSProduct(''); setSMall(''); setSCompany('전체'); setSWholesaleOnly(false); }}
+              <button onClick={() => { setSFrom(''); setSTo(''); setSOrderNo(''); setSProduct(''); setSMall(''); setSCompany('전체'); setSWsMode('all'); }}
                 className="px-3 py-2 border border-gray-200 rounded-lg text-sm text-gray-500 hover:bg-gray-50">초기화</button>
             </div>
             <p className="text-xs text-gray-400 mt-2">📅 탭 열면 <b>오늘 주문 자동 조회</b> · 업로드일(주문 변환일) 기준 · 날짜·검색어를 걸면 <b>해당 범위 전부</b> 조회(건수 제한 없음). (조회 {orderList.length.toLocaleString()}건)</p>
