@@ -1212,8 +1212,8 @@ export default function ApprovalContent() {
 
     const myTurn = isMyTurn(selected);
     const isSubmitter = selected.submitter_name === me?.name;
-    // 상신자 본인: 반려/결재중 문서를 수정해 재상신, 결재중 문서는 상신 취소 가능
-    const canResubmit = isSubmitter && (selected.status === 'rejected' || selected.status === 'pending');
+    // 상신자 본인: 임시저장/반려/결재중 문서를 수정. (임시저장은 재상신 아님, 그냥 수정)
+    const canResubmit = isSubmitter && (selected.status === 'draft' || selected.status === 'rejected' || selected.status === 'pending');
     const canCancelSubmission = isSubmitter && selected.status === 'pending';
     // 실장이 이미 승인했고 대표 결재 전이면 승인 철회 가능
     const canRetract = isAdmin && selected.status === 'pending' && selected.approver1_status === 'approved';
@@ -1566,7 +1566,7 @@ export default function ApprovalContent() {
             {canResubmit && (
               <button onClick={() => openResubmit(selected)}
                 className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-base font-medium">
-                {selected.status === 'pending' ? '수정 (재상신)' : '수정 후 재상신'}
+                {selected.status === 'draft' ? '수정' : selected.status === 'pending' ? '수정 (재상신)' : '수정 후 재상신'}
               </button>
             )}
             {canCancelSubmission && (
