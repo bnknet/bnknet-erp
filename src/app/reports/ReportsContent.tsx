@@ -79,7 +79,7 @@ export default function ReportsContent() {
     try {
       const [rRes, eRes] = await Promise.all([
         supabaseFetch('/reports?order=report_date.desc,created_at.desc'),
-        supabaseFetch('/calendar_events?select=id,title,start_date&order=start_date.desc&limit=100'),
+        supabaseFetch('/calendar_events?event_type=eq.외근&select=id,title,start_date&order=start_date.desc&limit=100'),
       ]);
       const r = await rRes.json();
       const e = await eRes.json();
