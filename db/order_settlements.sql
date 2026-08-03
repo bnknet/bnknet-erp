@@ -6,7 +6,7 @@
 create table if not exists public.order_settlements (
   order_number text primary key,   -- = orders.order_number (사방넷 주문번호)
   amount       integer not null default 0,  -- 실판매금액 합 (판매금액 — admin 기준, 쿠폰 반영된 정확값)
-  fee          integer not null default 0,  -- 실수수료 합 (서비스이용료)
+  fee          integer not null default 0,  -- 마켓 실공제 총액 = 판매금액 − 정산예정금액 (서비스이용료+판매촉진비·적립금 등)
   cost         integer not null default 0,  -- 실원가 합 (원가X수량)
   company      text,                         -- 사업자(참고)
   updated_at   timestamptz not null default now()
