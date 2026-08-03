@@ -120,7 +120,7 @@ export default function OrdersContent() {
 
   // 직접 주문 등록
   const canRegister = me?.role === 'ceo' || me?.role === 'admin' || me?.role === 'inventory';
-  const [mType, setMType] = useState<'normal' | 'wholesale'>('normal');
+  const [mType, setMType] = useState<'normal' | 'wholesale' | 'rocket'>('normal');
   const [mCompany, setMCompany] = useState('');
   const [mDate, setMDate] = useState(todayStr());
   const [mMall, setMMall] = useState('');
@@ -128,6 +128,13 @@ export default function OrdersContent() {
   const [mShipMethod, setMShipMethod] = useState<'택배' | '직접수령' | '화물'>('택배'); // 출고방식
   const [mCourierCount, setMCourierCount] = useState<number>(1); // 택배 출고 건수
   const [mLines, setMLines] = useState<ManualLine[]>([{ key: 1, invId: '', productName: '', qty: 1, amount: 0, cost: 0, shipping: 0 }]);
+  // 쿠팡 로켓그로스 입력값 (부가세 포함) — 재고 차감 없음(쿠팡 풀필먼트)
+  const [rRevenue, setRRevenue] = useState(0);      // 매출
+  const [rFulfillment, setRFulfillment] = useState(0); // 풀필먼트비용
+  const [rFee, setRFee] = useState(0);              // 판매수수료
+  const [rAd, setRAd] = useState(0);                // 광고비
+  const [rCoupon, setRCoupon] = useState(0);        // 판매자 할인쿠폰비용
+  const [rCost, setRCost] = useState(0);            // 총 원가
   const [inv, setInv] = useState<InvItem[]>([]);
   const [invLoaded, setInvLoaded] = useState(false);
   const [mStatus, setMStatus] = useState<Status>(null);
@@ -183,7 +190,42 @@ export default function OrdersContent() {
   const mWholesaleMargin = Math.round(mWhole.net / 1.1);
   const mWholesaleRate = mWhole.amt > 0 ? Math.round((mWhole.net / mWhole.amt) * 100) : null;
 
+  // 로켓그로스 마진(자동) = 매출 − 풀필먼트 − 판매수수료 − 광고비 − 쿠폰비용 − 총원가. 마진율 = 마진 ÷ 매출.
+  const rDeduct = rFulfillment + rFee + rAd + rCoupon; // 원가 외 부대비용 합
+  const rMargin = rRevenue - rDeduct - rCost;
+  const rRate = rRevenue > 0 ? Math.round((rMargin / rRevenue) * 1000) / 10 : null;
+
+  async function handleRocketSave() {
+    if (!canRegister) { alert('주문 등록 권한이 없습니다 (재고·주문담당/대표/실장).'); return; }
+    if (!mCompany) { alert('사업자를 선택하세요.'); return; }
+    if (!(rRevenue > 0)) { alert('매출을 입력하세요.'); return; }
+    setSaving(true); setMStatus({ type: 'info', msg: '⏳ 등록 중...' });
+    try {
+      const rand = Math.random().toString(36).slice(2, 6).toUpperCase();
+      const orderNo = `RG-${mDate.replace(/-/g, '')}-${rand}`;
+      const row = {
+        upload_date: mDate, company: mCompany, order_number: orderNo,
+        mall_name: '쿠팡 로켓그로스', product_name: '쿠팡 로켓그로스', collect_product: '쿠팡 로켓그로스',
+        quantity: 1, amount: rRevenue, source: '로켓그로스',
+        manual_cost: rCost,           // 총 원가
+        manual_shipping: rDeduct,     // 풀필먼트+판매수수료+광고비+쿠폰 합(원가 외 부대비용)
+        rocket_detail: { fulfillment: rFulfillment, fee: rFee, ad: rAd, coupon: rCoupon },
+      };
+      const res = await supabaseFetch('/orders', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify([row]) });
+      if (!res.ok) throw new Error('save');
+      await supabaseFetch('/order_uploads', {
+        method: 'POST', headers: { Prefer: 'return=minimal' },
+        body: JSON.stringify({ uploader: me?.name || '', file_name: `[로켓그로스] ${mDate} 매출 ${rRevenue.toLocaleString()}`, file_url: null, row_count: 1, saved_count: 1, ref_order_number: orderNo }),
+      });
+      setMStatus({ type: 'success', msg: `✅ 로켓그로스 매출 등록 완료 · 매출 ${rRevenue.toLocaleString()}원 · 마진 ${rMargin.toLocaleString()}원 (주문번호 ${orderNo})` });
+      setRRevenue(0); setRFulfillment(0); setRFee(0); setRAd(0); setRCoupon(0); setRCost(0);
+    } catch {
+      setMStatus({ type: 'error', msg: '❌ 등록 중 오류가 발생했습니다. (설정 db/order_rocket_detail.sql 적용 여부 확인)' });
+    } finally { setSaving(false); }
+  }
+
   async function handleManualSave() {
+    if (mType === 'rocket') { return handleRocketSave(); }
     if (!canRegister) { alert('주문 등록 권한이 없습니다 (재고·주문담당/대표/실장).'); return; }
     if (!mCompany) { alert('사업자를 선택하세요.'); return; }
     const mall = mType === 'wholesale' ? (mMall || '도매') : mMall;
@@ -1813,7 +1855,7 @@ export default function OrdersContent() {
 
             {/* 유형 */}
             <div className="flex gap-2">
-              {([{ v: 'normal', l: '일반(몰) 주문' }, { v: 'wholesale', l: '도매·직거래' }] as const).map((t) => (
+              {([{ v: 'normal', l: '일반(몰) 주문' }, { v: 'wholesale', l: '도매·직거래' }, { v: 'rocket', l: '쿠팡 로켓그로스' }] as const).map((t) => (
                 <button key={t.v} onClick={() => { setMType(t.v); setMMall(''); }}
                   className={`px-4 py-2 rounded-lg text-base font-medium border ${mType === t.v ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600 border-gray-200'}`}>{t.l}</button>
               ))}
@@ -1832,6 +1874,7 @@ export default function OrdersContent() {
                 <label className="block text-sm text-gray-500 mb-1">날짜 *</label>
                 <input type="date" value={mDate} onChange={(e) => setMDate(e.target.value)} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-base" />
               </div>
+              {mType !== 'rocket' && (
               <div>
                 <label className="block text-sm text-gray-500 mb-1">{mType === 'wholesale' ? '채널' : '판매몰'} *</label>
                 {mType === 'wholesale' ? (
@@ -1844,10 +1887,14 @@ export default function OrdersContent() {
                   </select>
                 )}
               </div>
+              )}
+              {mType !== 'rocket' && (
               <div>
                 <label className="block text-sm text-gray-500 mb-1">거래처/수취인 (선택)</label>
                 <input value={mPartner} onChange={(e) => setMPartner(e.target.value)} placeholder="예: ○○상사" className="w-full px-3 py-2 border border-gray-200 rounded-lg text-base" />
               </div>
+              )}
+              {mType !== 'rocket' && (
               <div>
                 <label className="block text-sm text-gray-500 mb-1">출고방식 *</label>
                 <select value={mShipMethod} onChange={(e) => setMShipMethod(e.target.value as '택배' | '직접수령' | '화물')}
@@ -1857,7 +1904,8 @@ export default function OrdersContent() {
                   <option value="화물">화물(용차)</option>
                 </select>
               </div>
-              {mShipMethod === '택배' && (
+              )}
+              {mType !== 'rocket' && mShipMethod === '택배' && (
                 <div>
                   <label className="block text-sm text-gray-500 mb-1">택배 출고 건수</label>
                   <input type="number" min={1} value={mCourierCount || ''} onChange={(e) => setMCourierCount(Number(e.target.value) || 0)}
@@ -1867,6 +1915,34 @@ export default function OrdersContent() {
               )}
             </div>
 
+            {/* 쿠팡 로켓그로스 입력 (부가세 포함 금액 · 재고 차감 없음) */}
+            {mType === 'rocket' && (
+              <div className="space-y-3">
+                <div className="grid sm:grid-cols-2 gap-3">
+                  {([
+                    { k: 'rev', l: '매출', v: rRevenue, set: setRRevenue },
+                    { k: 'ful', l: '풀필먼트비용', v: rFulfillment, set: setRFulfillment },
+                    { k: 'fee', l: '판매수수료', v: rFee, set: setRFee },
+                    { k: 'ad', l: '광고비', v: rAd, set: setRAd },
+                    { k: 'cp', l: '판매자 할인쿠폰비용', v: rCoupon, set: setRCoupon },
+                    { k: 'cost', l: '총 원가', v: rCost, set: setRCost },
+                  ] as const).map((f) => (
+                    <div key={f.k}>
+                      <label className="block text-sm text-gray-500 mb-1">{f.l}{f.k === 'rev' ? ' *' : ''}</label>
+                      <input type="number" value={f.v || ''} onChange={(e) => f.set(Number(e.target.value) || 0)}
+                        placeholder="0" className="w-full px-3 py-2 border border-gray-200 rounded-lg text-base text-right" />
+                    </div>
+                  ))}
+                </div>
+                <div className="bg-violet-50 border border-violet-200 rounded-xl px-4 py-3 text-base text-violet-700">
+                  마진(자동): <b className="text-red-600 text-lg">{rMargin.toLocaleString('ko-KR')}원</b>
+                  {rRate !== null && <span className="ml-2">· 마진율 <b className="text-red-600">{rRate}%</b></span>}
+                  <span className="block text-sm text-violet-500 mt-0.5">= 매출 − 풀필먼트 − 판매수수료 − 광고비 − 쿠폰비용 − 총원가. 마진율 = 마진 ÷ 매출. 부가세 포함 금액으로 입력하세요(매출현황엔 ÷1.1 반영).</span>
+                </div>
+              </div>
+            )}
+
+            {mType !== 'rocket' && (<>
             {!mCompany && <div className="text-sm text-gray-400">※ 사업자를 먼저 선택하면 해당 사업자 재고에서 상품을 고를 수 있습니다.</div>}
 
             {/* 품목 */}
@@ -1897,6 +1973,7 @@ export default function OrdersContent() {
               ))}
               <button onClick={addLine} className="px-3 py-1.5 text-blue-600 text-sm font-medium hover:bg-blue-50 rounded-lg">+ 품목 추가</button>
             </div>
+            </>)}
 
             {/* 도매 예상 공헌이익 미리보기 */}
             {mType === 'wholesale' && (
@@ -1911,7 +1988,7 @@ export default function OrdersContent() {
 
             <button onClick={handleManualSave} disabled={saving || !canRegister}
               className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-medium text-base shadow-sm disabled:opacity-50 disabled:cursor-not-allowed">
-              {saving ? '⏳ 등록 중...' : '💾 주문 등록 + 재고 차감'}
+              {saving ? '⏳ 등록 중...' : mType === 'rocket' ? '💾 로켓그로스 매출 등록' : '💾 주문 등록 + 재고 차감'}
             </button>
           </div>
 

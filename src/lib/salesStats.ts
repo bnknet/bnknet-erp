@@ -128,6 +128,20 @@ export function computeOrderLines(
       });
       continue;
     }
+    if (o.source === '로켓그로스') {
+      // 쿠팡 로켓그로스: 직접 입력분(부가세 포함). 재고 차감 없음.
+      // 매출 = 매출/1.1, 공헌이익(마진) = (매출 − 총원가 − 부대비용) / 1.1.
+      //   manual_cost = 총원가, manual_shipping = 풀필먼트+판매수수료+광고비+쿠폰 합.
+      const rcost = Number(o.manual_cost) || 0;
+      const rdeduct = Number(o.manual_shipping) || 0;
+      lines.push({
+        date, amt, rev: amt / VAT_DIV, qty, rep, mall, company, option,
+        profit: (amt - rcost - rdeduct) / VAT_DIV, profitKnown: true,
+        fee: 0, unim: 0, missCost: false, registered: true, feeFound: true,
+        invCompany: inv?.company, brand: inv?.brand || '', isPast: false,
+      });
+      continue;
+    }
 
     // 일반/수기/사방넷
     const setDef = bomMap.get(rep);
