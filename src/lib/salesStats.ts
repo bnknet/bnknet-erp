@@ -201,8 +201,11 @@ export function computeOrderLines(
       unimAssigned.add(key);
       unim = UNIT_SHIPPING;
     }
-    const rev = (effAmt + ship) / VAT_DIV;
-    const profit = known ? ((effAmt + ship - useFee) - useCost - unim) / VAT_DIV : 0;
+    // 실정산 보정 주문은 정산예정금액이 이미 자체 완결(고객배송비 포함/무배송)이므로 고객배송비를 더하지 않는다.
+    // → 공헌이익 = (판매금액 − (판매금액−정산예정) − 원가 − 실운임)/1.1 = (정산예정 − 원가 − 실운임)/1.1
+    const effShip = st ? 0 : ship;
+    const rev = (effAmt + effShip) / VAT_DIV;
+    const profit = known ? ((effAmt + effShip - useFee) - useCost - unim) / VAT_DIV : 0;
     lines.push({
       date, amt: effAmt, rev, qty, rep, mall, company, option,
       profit, profitKnown: known, fee: useFee, unim,

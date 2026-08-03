@@ -1189,8 +1189,9 @@ export default function ApprovalContent() {
 
   // 내가 이 문서의 결재라인에 포함되는가 (대기·완료 무관). 대표는 전 라인 최종결재자,
   // 실장은 BNKNET(실장 단계) + IX글로벌(대표 자격 결재)에 포함. 더블아이·SJ글로벌(담당→대표)은 미포함.
+  // 단 IX글로벌은 실장이 대표 자격으로 결재 → 대표는 결재라인에 없음(라인 외). 대신 '라인 외' 탭에서 전부 열람 가능.
   function inMyLine(approval: Approval): boolean {
-    if (isCeo) return true;
+    if (isCeo) return approval.company !== 'IX글로벌';
     if (isAdmin) return (APPROVAL_LINES[approval.company] || []).includes('실장') || approval.company === 'IX글로벌';
     return false;
   }
