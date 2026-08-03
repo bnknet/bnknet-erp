@@ -285,9 +285,12 @@ export default function InventoryContent() {
         ? qty
         : before + qty;
 
-      // 출고만 재고 부족을 막는다. 입고/조정은 결과가 음수여도 허용
+      // 출고 결과가 음수여도 허용한다(곧 입고 예정 등 마이너스 재고 운영).
+      // 단 실수(오타 출고) 방지로 결과 수량을 보여주고 1회 확인만 받는다.
       // (예: 현재고 -250개 상태에서 70개 입고 → -180개, 정상 처리돼야 함)
-      if (moveForm.type === '출고' && after < 0) { alert('재고가 부족합니다.'); setSaving(false); return; }
+      if (moveForm.type === '출고' && after < 0) {
+        if (!confirm(`출고 후 재고가 ${after}개(마이너스)가 됩니다.\n곧 입고 예정이면 그대로 출고할 수 있습니다.\n\n마이너스 재고로 출고하시겠습니까?`)) { setSaving(false); return; }
+      }
 
       // 재고 수량 변경 — 성공 여부 반드시 확인 (실패 시 로그도 남기지 않고 중단)
       const patchRes = await supabaseFetch(`/inventory?id=eq.${selected.id}`, {
