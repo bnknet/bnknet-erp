@@ -109,12 +109,14 @@ function periodRanges(period: Period, anchor: Date, earliest: string, realToday:
 export default function SalesContent() {
   const user = getUser();
   const canEditCost = CAN_EDIT_COST.includes(user?.role || '');
+  const canSettle = user?.role === 'ceo' || user?.role === 'admin'; // 오픈마켓 정산 반영 = 대표·실장
 
   const [orders, setOrders] = useState<OrderRow[]>([]);
   const [inventory, setInventory] = useState<InvRow[]>([]);
   const [fees, setFees] = useState<MallFee[]>([]);
   const [brandSales, setBrandSales] = useState<BrandSaleRow[]>([]);
   const [bomRows, setBomRows] = useState<{ set_name: string; component_name: string; component_qty: number }[]>([]);
+  const [settleMap, setSettleMap] = useState<Map<string, { fee: number; cost: number }>>(new Map());
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loadedFull, setLoadedFull] = useState(false); // 전체(전 기간) 로드 여부. 기본은 최근 3개월만 로드해 빠르게.
@@ -141,6 +143,64 @@ export default function SalesContent() {
   const [showCostPanel, setShowCostPanel] = useState(false);
   const [costEdits, setCostEdits] = useState<Record<string, string>>({});
   const [savingCost, setSavingCost] = useState<string | null>(null);
+
+  // 오픈마켓 정산 반영 모달
+  const [settleOpen, setSettleOpen] = useState(false);
+  const [settleBusy, setSettleBusy] = useState(false);
+  const [settleFileName, setSettleFileName] = useState('');
+  const [settleParsed, setSettleParsed] = useState<{ rows: { order_number: string; fee: number; cost: number; company: string }[]; totalLines: number; skippedNoOrder: number } | null>(null);
+  const [settlePreview, setSettlePreview] = useState<{ matched: number; unmatched: number } | null>(null);
+  const [settleMsg, setSettleMsg] = useState<{ type: 'info' | 'error' | 'success'; text: string } | null>(null);
+
+  async function handleSettleFile(file: File) {
+    if (!file.name.endsWith('.xlsx')) { setSettleMsg({ type: 'error', text: '.xlsx 파일만 업로드 가능합니다.' }); return; }
+    setSettleFileName(file.name);
+    setSettlePreview(null); setSettleMsg({ type: 'info', text: '파일 분석 중…' });
+    try {
+      const XLSX = await import('xlsx');
+      const { parseSettleWorkbook } = await import('@/lib/openmarketSettle');
+      const wb = XLSX.read(await file.arrayBuffer(), { type: 'array' });
+      const res = parseSettleWorkbook(XLSX, wb);
+      setSettleParsed({ rows: res.rows.map((r) => ({ order_number: r.order_number, fee: Math.round(r.fee), cost: Math.round(r.cost), company: r.company })), totalLines: res.totalLines, skippedNoOrder: res.skippedNoOrder });
+      // 매칭 미리보기 — 주문번호가 ERP에 실제 있는지 (200개씩 조회)
+      const nums = res.rows.map((r) => r.order_number);
+      const existing = new Set<string>();
+      for (let i = 0; i < nums.length; i += 200) {
+        const batch = nums.slice(i, i + 200);
+        const r = await supabaseFetch(`/orders?select=order_number&order_number=in.(${batch.map((n) => `"${n}"`).join(',')})`);
+        if (r.ok) { const rows: { order_number: string }[] = await r.json(); rows.forEach((x) => existing.add(String(x.order_number))); }
+      }
+      const matched = nums.filter((n) => existing.has(n)).length;
+      setSettlePreview({ matched, unmatched: nums.length - matched });
+      setSettleMsg({ type: 'success', text: `분석 완료 — 주문 ${nums.length}건(라인 ${res.totalLines})` + (res.skippedNoOrder ? ` · 사방넷번호 없어 제외 ${res.skippedNoOrder}` : '') });
+    } catch (e) {
+      setSettleParsed(null); setSettlePreview(null);
+      setSettleMsg({ type: 'error', text: '파일 분석 실패: ' + (e instanceof Error ? e.message : '알 수 없는 오류') });
+    }
+  }
+
+  async function applySettle() {
+    if (!settleParsed || !settleParsed.rows.length) return;
+    setSettleBusy(true); setSettleMsg({ type: 'info', text: '저장 중…' });
+    try {
+      const payload = settleParsed.rows.map((r) => ({ order_number: r.order_number, fee: r.fee, cost: r.cost, company: r.company, updated_at: new Date().toISOString() }));
+      for (let i = 0; i < payload.length; i += 500) {
+        const batch = payload.slice(i, i + 500);
+        const r = await supabaseFetch('/order_settlements?on_conflict=order_number', {
+          method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify(batch),
+        });
+        if (!r.ok) throw new Error('저장 실패 (' + r.status + ') ' + (await r.text()).slice(0, 200));
+      }
+      // 반영값 다시 로드
+      const st = await supabaseFetchAll<{ order_number: string; fee: number; cost: number }>('/order_settlements?select=order_number,fee,cost');
+      const m = new Map<string, { fee: number; cost: number }>();
+      for (const s of st) if (s.order_number) m.set(String(s.order_number), { fee: Number(s.fee) || 0, cost: Number(s.cost) || 0 });
+      setSettleMap(m);
+      setSettleMsg({ type: 'success', text: `✅ 반영 완료 — ${payload.length}건. 매출·공헌이익에 실정산이 적용됐습니다.` });
+    } catch (e) {
+      setSettleMsg({ type: 'error', text: '저장 실패: ' + (e instanceof Error ? e.message : '알 수 없는 오류') + ' — DB에 order_settlements 테이블(db/order_settlements.sql)이 있는지 확인하세요.' });
+    } finally { setSettleBusy(false); }
+  }
 
   async function loadAll(full = false) {
     setLoading(true); setLoadError(null);
@@ -173,6 +233,12 @@ export default function SalesContent() {
         const bom = await supabaseFetchAll<{ set_name: string; component_name: string; component_qty: number }>('/product_bom?select=set_name,component_name,component_qty');
         setBomRows(bom);
       } catch { /* product_bom 미설정 시 건너뜀 */ }
+      try {
+        const st = await supabaseFetchAll<{ order_number: string; fee: number; cost: number }>('/order_settlements?select=order_number,fee,cost');
+        const m = new Map<string, { fee: number; cost: number }>();
+        for (const s of st) if (s.order_number) m.set(String(s.order_number), { fee: Number(s.fee) || 0, cost: Number(s.cost) || 0 });
+        setSettleMap(m);
+      } catch { /* order_settlements 미설정 시 건너뜀(보정 없이 동작) */ }
     } catch (e) {
       setLoadError(e instanceof Error ? e.message : '데이터를 불러오지 못했습니다.');
     } finally {
@@ -188,7 +254,7 @@ export default function SalesContent() {
 
     // 라인별 매출(공급가액)·공헌이익 계산은 공용 함수(computeOrderLines)에서 단일 수행.
     // 매출현황·주문조회가 같은 함수를 써서 숫자가 어긋나지 않도록 한다.
-    const { lines: flt, minDate } = computeOrderLines(orders, inventory, fees, bomRows);
+    const { lines: flt, minDate } = computeOrderLines(orders, inventory, fees, bomRows, settleMap);
     let earliest = ymd(today);
     if (minDate && minDate < earliest) earliest = minDate;
 
@@ -350,7 +416,7 @@ export default function SalesContent() {
       trend, byMall, byCompany, byBrand, byProduct, missingEditable, missingUnreg, missingFee,
       missingCount: missingEditable.length + missingUnreg.length,
     };
-  }, [orders, inventory, fees, brandSales, bomRows, period, companyFilter, anchor, rangeStart, rangeEnd]);
+  }, [orders, inventory, fees, brandSales, bomRows, settleMap, period, companyFilter, anchor, rangeStart, rangeEnd]);
 
   const { ranges, cur, prev, trend, byMall, byCompany, byBrand, byProduct, missingEditable, missingUnreg, missingFee, missingCount } = data;
   const marginPct = cur.mrev > 0 ? Math.round((cur.prof / cur.mrev) * 100) : null;
@@ -410,7 +476,7 @@ export default function SalesContent() {
         </div>
       )}
       {canOpex && salesTab === 'opex' ? (
-        <OpexTab orders={orders} inventory={inventory} fees={fees} bomRows={bomRows} userName={user?.name} />
+        <OpexTab orders={orders} inventory={inventory} fees={fees} bomRows={bomRows} settle={settleMap} userName={user?.name} />
       ) : (
       <>
       {/* 상단: 기간/사업자 필터 */}
@@ -462,6 +528,10 @@ export default function SalesContent() {
 
         <span className="text-sm text-gray-400">{ranges.label} · {ranges.curStart}{ranges.curStart !== ranges.curEnd ? ` ~ ${ranges.curEnd}` : ''}</span>
         <div className="ml-auto flex items-center gap-2">
+          {canSettle && (
+            <button onClick={() => { setSettleOpen(true); setSettleMsg(null); setSettleParsed(null); setSettlePreview(null); setSettleFileName(''); }}
+              className="px-3 py-2 rounded-lg border border-emerald-200 text-base text-emerald-700 hover:bg-emerald-50 whitespace-nowrap" title="옥션·지마켓·11번가 실정산(수수료·원가) 반영">오픈마켓 정산 반영</button>
+          )}
           {!loadedFull && (
             <button onClick={() => loadAll(true)} disabled={loading}
               className="px-3 py-2 rounded-lg border border-blue-200 text-base text-blue-600 hover:bg-blue-50 disabled:opacity-50 whitespace-nowrap">전체 기간 불러오기</button>
@@ -769,6 +839,57 @@ export default function SalesContent() {
         고객배송비·실운임은 합구매(같은 주문번호) 주문당 1회만 반영. 실운임 건당 {UNIT_SHIPPING.toLocaleString('ko-KR')}원. 수수료율은 사업자·판매몰별이며 mall_fees에서 수정 가능. 공헌이익률 = 공헌이익 ÷ 매출.
       </p>
       </>
+      )}
+
+      {/* 오픈마켓 정산 반영 모달 */}
+      {settleOpen && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-start justify-center p-4 overflow-y-auto" onClick={() => !settleBusy && setSettleOpen(false)}>
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg mt-10" onClick={(e) => e.stopPropagation()}>
+            <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+              <h3 className="text-lg font-bold text-gray-800">오픈마켓 정산 반영</h3>
+              <button onClick={() => !settleBusy && setSettleOpen(false)} className="text-gray-400 hover:text-gray-600 text-xl">×</button>
+            </div>
+            <div className="p-5 space-y-4">
+              <p className="text-sm text-gray-500 leading-relaxed">
+                옥션·지마켓·11번가 정산 리포트(.xlsx)를 올리면 <b>사방넷 주문번호</b>로 기존 주문에 붙여 <b>실수수료·실원가</b>를 반영합니다.
+                매출(판매금액)은 그대로 두고 <b>공헌이익만</b> 실제 정산 기준으로 정확해집니다. 매출현황·주문조회에 함께 적용됩니다.
+              </p>
+              <label className="block">
+                <span className="text-sm font-medium text-gray-500">정산 리포트 파일</span>
+                <input type="file" accept=".xlsx" disabled={settleBusy}
+                  onChange={(e) => { const f = e.target.files?.[0]; if (f) handleSettleFile(f); }}
+                  className="mt-1 block w-full text-sm text-gray-600 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:bg-emerald-50 file:text-emerald-700 file:text-sm hover:file:bg-emerald-100" />
+                {settleFileName && <span className="text-xs text-gray-400 mt-1 block">{settleFileName}</span>}
+              </label>
+
+              {settlePreview && settleParsed && (
+                <div className="bg-gray-50 rounded-xl px-4 py-3 text-sm space-y-1">
+                  <div className="flex justify-between"><span className="text-gray-500">파싱된 주문</span><span className="font-medium tabular-nums">{(settleParsed.rows.length).toLocaleString()}건</span></div>
+                  <div className="flex justify-between"><span className="text-emerald-600">ERP 매칭</span><span className="font-medium text-emerald-700 tabular-nums">{settlePreview.matched.toLocaleString()}건</span></div>
+                  <div className="flex justify-between"><span className="text-gray-400">미매칭(주문번호 없음)</span><span className="font-medium text-gray-500 tabular-nums">{settlePreview.unmatched.toLocaleString()}건</span></div>
+                  {settlePreview.matched === 0 && (
+                    <p className="text-xs text-red-500 pt-1">⚠️ 매칭 0건 — 리포트의 ‘사방넷 주문번호’가 ERP 주문번호와 다를 수 있습니다. 적용 전에 확인하세요.</p>
+                  )}
+                  {settlePreview.unmatched > 0 && settlePreview.matched > 0 && (
+                    <p className="text-xs text-gray-400 pt-1">미매칭 건은 저장돼도 해당 주문이 ERP에 들어오면 자동 반영됩니다(무해).</p>
+                  )}
+                </div>
+              )}
+
+              {settleMsg && (
+                <div className={`text-sm rounded-lg px-3 py-2 ${settleMsg.type === 'error' ? 'bg-red-50 text-red-600' : settleMsg.type === 'success' ? 'bg-emerald-50 text-emerald-700' : 'bg-blue-50 text-blue-600'}`}>{settleMsg.text}</div>
+              )}
+            </div>
+            <div className="px-5 py-4 border-t border-gray-100 flex justify-end gap-2">
+              <button onClick={() => setSettleOpen(false)} disabled={settleBusy}
+                className="px-4 py-2 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-50">닫기</button>
+              <button onClick={applySettle} disabled={settleBusy || !settleParsed || !settleParsed.rows.length}
+                className="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-medium disabled:opacity-50">
+                {settleBusy ? '반영 중…' : '적용'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

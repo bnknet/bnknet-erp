@@ -46,11 +46,16 @@ export interface OrderLine {
  * 고객배송비·실운임은 같은 주문번호에서 1회만 배정(합구매 중복 방지).
  * minDate = 유효 주문의 최소 업로드일(기간 범위 산정용).
  */
+// 오픈마켓 실정산 보정: 주문번호(사방넷) → 실수수료·실원가. 있으면 요율표 수수료·매칭원가 대신 이 값을 쓴다.
+// 매출(판매금액)은 그대로 두고 수수료·원가만 실제값으로 교체 → 공헌이익만 실제 정산 기준으로 정확해짐.
+export type SettleMap = Map<string, { fee: number; cost: number }>;
+
 export function computeOrderLines(
   orders: FullOrder[],
   inventory: FullInv[],
   fees: MallFee[] = [],
   bom: { set_name: string; component_name: string; component_qty?: number }[] = [],
+  settle: SettleMap = new Map(),
 ): { lines: OrderLine[]; minDate: string } {
   type InvVal = { cost: number; company: string; brand: string };
   const invMap = new Map<string, InvVal>();   // `${상품명}|${사업자}`
@@ -85,6 +90,7 @@ export function computeOrderLines(
   const lines: OrderLine[] = [];
   const shipAssigned = new Set<string>();
   const unimAssigned = new Set<string>();
+  const settleApplied = new Set<string>(); // 실정산 보정을 주문당 1회만 적용(합구매 다상품 중복 방지)
   let minDate = '';
   for (const o of orders) {
     if (o.canceled) continue;
@@ -142,7 +148,6 @@ export function computeOrderLines(
       hasCost = !!inv;
       cost = hasCost ? (inv!.cost || 0) * qty : 0;
     }
-    const registered = setDef ? hasCost : !!inv;
     const ff = lookupFee(feeMap, company, mall, amt);
     const on = o.order_number || '';
     const key = on || `__noorder_${lines.length}`;
@@ -151,17 +156,37 @@ export function computeOrderLines(
       shipAssigned.add(key);
       ship = on ? (orderDeliveryMax.get(on) || 0) : (Number(o.delivery_fee) || 0);
     }
+
+    // ── 오픈마켓 실정산 보정 ──────────────────────────────
+    // 주문번호에 실정산(실수수료·실원가)이 있으면 그 값으로 교체. 주문당 1회만 반영(다상품 합구매 대비).
+    const st = on ? settle.get(on) : undefined;
+    let useFee = ff.fee;      // 적용할 수수료
+    let useCost = cost;       // 적용할 원가
+    let known = hasCost;      // 공헌이익 계산 가능 여부
+    let feeFound = ff.found;
+    let reg = setDef ? hasCost : !!inv;
+    if (st) {
+      known = true; feeFound = true; reg = true;
+      if (!settleApplied.has(key)) {
+        settleApplied.add(key);
+        useFee = Number(st.fee) || 0;
+        useCost = Number(st.cost) || 0;
+      } else {
+        useFee = 0; useCost = 0; // 대표 라인에서 이미 반영
+      }
+    }
+
     let unim = 0;
-    if (hasCost && !unimAssigned.has(key)) {
+    if (known && !unimAssigned.has(key)) {
       unimAssigned.add(key);
       unim = UNIT_SHIPPING;
     }
     const rev = (amt + ship) / VAT_DIV;
-    const profit = hasCost ? ((amt + ship - ff.fee) - cost - unim) / VAT_DIV : 0;
+    const profit = known ? ((amt + ship - useFee) - useCost - unim) / VAT_DIV : 0;
     lines.push({
       date, amt, rev, qty, rep, mall, company, option,
-      profit, profitKnown: hasCost, fee: ff.fee, unim,
-      missCost: !hasCost, registered, feeFound: ff.found,
+      profit, profitKnown: known, fee: useFee, unim,
+      missCost: !known, registered: reg, feeFound,
       invCompany: invCompanyVal, brand: brandVal, isPast: false,
     });
   }

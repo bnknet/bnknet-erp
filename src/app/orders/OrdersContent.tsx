@@ -134,6 +134,7 @@ export default function OrdersContent() {
   // 공헌이익 계산용(주문 조회 탭) — 몰수수료·세트구성표. 재고 원가는 위 inv 재사용.
   const [fees, setFees] = useState<MallFee[]>([]);
   const [bomRows, setBomRows] = useState<{ set_name: string; component_name: string; component_qty: number }[]>([]);
+  const [settleMap, setSettleMap] = useState<Map<string, { fee: number; cost: number }>>(new Map());
   const [marginLoaded, setMarginLoaded] = useState(false);
 
   async function loadInventory() {
@@ -155,6 +156,12 @@ export default function OrdersContent() {
       const bom = await supabaseFetchAll<{ set_name: string; component_name: string; component_qty: number }>('/product_bom?select=set_name,component_name,component_qty');
       setBomRows(bom);
     } catch { /* product_bom 미설정 시 건너뜀 */ }
+    try {
+      const st = await supabaseFetchAll<{ order_number: string; fee: number; cost: number }>('/order_settlements?select=order_number,fee,cost');
+      const m = new Map<string, { fee: number; cost: number }>();
+      for (const s of st) if (s.order_number) m.set(String(s.order_number), { fee: Number(s.fee) || 0, cost: Number(s.cost) || 0 });
+      setSettleMap(m);
+    } catch { /* order_settlements 미설정 시 보정 없이 동작 */ }
     setMarginLoaded(true);
   }
 
@@ -301,7 +308,7 @@ export default function OrdersContent() {
   // 조회 결과의 공헌이익 요약 + (상품×옵션)별 집계. 매출현황과 동일한 computeOrderLines 사용.
   const marginSummary = useMemo(() => {
     if (orderList.length === 0) return null;
-    const { lines } = computeOrderLines(orderList, inv, fees, bomRows);
+    const { lines } = computeOrderLines(orderList, inv, fees, bomRows, settleMap);
     // mrev = 원가 확인된 라인의 매출(공급가액). 이익률은 매출현황과 동일하게 mrev 기준.
     type Agg = { rep: string; option: string; qty: number; rev: number; mrev: number; profit: number; total: number; missCost: boolean };
     const byKey = new Map<string, Agg>();
@@ -321,7 +328,7 @@ export default function OrdersContent() {
     const rows = [...byKey.values()].sort((a, b) => a.rep.localeCompare(b.rep) || b.qty - a.qty);
     const multiProduct = new Set(rows.map(r => r.rep)).size > 1;
     return { rows, tQty, tRev, tMrev, tProfit, tKnown, tTotal, anyMiss, cancelQty, multiProduct, ready: marginLoaded };
-  }, [orderList, inv, fees, bomRows, marginLoaded]);
+  }, [orderList, inv, fees, bomRows, settleMap, marginLoaded]);
 
   // 도매처별 매출 요약 — 조회 결과 중 도매(source='도매')만 거래처별로 집계.
   // 공식은 computeOrderLines의 도매 라인과 동일: rev=amt/1.1, 이익=(amt−원가×수량−배송비)/1.1.
