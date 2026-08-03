@@ -5,11 +5,15 @@
 
 create table if not exists public.order_settlements (
   order_number text primary key,   -- = orders.order_number (사방넷 주문번호)
+  amount       integer not null default 0,  -- 실판매금액 합 (판매금액 — admin 기준, 쿠폰 반영된 정확값)
   fee          integer not null default 0,  -- 실수수료 합 (서비스이용료)
   cost         integer not null default 0,  -- 실원가 합 (원가X수량)
   company      text,                         -- 사업자(참고)
   updated_at   timestamptz not null default now()
 );
+
+-- 기존 테이블에 amount 컬럼이 없으면 추가 (이미 실행한 사용자 대상 · 재실행 안전)
+alter table public.order_settlements add column if not exists amount integer not null default 0;
 
 -- anon 읽기/쓰기 (현재 베타 정책과 동일). 민감정보 아님(수수료·원가 집계값).
 grant select, insert, update, delete on public.order_settlements to anon;

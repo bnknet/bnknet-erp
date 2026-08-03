@@ -46,9 +46,11 @@ export interface OrderLine {
  * 고객배송비·실운임은 같은 주문번호에서 1회만 배정(합구매 중복 방지).
  * minDate = 유효 주문의 최소 업로드일(기간 범위 산정용).
  */
-// 오픈마켓 실정산 보정: 주문번호(사방넷) → 실수수료·실원가. 있으면 요율표 수수료·매칭원가 대신 이 값을 쓴다.
-// 매출(판매금액)은 그대로 두고 수수료·원가만 실제값으로 교체 → 공헌이익만 실제 정산 기준으로 정확해짐.
-export type SettleMap = Map<string, { fee: number; cost: number }>;
+// 오픈마켓 실정산 보정: 주문번호(사방넷) → 실판매금액·실수수료·실원가.
+// 사방넷 판매금액은 쿠폰 적용가라 부정확할 수 있어, 마켓 admin 기준 실제 판매금액·수수료·원가로 교체한다.
+// 공헌이익 공식은 기존 그대로(부가세 ÷1.1, 실운임) → 실제 정산 기준으로 매출·공헌이익 모두 정확해짐.
+// amount<=0 이면 매출은 기존값 유지(수수료·원가만 교체).
+export type SettleMap = Map<string, { fee: number; cost: number; amount: number }>;
 
 export function computeOrderLines(
   orders: FullOrder[],
@@ -158,8 +160,9 @@ export function computeOrderLines(
     }
 
     // ── 오픈마켓 실정산 보정 ──────────────────────────────
-    // 주문번호에 실정산(실수수료·실원가)이 있으면 그 값으로 교체. 주문당 1회만 반영(다상품 합구매 대비).
+    // 주문번호에 실정산이 있으면 실판매금액·실수수료·실원가로 교체. 주문당 1회만 반영(다상품 합구매 대비).
     const st = on ? settle.get(on) : undefined;
+    let effAmt = amt;         // 적용할 매출 기준액(판매금액)
     let useFee = ff.fee;      // 적용할 수수료
     let useCost = cost;       // 적용할 원가
     let known = hasCost;      // 공헌이익 계산 가능 여부
@@ -169,10 +172,13 @@ export function computeOrderLines(
       known = true; feeFound = true; reg = true;
       if (!settleApplied.has(key)) {
         settleApplied.add(key);
+        if (Number(st.amount) > 0) effAmt = Number(st.amount); // 파일 판매금액(주문 합)으로 매출 교체
         useFee = Number(st.fee) || 0;
         useCost = Number(st.cost) || 0;
       } else {
-        useFee = 0; useCost = 0; // 대표 라인에서 이미 반영
+        // 나머지 라인: 대표 라인에 이미 합산했으므로 0 처리(주문 합계 정확 유지)
+        if (Number(st.amount) > 0) effAmt = 0;
+        useFee = 0; useCost = 0;
       }
     }
 
@@ -181,10 +187,10 @@ export function computeOrderLines(
       unimAssigned.add(key);
       unim = UNIT_SHIPPING;
     }
-    const rev = (amt + ship) / VAT_DIV;
-    const profit = known ? ((amt + ship - useFee) - useCost - unim) / VAT_DIV : 0;
+    const rev = (effAmt + ship) / VAT_DIV;
+    const profit = known ? ((effAmt + ship - useFee) - useCost - unim) / VAT_DIV : 0;
     lines.push({
-      date, amt, rev, qty, rep, mall, company, option,
+      date, amt: effAmt, rev, qty, rep, mall, company, option,
       profit, profitKnown: known, fee: useFee, unim,
       missCost: !known, registered: reg, feeFound,
       invCompany: invCompanyVal, brand: brandVal, isPast: false,

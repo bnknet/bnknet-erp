@@ -5,6 +5,7 @@ import type * as XLSXType from 'xlsx';
 
 export interface SettleRow {
   order_number: string; // 사방넷 주문번호 (= ERP orders.order_number)
+  amount: number;       // 실판매금액 합 (판매금액 — admin 기준, 쿠폰 반영된 정확값)
   fee: number;          // 실수수료 합 (서비스이용료)
   cost: number;         // 실원가 합 (원가X수량)
   company: string;      // 사업자 (시트명 기준)
@@ -56,14 +57,15 @@ export function parseSettleWorkbook(XLSX: typeof XLSXType, wb: XLSXType.WorkBook
       const on = String(pick(r, '사방넷 주문번호', '사방넷주문번호') ?? '').trim();
       totalLines++;
       if (!on) { skippedNoOrder++; continue; }
+      const amount = num(pick(r, '판매금액'));
       const fee = num(pick(r, '서비스이용료'));
       const cost = num(pick(r, '원가X수량', '원가x수량'));
       const market = marketOf(pick(r, '판매아이디') as string);
       const prev = agg.get(on);
       if (prev) {
-        prev.fee += fee; prev.cost += cost; prev.lineCount++;
+        prev.amount += amount; prev.fee += fee; prev.cost += cost; prev.lineCount++;
       } else {
-        agg.set(on, { order_number: on, fee, cost, company, market, lineCount: 1 });
+        agg.set(on, { order_number: on, amount, fee, cost, company, market, lineCount: 1 });
       }
     }
   }
