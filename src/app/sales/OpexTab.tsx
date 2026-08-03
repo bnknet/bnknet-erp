@@ -181,14 +181,13 @@ export default function OpexTab({ orders, inventory, fees, bomRows, userName }: 
     return out;
   }, [employees]);
 
-  // 인사(연봉) 자동: 위 기여를 사업자별로 합 → 인건비(labor), ×보험율 → 4대보험(insurance).
-  // 해당 카테고리가 존재할 때만 반영. 인건비는 매월 동일(현재 재직·연봉 기준).
+  // 인사(연봉) 자동: 위 기여를 사업자별로 합 → 4대보험(insurance) = 급여×보험율.
+  // ※ 인건비(labor)는 자동 반영하지 않는다 — 급여는 지출결의서로 등록되므로 이중 반영 방지.
   const hrAuto = useMemo(() => {
     const active = new Set(inputCats.map((c) => c.key));
     const m: Record<string, number> = {};
     for (const x of empContribs) {
       if (!OPEX_COMPANIES.includes(x.company) || x.monthly <= 0) continue;
-      if (active.has('labor')) m[`${x.company}|labor`] = (m[`${x.company}|labor`] || 0) + x.monthly;
       if (active.has('insurance')) m[`${x.company}|insurance`] = (m[`${x.company}|insurance`] || 0) + x.monthly * INSURANCE_RATE;
     }
     return m;
@@ -453,7 +452,6 @@ export default function OpexTab({ orders, inventory, fees, bomRows, userName }: 
             const catTotalSupply = toSupply(c.taxable, manTotal) + toSupply(c.taxable, hr + resv);
             const hasDetail = manTotal > 0 || hr > 0 || resv > 0;
             const open = openCats.has(c.key);
-            const coLabor = empContribs.filter(x => x.company === company && x.monthly > 0);
             const resvItems = resvDetail.filter(d => d.company === company && d.category === c.key);
             return (
             <div key={c.key} className="border-b border-gray-50 last:border-b-0 pb-2">
@@ -494,9 +492,6 @@ export default function OpexTab({ orders, inventory, fees, bomRows, userName }: 
                       </span>
                     </div>
                   ))}
-                  {c.key === 'labor' && coLabor.map((e, i) => (
-                    <div key={i} className="flex justify-between text-indigo-600"><span>인사 · {e.name} ({e.alloc ? `${company} 배분 ` : '연봉 '}{won(e.annual)}÷12)</span><span className="tabular-nums">{won(e.monthly)}</span></div>
-                  ))}
                   {c.key === 'insurance' && hr > 0 && (
                     <div className="flex justify-between text-indigo-600"><span>인사 · 급여합 {won(hr / INSURANCE_RATE)} × {Math.round(INSURANCE_RATE * 100)}%</span><span className="tabular-nums">{won(hr)}</span></div>
                   )}
@@ -526,8 +521,8 @@ export default function OpexTab({ orders, inventory, fees, bomRows, userName }: 
         ⚠️ 건당 택배 실운임(2,300원)은 이미 공헌이익에서 차감됩니다. 판관비 ‘물류·보관비’에는 <b>고정 창고비만</b> 넣어주세요(이중차감 방지).
         판관비는 <b>지급액(카드·계산서 총액) 그대로</b> 입력하세요. 과세 항목은 부가세 포함 금액을 넣으면 자동으로 부가세 제외(÷1.1)되어 반영됩니다. (면세 항목은 그대로)
         <br />각 항목의 금액은 <b>수동 추가 + 자동(결재·인사)을 모두 합산한 통합 금액</b>입니다. ‘+ 추가’ 또는 상단 <b>판관비 추가등록</b>으로 항목별 금액을 등록하면 기존 내용과 합산됩니다.
-        <br /><b className="text-emerald-600">결재(지출결의서) 판관비 태깅분</b>과 <b className="text-indigo-600">인건비·4대보험(인사 연봉 기준)</b>은 위 색상 표시로 <b>자동 합산</b>됩니다. 자동으로 잡히는 항목은 여기서 또 입력하지 마세요(이중 반영 방지).
-        <br />인건비 = 재직 직원 <b>연봉÷12</b> 사업자별 합, 4대보험 = 급여×약{Math.round(INSURANCE_RATE * 100)}%(회사부담 추정). 임대료 등 결재·인사에 없는 고정비만 수동 입력.
+        <br /><b className="text-emerald-600">결재(지출결의서) 판관비 태깅분</b>과 <b className="text-indigo-600">4대보험(인사 연봉 기준)</b>은 위 색상 표시로 <b>자동 합산</b>됩니다. 자동으로 잡히는 항목은 여기서 또 입력하지 마세요(이중 반영 방지).
+        <br /><b>인건비(급여)는 자동 반영하지 않습니다</b> — 급여는 지출결의서로 등록되므로 이중 반영 방지. 4대보험 = 급여×약{Math.round(INSURANCE_RATE * 100)}%(회사부담 추정). 임대료 등 결재·인사에 없는 고정비만 수동 입력.
       </p>
 
       {/* 판관비 추가등록 모달 */}
