@@ -116,7 +116,7 @@ export default function SalesContent() {
   const [fees, setFees] = useState<MallFee[]>([]);
   const [brandSales, setBrandSales] = useState<BrandSaleRow[]>([]);
   const [bomRows, setBomRows] = useState<{ set_name: string; component_name: string; component_qty: number }[]>([]);
-  const [settleMap, setSettleMap] = useState<Map<string, { fee: number; cost: number }>>(new Map());
+  const [settleMap, setSettleMap] = useState<Map<string, { fee: number; cost: number; amount: number }>>(new Map());
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loadedFull, setLoadedFull] = useState(false); // 전체(전 기간) 로드 여부. 기본은 최근 3개월만 로드해 빠르게.
@@ -148,7 +148,7 @@ export default function SalesContent() {
   const [settleOpen, setSettleOpen] = useState(false);
   const [settleBusy, setSettleBusy] = useState(false);
   const [settleFileName, setSettleFileName] = useState('');
-  const [settleParsed, setSettleParsed] = useState<{ rows: { order_number: string; fee: number; cost: number; company: string }[]; totalLines: number; skippedNoOrder: number } | null>(null);
+  const [settleParsed, setSettleParsed] = useState<{ rows: { order_number: string; amount: number; fee: number; cost: number; company: string }[]; totalLines: number; skippedNoOrder: number } | null>(null);
   const [settlePreview, setSettlePreview] = useState<{ matched: number; unmatched: number } | null>(null);
   const [settleMsg, setSettleMsg] = useState<{ type: 'info' | 'error' | 'success'; text: string } | null>(null);
 
@@ -161,7 +161,7 @@ export default function SalesContent() {
       const { parseSettleWorkbook } = await import('@/lib/openmarketSettle');
       const wb = XLSX.read(await file.arrayBuffer(), { type: 'array' });
       const res = parseSettleWorkbook(XLSX, wb);
-      setSettleParsed({ rows: res.rows.map((r) => ({ order_number: r.order_number, fee: Math.round(r.fee), cost: Math.round(r.cost), company: r.company })), totalLines: res.totalLines, skippedNoOrder: res.skippedNoOrder });
+      setSettleParsed({ rows: res.rows.map((r) => ({ order_number: r.order_number, amount: Math.round(r.amount), fee: Math.round(r.fee), cost: Math.round(r.cost), company: r.company })), totalLines: res.totalLines, skippedNoOrder: res.skippedNoOrder });
       // 매칭 미리보기 — 주문번호가 ERP에 실제 있는지 (200개씩 조회)
       const nums = res.rows.map((r) => r.order_number);
       const existing = new Set<string>();
@@ -183,7 +183,7 @@ export default function SalesContent() {
     if (!settleParsed || !settleParsed.rows.length) return;
     setSettleBusy(true); setSettleMsg({ type: 'info', text: '저장 중…' });
     try {
-      const payload = settleParsed.rows.map((r) => ({ order_number: r.order_number, fee: r.fee, cost: r.cost, company: r.company, updated_at: new Date().toISOString() }));
+      const payload = settleParsed.rows.map((r) => ({ order_number: r.order_number, amount: r.amount, fee: r.fee, cost: r.cost, company: r.company, updated_at: new Date().toISOString() }));
       for (let i = 0; i < payload.length; i += 500) {
         const batch = payload.slice(i, i + 500);
         const r = await supabaseFetch('/order_settlements?on_conflict=order_number', {
@@ -192,9 +192,9 @@ export default function SalesContent() {
         if (!r.ok) throw new Error('저장 실패 (' + r.status + ') ' + (await r.text()).slice(0, 200));
       }
       // 반영값 다시 로드
-      const st = await supabaseFetchAll<{ order_number: string; fee: number; cost: number }>('/order_settlements?select=order_number,fee,cost');
-      const m = new Map<string, { fee: number; cost: number }>();
-      for (const s of st) if (s.order_number) m.set(String(s.order_number), { fee: Number(s.fee) || 0, cost: Number(s.cost) || 0 });
+      const st = await supabaseFetchAll<{ order_number: string; fee: number; cost: number; amount: number }>('/order_settlements?select=order_number,fee,cost,amount');
+      const m = new Map<string, { fee: number; cost: number; amount: number }>();
+      for (const s of st) if (s.order_number) m.set(String(s.order_number), { fee: Number(s.fee) || 0, cost: Number(s.cost) || 0, amount: Number(s.amount) || 0 });
       setSettleMap(m);
       setSettleMsg({ type: 'success', text: `✅ 반영 완료 — ${payload.length}건. 매출·공헌이익에 실정산이 적용됐습니다.` });
     } catch (e) {
@@ -234,9 +234,9 @@ export default function SalesContent() {
         setBomRows(bom);
       } catch { /* product_bom 미설정 시 건너뜀 */ }
       try {
-        const st = await supabaseFetchAll<{ order_number: string; fee: number; cost: number }>('/order_settlements?select=order_number,fee,cost');
-        const m = new Map<string, { fee: number; cost: number }>();
-        for (const s of st) if (s.order_number) m.set(String(s.order_number), { fee: Number(s.fee) || 0, cost: Number(s.cost) || 0 });
+        const st = await supabaseFetchAll<{ order_number: string; fee: number; cost: number; amount: number }>('/order_settlements?select=order_number,fee,cost,amount');
+        const m = new Map<string, { fee: number; cost: number; amount: number }>();
+        for (const s of st) if (s.order_number) m.set(String(s.order_number), { fee: Number(s.fee) || 0, cost: Number(s.cost) || 0, amount: Number(s.amount) || 0 });
         setSettleMap(m);
       } catch { /* order_settlements 미설정 시 건너뜀(보정 없이 동작) */ }
     } catch (e) {
@@ -851,8 +851,8 @@ export default function SalesContent() {
             </div>
             <div className="p-5 space-y-4">
               <p className="text-sm text-gray-500 leading-relaxed">
-                옥션·지마켓·11번가 정산 리포트(.xlsx)를 올리면 <b>사방넷 주문번호</b>로 기존 주문에 붙여 <b>실수수료·실원가</b>를 반영합니다.
-                매출(판매금액)은 그대로 두고 <b>공헌이익만</b> 실제 정산 기준으로 정확해집니다. 매출현황·주문조회에 함께 적용됩니다.
+                옥션·지마켓·11번가 정산 리포트(.xlsx)를 올리면 <b>사방넷 주문번호</b>로 기존 주문에 붙여 <b>실판매금액·실수수료·실원가</b>를 반영합니다.
+                사방넷 판매금액은 쿠폰 적용가라 부정확할 수 있어, 파일의 실제값으로 <b>매출·공헌이익 모두</b> 실제 정산 기준으로 정확해집니다(공헌이익 공식은 기존 그대로 ÷1.1·실운임 반영). 매출현황·주문조회에 함께 적용됩니다.
               </p>
               <label className="block">
                 <span className="text-sm font-medium text-gray-500">정산 리포트 파일</span>

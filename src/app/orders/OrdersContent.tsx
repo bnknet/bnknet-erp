@@ -134,7 +134,7 @@ export default function OrdersContent() {
   // 공헌이익 계산용(주문 조회 탭) — 몰수수료·세트구성표. 재고 원가는 위 inv 재사용.
   const [fees, setFees] = useState<MallFee[]>([]);
   const [bomRows, setBomRows] = useState<{ set_name: string; component_name: string; component_qty: number }[]>([]);
-  const [settleMap, setSettleMap] = useState<Map<string, { fee: number; cost: number }>>(new Map());
+  const [settleMap, setSettleMap] = useState<Map<string, { fee: number; cost: number; amount: number }>>(new Map());
   const [marginLoaded, setMarginLoaded] = useState(false);
 
   async function loadInventory() {
@@ -157,9 +157,9 @@ export default function OrdersContent() {
       setBomRows(bom);
     } catch { /* product_bom 미설정 시 건너뜀 */ }
     try {
-      const st = await supabaseFetchAll<{ order_number: string; fee: number; cost: number }>('/order_settlements?select=order_number,fee,cost');
-      const m = new Map<string, { fee: number; cost: number }>();
-      for (const s of st) if (s.order_number) m.set(String(s.order_number), { fee: Number(s.fee) || 0, cost: Number(s.cost) || 0 });
+      const st = await supabaseFetchAll<{ order_number: string; fee: number; cost: number; amount: number }>('/order_settlements?select=order_number,fee,cost,amount');
+      const m = new Map<string, { fee: number; cost: number; amount: number }>();
+      for (const s of st) if (s.order_number) m.set(String(s.order_number), { fee: Number(s.fee) || 0, cost: Number(s.cost) || 0, amount: Number(s.amount) || 0 });
       setSettleMap(m);
     } catch { /* order_settlements 미설정 시 보정 없이 동작 */ }
     setMarginLoaded(true);
