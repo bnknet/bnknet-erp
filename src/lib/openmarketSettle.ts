@@ -6,7 +6,7 @@ import type * as XLSXType from 'xlsx';
 export interface SettleRow {
   order_number: string; // 사방넷 주문번호 (= ERP orders.order_number)
   amount: number;       // 실판매금액 합 (판매금액 — admin 기준, 쿠폰 반영된 정확값)
-  fee: number;          // 실수수료 합 (서비스이용료)
+  fee: number;          // 마켓 실공제 총액 합 = 판매금액 − 정산예정금액 (서비스이용료 + 판매촉진비·적립금 등 전부)
   cost: number;         // 실원가 합 (원가X수량)
   company: string;      // 사업자 (시트명 기준)
   market: string;       // 마켓 (판매아이디 기준: 옥션/지마켓/11번가)
@@ -58,7 +58,10 @@ export function parseSettleWorkbook(XLSX: typeof XLSXType, wb: XLSXType.WorkBook
       totalLines++;
       if (!on) { skippedNoOrder++; continue; }
       const amount = num(pick(r, '판매금액'));
-      const fee = num(pick(r, '서비스이용료'));
+      // 수수료 = 마켓이 실제 떼가는 총 공제액 = 판매금액 − 정산예정금액.
+      // (서비스이용료만으로는 판매촉진비·적립금 등 기타 공제가 빠져 마진이 과대계상됨)
+      const settle = num(pick(r, '정산예정금액'));
+      const fee = amount - settle;
       const cost = num(pick(r, '원가X수량', '원가x수량'));
       const market = marketOf(pick(r, '판매아이디') as string);
       const prev = agg.get(on);
