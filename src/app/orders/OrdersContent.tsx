@@ -191,10 +191,10 @@ export default function OrdersContent() {
   const mWholesaleRate = mWhole.amt > 0 ? Math.round((mWhole.net / mWhole.amt) * 100) : null;
 
   // 로켓그로스 마진(자동·부가세 제외) = (매출 − 풀필먼트 − 판매수수료 − 광고비 − 쿠폰비용 − 총원가) ÷ 1.1.
-  // 마진율 = 마진 ÷ 매출. (입력값은 부가세 포함)
+  // 마진율 = 마진 ÷ 매출 (둘 다 부가세 제외 → ÷1.1 상쇄 → (매출−비용−원가)/매출). 매출현황 공헌이익율과 동일 기준.
   const rDeduct = rFulfillment + rFee + rAd + rCoupon; // 원가 외 부대비용 합
   const rMargin = Math.round((rRevenue - rDeduct - rCost) / 1.1);
-  const rRate = rRevenue > 0 ? Math.round((rMargin / rRevenue) * 10000) / 100 : null;
+  const rRate = rRevenue > 0 ? Math.round(((rRevenue - rDeduct - rCost) / rRevenue) * 10000) / 100 : null;
 
   async function handleRocketSave() {
     if (!canRegister) { alert('주문 등록 권한이 없습니다 (재고·주문담당/대표/실장).'); return; }
@@ -1938,7 +1938,7 @@ export default function OrdersContent() {
                 <div className="bg-violet-50 border border-violet-200 rounded-xl px-4 py-3 text-base text-violet-700">
                   마진(자동): <b className="text-red-600 text-lg">{rMargin.toLocaleString('ko-KR')}원</b>
                   {rRate !== null && <span className="ml-2">· 마진율 <b className="text-red-600">{rRate}%</b></span>}
-                  <span className="block text-sm text-violet-500 mt-0.5">= (매출 − 풀필먼트 − 판매수수료 − 광고비 − 쿠폰비용 − 총원가) ÷ 1.1 (부가세 제외). 마진율 = 마진 ÷ 매출. 부가세 포함 금액으로 입력하세요.</span>
+                  <span className="block text-sm text-violet-500 mt-0.5">= (매출 − 풀필먼트 − 판매수수료 − 광고비 − 쿠폰비용 − 총원가) ÷ 1.1 (부가세 제외). 마진율 = 마진 ÷ 매출(둘 다 부가세 제외). 부가세 포함 금액으로 입력하세요.</span>
                 </div>
               </div>
             )}
