@@ -96,7 +96,15 @@ export default function MatchesContent() {
         method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
         body: JSON.stringify({ collect_name: collect, collect_option: option, product_name: product, created_by: me?.name || '', updated_at: new Date().toISOString() }),
       });
-      if (!res.ok) { setMsg(`저장 실패 (${res.status})`); return; }
+      if (!res.ok) {
+        const body = await res.text().catch(() => '');
+        // 407 등은 네트워크(프록시/VPN/방화벽) 문제 — 서버·재고와 무관
+        const hint = (res.status === 407 || res.status === 401 || res.status === 403)
+          ? ' — 네트워크(프록시·VPN·방화벽) 문제일 수 있어요. 다른 네트워크(휴대폰 핫스팟 등)로 다시 시도해 주세요.'
+          : '';
+        setMsg(`저장 실패 (${res.status})${hint}${body ? ' · ' + body.slice(0, 120) : ''}`);
+        return;
+      }
       await logChange(isEdit ? 'update' : 'create', collect, before, product);
       setEditId(null);
       await load();
