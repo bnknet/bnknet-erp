@@ -702,8 +702,18 @@ export default function ApprovalContent() {
         if (validItems.length > 0) {
           const insRes = await supabaseFetch('/approval_items', {
             method: 'POST', headers: { Prefer: 'return=minimal' },
+            // 신규 생성과 동일하게 "입력 컬럼만" 넣는다. 편집 시 로드된 행을 통째로(...i) 재삽입하면
+            //  created_at·canceled·refund_due_date·prepaid_date·prepaid_at 등이 섞여 400이 났음.
+            //  재상신 품목은 취소·선결제 잔재 없이 새로 시작하는 게 맞으므로 그 컬럼들은 제외.
             body: JSON.stringify(validItems.map((i, idx) => ({
-              ...i, id: undefined, approval_id: approvalId, sort_order: idx,
+              approval_id: approvalId,
+              item_date: i.item_date || '',
+              description: i.description || '',
+              quantity: i.quantity ?? 0,
+              unit_price: i.unit_price ?? 0,
+              amount: i.amount ?? 0,
+              note: i.note || '',
+              sort_order: idx,
               // 태깅 안 한 품목은 null 저장(영업이익 자동합산 쿼리 효율·정확)
               opex_category: (docType === '지출결의서' && i.opex_category) ? i.opex_category : null,
             }))),
