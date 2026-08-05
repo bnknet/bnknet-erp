@@ -117,6 +117,7 @@ export default function SalesContent() {
   const [brandSales, setBrandSales] = useState<BrandSaleRow[]>([]);
   const [bomRows, setBomRows] = useState<{ set_name: string; component_name: string; component_qty: number }[]>([]);
   const [settleMap, setSettleMap] = useState<Map<string, { fee: number; cost: number; amount: number }>>(new Map());
+  const [feeOverride, setFeeOverride] = useState<Map<string, number>>(new Map()); // 주문번호별 수수료율(%) 오버라이드
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loadedFull, setLoadedFull] = useState(false); // 전체(전 기간) 로드 여부. 기본은 최근 3개월만 로드해 빠르게.
@@ -208,6 +209,16 @@ export default function SalesContent() {
   const kstToday = () => new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10);
   const kstCutoff3mo = () => { const d = new Date(Date.now() + 9 * 3600 * 1000); d.setMonth(d.getMonth() - 3); return d.toISOString().slice(0, 10); };
 
+  // 주문번호별 수수료율(%) 오버라이드 로드 (작은 테이블)
+  async function loadFeeOverride() {
+    try {
+      const rows = await supabaseFetchAll<{ order_number: string; fee_rate: number }>('/order_fee_overrides?select=order_number,fee_rate');
+      const m = new Map<string, number>();
+      for (const r of rows) if (r.order_number) m.set(String(r.order_number), Number(r.fee_rate) || 0);
+      setFeeOverride(m);
+    } catch { /* 미설정 시 무시(요율표만 적용) */ }
+  }
+
   // 초기 진입: '당일'만 먼저 빠르게 로드해 화면 즉시 표시. 3개월치는 뒤에서 백그라운드로 채운다.
   async function loadToday() {
     setLoading(true); setLoadError(null);
@@ -219,6 +230,7 @@ export default function SalesContent() {
         supabaseFetchAll<MallFee>('/mall_fees?select=company,mall,rate'),
       ]);
       setOrders(ord); setInventory(inv); setFees(fee);
+      loadFeeOverride();
     } catch (e) {
       setLoadError(e instanceof Error ? e.message : '데이터를 불러오지 못했습니다.');
     } finally { setLoading(false); }
@@ -257,6 +269,7 @@ export default function SalesContent() {
         for (const s of st) if (s.order_number) m.set(String(s.order_number), { fee: Number(s.fee) || 0, cost: Number(s.cost) || 0, amount: Number(s.amount) || 0 });
         setSettleMap(m);
       } catch { /* order_settlements 미설정 시 건너뜀(보정 없이 동작) */ }
+      await loadFeeOverride();
     } catch (e) {
       setLoadError(e instanceof Error ? e.message : '데이터를 불러오지 못했습니다.');
     } finally {
@@ -277,7 +290,7 @@ export default function SalesContent() {
 
     // 라인별 매출(공급가액)·공헌이익 계산은 공용 함수(computeOrderLines)에서 단일 수행.
     // 매출현황·주문조회가 같은 함수를 써서 숫자가 어긋나지 않도록 한다.
-    const { lines: flt, minDate } = computeOrderLines(orders, inventory, fees, bomRows, settleMap);
+    const { lines: flt, minDate } = computeOrderLines(orders, inventory, fees, bomRows, settleMap, feeOverride);
     let earliest = ymd(today);
     if (minDate && minDate < earliest) earliest = minDate;
 
@@ -439,7 +452,7 @@ export default function SalesContent() {
       trend, byMall, byCompany, byBrand, byProduct, missingEditable, missingUnreg, missingFee,
       missingCount: missingEditable.length + missingUnreg.length,
     };
-  }, [orders, inventory, fees, brandSales, bomRows, settleMap, period, companyFilter, anchor, rangeStart, rangeEnd]);
+  }, [orders, inventory, fees, brandSales, bomRows, settleMap, feeOverride, period, companyFilter, anchor, rangeStart, rangeEnd]);
 
   const { ranges, cur, prev, trend, byMall, byCompany, byBrand, byProduct, missingEditable, missingUnreg, missingFee, missingCount } = data;
   const marginPct = cur.mrev > 0 ? Math.round((cur.prof / cur.mrev) * 100) : null;
@@ -499,7 +512,7 @@ export default function SalesContent() {
         </div>
       )}
       {canOpex && salesTab === 'opex' ? (
-        <OpexTab orders={orders} inventory={inventory} fees={fees} bomRows={bomRows} settle={settleMap} userName={user?.name} />
+        <OpexTab orders={orders} inventory={inventory} fees={fees} bomRows={bomRows} settle={settleMap} feeOverride={feeOverride} userName={user?.name} />
       ) : (
       <>
       {/* 상단: 기간/사업자 필터 */}

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { supabaseFetch, supabaseFetchAll } from '@/lib/supabase';
-import { computeOrderLines, type FullOrder, type FullInv, type SettleMap } from '@/lib/salesStats';
+import { computeOrderLines, type FullOrder, type FullInv, type SettleMap, type FeeOverrideMap } from '@/lib/salesStats';
 import { type MallFee } from '@/lib/mallFees';
 import { OPEX_CATEGORIES, OPEX_COMPANIES, INSURANCE_RATE, toSupply, type OpexCatDef, type OpexRow } from '@/lib/opex';
 
@@ -12,6 +12,7 @@ interface Props {
   fees: MallFee[];
   bomRows: { set_name: string; component_name: string; component_qty: number }[];
   settle?: SettleMap;
+  feeOverride?: FeeOverrideMap;
   userName?: string;
 }
 
@@ -39,7 +40,7 @@ const genKey = () => {
 // 기본 카테고리(코드) → DB 조회 실패 시 폴백
 const FALLBACK_CATS: OpexCatDef[] = OPEX_CATEGORIES.map((c, i) => ({ key: c.key, label: c.label, nature: c.nature, taxable: c.taxable, sort: (i + 1) * 10, active: true }));
 
-export default function OpexTab({ orders, inventory, fees, bomRows, settle, userName }: Props) {
+export default function OpexTab({ orders, inventory, fees, bomRows, settle, feeOverride, userName }: Props) {
   const [ym, setYm] = useState(nowYm());
   const [company, setCompany] = useState(OPEX_COMPANIES[0]);
   const [allCats, setAllCats] = useState<OpexCatDef[]>(FALLBACK_CATS);
@@ -81,7 +82,7 @@ export default function OpexTab({ orders, inventory, fees, bomRows, settle, user
 
   // 월별·사업자별 공헌이익 — 매출현황과 동일한 computeOrderLines
   const monthAgg = useMemo(() => {
-    const { lines } = computeOrderLines(orders, inventory, fees, bomRows, settle);
+    const { lines } = computeOrderLines(orders, inventory, fees, bomRows, settle, feeOverride);
     const map = new Map<string, { rev: number; prof: number; mrev: number; cnt: number }>();
     let othersProf = 0, othersRev = 0, othersMrev = 0;
     for (const l of lines) {
@@ -97,7 +98,7 @@ export default function OpexTab({ orders, inventory, fees, bomRows, settle, user
       }
     }
     return { map, othersProf, othersRev, othersMrev };
-  }, [orders, inventory, fees, bomRows, settle, ym]);
+  }, [orders, inventory, fees, bomRows, settle, feeOverride, ym]);
 
   // 결재(지출결의서) 자동 태깅분: `${company}|${category}` → 지급액 합
   const [autoMap, setAutoMap] = useState<Record<string, number>>({});

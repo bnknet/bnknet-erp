@@ -52,12 +52,17 @@ export interface OrderLine {
 // amount<=0 이면 매출은 기존값 유지(수수료·원가만 교체).
 export type SettleMap = Map<string, { fee: number; cost: number; amount: number }>;
 
+// 주문번호별 몰수수료율(%) 오버라이드 — 요율표에 없거나 건별로 다른 경우(예: 공구마다 수수료 상이).
+// 해당 주문은 수수료 = 매출 × rate% 로 계산(원가·매출은 기존 그대로). 없으면 요율표(mall_fees) 적용.
+export type FeeOverrideMap = Map<string, number>;
+
 export function computeOrderLines(
   orders: FullOrder[],
   inventory: FullInv[],
   fees: MallFee[] = [],
   bom: { set_name: string; component_name: string; component_qty?: number }[] = [],
   settle: SettleMap = new Map(),
+  feeOverride: FeeOverrideMap = new Map(),
 ): { lines: OrderLine[]; minDate: string } {
   type InvVal = { cost: number; company: string; brand: string };
   const invMap = new Map<string, InvVal>();   // `${상품명}|${사업자}`
@@ -176,11 +181,14 @@ export function computeOrderLines(
     // ── 오픈마켓 실정산 보정 ──────────────────────────────
     // 주문번호에 실정산이 있으면 실판매금액·실수수료·실원가로 교체. 주문당 1회만 반영(다상품 합구매 대비).
     const st = on ? settle.get(on) : undefined;
+    // 주문번호별 수수료율 오버라이드(예: 공구 건별 45%) — 요율표 대신 이 율로 수수료 계산.
+    const feeOvrRate = on ? feeOverride.get(on) : undefined;
+    const hasFeeOvr = feeOvrRate !== undefined && feeOvrRate !== null;
     let effAmt = amt;         // 적용할 매출 기준액(판매금액)
-    let useFee = ff.fee;      // 적용할 수수료
+    let useFee = hasFeeOvr ? (amt * Number(feeOvrRate)) / 100 : ff.fee; // 적용할 수수료
     let useCost = cost;       // 적용할 원가
     let known = hasCost;      // 공헌이익 계산 가능 여부
-    let feeFound = ff.found;
+    let feeFound = hasFeeOvr ? true : ff.found;
     let reg = setDef ? hasCost : !!inv;
     if (st) {
       known = true; feeFound = true; reg = true;
