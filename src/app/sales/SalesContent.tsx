@@ -120,6 +120,7 @@ export default function SalesContent() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loadedFull, setLoadedFull] = useState(false); // 전체(전 기간) 로드 여부. 기본은 최근 3개월만 로드해 빠르게.
+  const [windowLoading, setWindowLoading] = useState(false); // 당일 표시 후 최근 3개월치를 백그라운드로 채우는 중
 
   const [period, setPeriod] = useState<Period>('day');
   const [companyFilter, setCompanyFilter] = useState('전체');
@@ -202,18 +203,35 @@ export default function SalesContent() {
     } finally { setSettleBusy(false); }
   }
 
-  async function loadAll(full = false) {
+  // 주문 조회 공통 SELECT
+  const ORDER_SELECT = '/orders?select=upload_date,mall_name,product_name,collect_product,collect_option,quantity,amount,canceled,company,order_number,delivery_fee,source,manual_cost,manual_shipping,shipping_method,courier_count';
+  const kstToday = () => new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10);
+  const kstCutoff3mo = () => { const d = new Date(Date.now() + 9 * 3600 * 1000); d.setMonth(d.getMonth() - 3); return d.toISOString().slice(0, 10); };
+
+  // 초기 진입: '당일'만 먼저 빠르게 로드해 화면 즉시 표시. 3개월치는 뒤에서 백그라운드로 채운다.
+  async function loadToday() {
     setLoading(true); setLoadError(null);
+    try {
+      await loadDbMatches(true);
+      const [ord, inv, fee] = await Promise.all([
+        supabaseFetchAll<OrderRow>(ORDER_SELECT + `&upload_date=gte.${kstToday()}` + '&order=upload_date.asc'),
+        supabaseFetchAll<InvRow>('/inventory?select=product_name,company,brand,cost_price'),
+        supabaseFetchAll<MallFee>('/mall_fees?select=company,mall,rate'),
+      ]);
+      setOrders(ord); setInventory(inv); setFees(fee);
+    } catch (e) {
+      setLoadError(e instanceof Error ? e.message : '데이터를 불러오지 못했습니다.');
+    } finally { setLoading(false); }
+  }
+
+  async function loadAll(full = false, silent = false) {
+    if (!silent) setLoading(true);
+    setLoadError(null);
     try {
       await loadDbMatches(true); // 담당자 등록 매칭을 집계 전에 반영
       // 기본은 최근 3개월 주문만 로드(빠름). '전체 불러오기' 시 전 기간.
-      const cutoff = (() => {
-        const d = new Date(Date.now() + 9 * 3600 * 1000); // KST
-        d.setMonth(d.getMonth() - 3);
-        return d.toISOString().slice(0, 10);
-      })();
-      const orderQuery = '/orders?select=upload_date,mall_name,product_name,collect_product,collect_option,quantity,amount,canceled,company,order_number,delivery_fee,source,manual_cost,manual_shipping,shipping_method,courier_count'
-        + (full ? '' : `&upload_date=gte.${cutoff}`)
+      const orderQuery = ORDER_SELECT
+        + (full ? '' : `&upload_date=gte.${kstCutoff3mo()}`)
         + '&order=upload_date.asc';
       const [ord, inv, fee] = await Promise.all([
         supabaseFetchAll<OrderRow>(orderQuery),
@@ -242,10 +260,15 @@ export default function SalesContent() {
     } catch (e) {
       setLoadError(e instanceof Error ? e.message : '데이터를 불러오지 못했습니다.');
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }
-  useEffect(() => { (async () => { await loadAll(); })(); }, []);
+  useEffect(() => { (async () => {
+    await loadToday();            // 당일 매출 즉시 표시(빠름)
+    setWindowLoading(true);
+    await loadAll(false, true);   // 최근 3개월 백그라운드로 채움(스피너 없이)
+    setWindowLoading(false);
+  })(); }, []);
 
   // ── 집계 (모든 계산을 한 곳에서) ──────────────────────
   const data = useMemo(() => {
@@ -527,6 +550,7 @@ export default function SalesContent() {
         )}
 
         <span className="text-sm text-gray-400">{ranges.label} · {ranges.curStart}{ranges.curStart !== ranges.curEnd ? ` ~ ${ranges.curEnd}` : ''}</span>
+        {windowLoading && <span className="text-xs text-blue-500 animate-pulse">· 최근 3개월 불러오는 중…</span>}
         <div className="ml-auto flex items-center gap-2">
           {canSettle && (
             <button onClick={() => { setSettleOpen(true); setSettleMsg(null); setSettleParsed(null); setSettlePreview(null); setSettleFileName(''); }}
