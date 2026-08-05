@@ -5,7 +5,7 @@ import * as XLSX from 'xlsx';
 import { supabaseFetch, supabaseFetchAll } from '@/lib/supabase';
 import { getUser } from '@/lib/auth';
 import {
-  Card, CARD_TYPES, CARD_TYPE_COLORS, formatBillingCycle, toISO, logCardChange,
+  Card, CARD_TYPES, CARD_TYPE_COLORS, formatBillingCycle, toISO, logCardChange, computePaymentDate,
 } from '@/lib/cardBilling';
 
 interface CardLog {
@@ -146,6 +146,40 @@ export default function CardsContent() {
     const data = await res.json();
     setLogs(Array.isArray(data) ? data : []);
   }, []);
+
+  // 결제예정일 재계산 — 마감일 계산 버그로 '늦게' 잡힌 기존 건을 실제 계산값으로 바로잡음.
+  // (선결제로 앞당긴 건은 예정일이 실제보다 '이르므로' 건드리지 않음)
+  const [recalcBusy, setRecalcBusy] = useState(false);
+  async function recalcPaymentDates() {
+    if (!canManage) return;
+    const cardMap = new Map(cards.map((c) => [c.id, c]));
+    const targets: { id: string; from: string; to: string }[] = [];
+    for (const p of purchases) {
+      if (p.purchase_status && p.purchase_status !== 'normal') continue;
+      const c = p.card_id ? cardMap.get(p.card_id) : null;
+      if (!c || !p.spend_date) continue;
+      const fixed = computePaymentDate(p.spend_date, Number(c.billing_day) || 1, Number(c.close_day) || 31);
+      if (fixed && p.payment_due_date && p.payment_due_date > fixed) {
+        targets.push({ id: p.id, from: p.payment_due_date, to: fixed });
+      }
+    }
+    if (!targets.length) { alert('바로잡을 결제예정일이 없습니다. (모두 정상)'); return; }
+    const sample = targets.slice(0, 5).map((t) => `${t.from} → ${t.to}`).join('\n');
+    if (!confirm(`결제예정일이 실제보다 늦게 잡힌 ${targets.length}건을 바로잡습니다.\n(마감일 당일 구매가 다음 달로 밀린 건)\n\n${sample}${targets.length > 5 ? '\n…' : ''}\n\n진행할까요?`)) return;
+    setRecalcBusy(true);
+    try {
+      for (const t of targets) {
+        await supabaseFetch(`/approvals?id=eq.${t.id}`, {
+          method: 'PATCH', headers: { Prefer: 'return=minimal' },
+          body: JSON.stringify({ payment_due_date: t.to, updated_at: new Date().toISOString() }),
+        });
+      }
+      await loadPurchases();
+      alert(`${targets.length}건 결제예정일을 바로잡았습니다.`);
+    } catch {
+      alert('일부 재계산에 실패했습니다. 다시 시도해주세요.');
+    } finally { setRecalcBusy(false); }
+  }
 
   async function deleteLog(l: CardLog) {
     const isCancelLog = l.action.includes('취소');
@@ -985,8 +1019,13 @@ export default function CardsContent() {
           <div className="flex justify-between items-center gap-3">
             <p className="text-sm sm:text-base text-gray-500 min-w-0">사업자(담당자)별 카드와 결제 주기를 관리합니다.</p>
             {canManage && (
-              <button onClick={() => { setForm({ ...EMPTY_CARD }); setEditId(null); setShowForm(true); }}
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm sm:text-base font-medium whitespace-nowrap flex-shrink-0">+ 카드 등록</button>
+              <div className="flex gap-2 flex-shrink-0">
+                <button onClick={recalcPaymentDates} disabled={recalcBusy}
+                  className="px-3 py-2 border border-gray-200 text-gray-600 rounded-xl text-sm sm:text-base font-medium whitespace-nowrap hover:bg-gray-50 disabled:opacity-50"
+                  title="마감일 계산 오류로 다음 달로 밀린 기존 결제예정일을 실제 날짜로 바로잡습니다">{recalcBusy ? '재계산 중…' : '🔁 결제예정일 재계산'}</button>
+                <button onClick={() => { setForm({ ...EMPTY_CARD }); setEditId(null); setShowForm(true); }}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm sm:text-base font-medium whitespace-nowrap">+ 카드 등록</button>
+              </div>
             )}
           </div>
 
