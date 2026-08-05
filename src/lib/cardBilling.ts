@@ -119,9 +119,15 @@ export function adjustToBusinessDay(iso: string): string {
 // 구매일 + 카드 결제 주기 → 결제예정일(YYYY-MM-DD)
 // 결제일이 주말/공휴일이면 다음 영업일로 자동 순연
 export function computePaymentDate(purchaseDate: string, billingDay: number, closeDay: number): string {
-  const p = new Date(purchaseDate);
+  // 'YYYY-MM-DD'를 new Date()로 바로 파싱하면 UTC 자정이 되어, KST(+9)에선 9시간 밀린다.
+  // 그러면 마감일 "당일" 구매가 마감일보다 이른 것으로 판정돼 다음 달로 넘어가는 버그가 생김 → 로컬 자정으로 파싱.
+  const s = String(purchaseDate).slice(0, 10);
+  const [yy, mm, dd] = s.split('-').map(Number);
+  const p = (Number.isFinite(yy) && Number.isFinite(mm) && Number.isFinite(dd))
+    ? new Date(yy, mm - 1, dd)
+    : new Date(purchaseDate);
   if (isNaN(p.getTime())) return '';
-  const close = nextDateWithDay(p, closeDay, false);   // 구매일 이후 첫 마감일
+  const close = nextDateWithDay(p, closeDay, false);   // 구매일 이후(당일 포함) 첫 마감일
   const pay = nextDateWithDay(close, billingDay, true); // 마감일 이후 첫 결제일
   return adjustToBusinessDay(toISO(pay));
 }
