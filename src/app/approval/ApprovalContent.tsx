@@ -840,10 +840,10 @@ export default function ApprovalContent() {
     await loadApprovals();
   }
 
-  // 대표 최종 반려: 승인완료된 건을 대표가 되돌려 반려 → 상신자가 수정 후 재상신
-  // (예: 첨부 파일 형식 오류로 다시 올려야 할 때). 카드 매입이면 반려로 한도 차감 해제됨.
+  // 최종 반려: 승인완료된 건을 대표·실장이 되돌려 반려 → 상신자가 수정 후 재상신
+  // (예: 첨부 파일 형식 오류·금액 수정 등으로 다시 올려야 할 때). 카드 매입이면 반려로 한도 차감 해제됨.
   async function rejectFinalApproved() {
-    if (!selected || !isCeo || selected.status !== 'approved') return;
+    if (!selected || !(isCeo || isAdmin) || selected.status !== 'approved') return;
     if (!rejectReason.trim()) { alert('반려 사유를 입력해주세요.'); return; }
     const now = new Date().toISOString();
     const hasStep2 = APPROVAL_LINES[selected.company]?.length === 3;
@@ -855,7 +855,7 @@ export default function ApprovalContent() {
       body: JSON.stringify(patch),
     });
     const label = selected.doc_type === '휴가신청서' ? selected.doc_type : `${selected.doc_type} ${selected.total_amount?.toLocaleString?.() || ''}원`;
-    await logApproval(selected.id, '최종반려', `${label} · 승인완료 → 대표 반려 · 사유: ${rejectReason}`);
+    await logApproval(selected.id, '최종반려', `${label} · 승인완료 → ${isCeo ? '대표' : '실장'} 반려 · 사유: ${rejectReason}`);
     setShowRejectModal(false);
     setRejectReason('');
     setView('list');
@@ -1569,8 +1569,8 @@ export default function ApprovalContent() {
               <button onClick={() => retractApproval(selected)}
                 className="px-5 py-2 border border-amber-300 text-amber-700 rounded-xl text-base font-medium hover:bg-amber-50">승인 철회</button>
             )}
-            {/* 대표: 승인완료 건 반려로 되돌리기 (파일 재첨부 등 재상신 필요 시) */}
-            {isCeo && selected.status === 'approved' && (
+            {/* 대표·실장: 승인완료 건 반려로 되돌리기 (파일 재첨부·금액 수정 등 재상신 필요 시) */}
+            {(isCeo || isAdmin) && selected.status === 'approved' && (
               <button onClick={() => setShowRejectModal(true)}
                 className="px-5 py-2 bg-red-500 hover:bg-red-600 text-white rounded-xl text-base font-medium">결재 취소(반려)</button>
             )}
