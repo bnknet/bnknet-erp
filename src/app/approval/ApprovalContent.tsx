@@ -334,6 +334,13 @@ export default function ApprovalContent() {
   }, [isCeo, isAdmin, me?.name]);
 
   useEffect(() => { loadApprovals(); }, [loadApprovals]);
+  // 카드 한도현황 등에서 ?id=<결재ID>로 진입하면 해당 기안서 상세를 바로 연다.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const id = new URLSearchParams(window.location.search).get('id');
+    if (id) loadDetail(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   // 판관비 항목(지출결의서 태깅용) — 커스텀 항목 반영. 실패 시 코드 기본값 유지.
   useEffect(() => {
     (async () => {

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import * as XLSX from 'xlsx';
 import { supabaseFetch, supabaseFetchAll } from '@/lib/supabase';
 import { getUser } from '@/lib/auth';
@@ -73,6 +74,7 @@ type Tab = 'calendar' | 'limit' | 'cards' | 'log';
 
 export default function CardsContent() {
   const me = getUser();
+  const router = useRouter();
   const canManage = me?.role === 'ceo' || me?.role === 'admin'; // 등록·수정·삭제 = 대표·실장
   const canView = !!me && me.role !== 'md'; // 조회 = 전 직원(단 MD 제외)
 
@@ -981,9 +983,9 @@ export default function CardsContent() {
                                 <div className="text-xs text-gray-400 text-center py-2">미결제 결재 내역이 없습니다</div>
                               ) : items.map((it, idx) => (
                                 <div key={idx}
-                                  onClick={() => openPurchaseDetail({ date: it.p.payment_due_date || it.p.spend_date || '', cardId: it.p.card_id, amount: it.net, type: it.kind === 'prepay' ? 'prepay' : 'charge', purchase: it.p })}
+                                  onClick={() => router.push(`/approval?id=${it.p.id}`)}
                                   className="flex items-start justify-between gap-2 text-sm cursor-pointer hover:bg-blue-50/60 rounded-md px-1.5 py-1 -mx-1.5"
-                                  title="결재서(기안) 내용 보기">
+                                  title="이 결제건의 원본 기안서(결재 문서)로 이동">
                                   <div className="min-w-0">
                                     <div className="text-gray-700 truncate">
                                       {it.p.purchase_vendor || '(구매처 미상)'}
