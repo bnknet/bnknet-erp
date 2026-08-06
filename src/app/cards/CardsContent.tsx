@@ -983,7 +983,7 @@ export default function CardsContent() {
                                 <div className="text-xs text-gray-400 text-center py-2">미결제 결재 내역이 없습니다</div>
                               ) : items.map((it, idx) => (
                                 <div key={idx}
-                                  onClick={() => router.push(`/approval?id=${it.p.id}`)}
+                                  onClick={() => router.push(`/approval?id=${it.p.id}&from=cards`)}
                                   className="flex items-start justify-between gap-2 text-sm cursor-pointer hover:bg-blue-50/60 rounded-md px-1.5 py-1 -mx-1.5"
                                   title="이 결제건의 원본 기안서(결재 문서)로 이동">
                                   <div className="min-w-0">
