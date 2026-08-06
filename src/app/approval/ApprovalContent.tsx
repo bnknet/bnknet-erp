@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { supabaseFetch, supabaseUpload, safeStorageKey, supabaseFetchAll } from '@/lib/supabase';
 import { getUser } from '@/lib/auth';
 import { Card, computePaymentDate, toISO, logCardChange } from '@/lib/cardBilling';
@@ -208,6 +209,7 @@ interface LeaveRow {
 }
 
 export default function ApprovalContent() {
+  const router = useRouter();
   const me = getUser();
   const isCeo = me?.role === 'ceo';
   const isAdmin = me?.role === 'admin';
@@ -215,6 +217,8 @@ export default function ApprovalContent() {
   const [view, setView] = useState<View>('list');
   const [approvals, setApprovals] = useState<Approval[]>([]);
   const [selected, setSelected] = useState<Approval | null>(null);
+  // 카드 한도현황에서 넘어온 경우(?from=cards) → 상세에 '한도현황으로' 버튼 노출
+  const [cameFromCards, setCameFromCards] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -337,7 +341,9 @@ export default function ApprovalContent() {
   // 카드 한도현황 등에서 ?id=<결재ID>로 진입하면 해당 기안서 상세를 바로 연다.
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    const id = new URLSearchParams(window.location.search).get('id');
+    const params = new URLSearchParams(window.location.search);
+    const id = params.get('id');
+    if (params.get('from') === 'cards') setCameFromCards(true);
     if (id) loadDetail(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -1243,7 +1249,13 @@ export default function ApprovalContent() {
     return (
       <div className="space-y-4">
         <div className="flex items-center justify-between gap-2 no-print">
-          <button onClick={() => setView('list')} className="text-base text-blue-600 hover:text-blue-700">← 목록으로</button>
+          <div className="flex items-center gap-3">
+            <button onClick={() => setView('list')} className="text-base text-blue-600 hover:text-blue-700">← 목록으로</button>
+            {cameFromCards && (
+              <button onClick={() => router.push('/cards')}
+                className="text-base text-slate-600 hover:text-slate-800">← 한도현황으로</button>
+            )}
+          </div>
           <button onClick={() => window.print()}
             className="px-4 py-2 bg-slate-700 hover:bg-slate-800 text-white rounded-xl text-sm font-medium">🖨️ 인쇄 / PDF 저장</button>
         </div>
