@@ -207,7 +207,8 @@ export default function CardsContent() {
       const payload = {
         ...form,
         limit_amount: Number(form.limit_amount) || 0,
-        opening_balance: Number(form.opening_balance) || 0,
+        // 카드 매입은 ERP 결재로 추적되므로 기준 잔여한도는 항상 전체 한도가 기본(비우면 한도로 저장 → 이중 차감 방지)
+        opening_balance: Number(form.opening_balance) || Number(form.limit_amount) || 0,
         billing_day: Number(form.billing_day) || 1,
         close_day: Number(form.close_day) || 31,
       };
@@ -801,11 +802,11 @@ export default function CardsContent() {
                 className="w-full px-3 py-2 border border-gray-200 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-blue-400" />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-500 mb-1">기준 잔여한도 (참고)</label>
+              <label className="block text-sm font-medium text-gray-500 mb-1">기준 잔여한도 (보통 전체 한도)</label>
               <input type="number" value={form.opening_balance || ''} onChange={e => setForm({ ...form, opening_balance: Number(e.target.value) })}
-                placeholder="15000000"
+                placeholder="비우면 전체 한도로 저장"
                 className="w-full px-3 py-2 border border-gray-200 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-blue-400" />
-              <p className="text-xs text-gray-400 mt-1">등록 시점의 실제 잔여한도. 신규·미사용 카드면 전체 한도와 동일하게 입력.</p>
+              <p className="text-xs text-gray-400 mt-1">카드 매입을 <b>ERP 결재로 관리하면 항상 전체 한도로 두세요</b>(사용분은 결재에서 자동 차감). 비우면 전체 한도로 저장됩니다. ※ 여기에 "현재 남은 한도"를 넣으면 결재 매입이 이중 차감됩니다.</p>
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3">
