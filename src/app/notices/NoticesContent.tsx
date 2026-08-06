@@ -31,8 +31,10 @@ type View = 'list' | 'detail' | 'write';
 
 export default function NoticesContent() {
   const user = getUser();
-  // 공지 등록·수정·삭제 = 대표·실장 + MD(손사빈 과장)
+  // 공지 수정·삭제 = 대표·실장 + MD(손사빈 과장)
   const isAdmin = user?.role === 'ceo' || user?.role === 'admin' || user?.role === 'md';
+  // 공지 등록(작성)은 전 직원 가능
+  const canWrite = !!user;
 
   const [view, setView] = useState<View>('list');
   const [notices, setNotices] = useState<Notice[]>([]);
@@ -203,7 +205,7 @@ export default function NoticesContent() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <p className="text-base text-gray-400">총 {notices.length}개의 공지</p>
-        {isAdmin && (
+        {canWrite && (
           <button
             onClick={() => openWrite()}
             className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-base font-medium transition-colors"
