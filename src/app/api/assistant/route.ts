@@ -290,14 +290,24 @@ export async function POST(req: NextRequest) {
     if (isDM && isHuman && text) {
       // 3초 내 200 응답 필수 → 즉시 ack, 권한 판별·처리는 응답 후 비동기로
       after(async () => {
-        // 슬랙 계정 → 이메일 → 활성 직원 역할 → 스코프
+        // 슬랙 계정 → 이메일 → 활성 직원 역할 → 스코프 (단계별로 원인 구분)
+        const isWhitelisted = ALLOWED.includes(userId);
         const email = await slackUserEmail(userId);
+        if (!email) {
+          if (isWhitelisted) { await handleQuestion(channel, text, '경영'); return; }
+          await postSlack(channel, '권한 확인 실패 ①: 슬랙에서 이메일을 읽지 못했어요. (앱에 users:read.email 권한이 필요) 관리자에게 문의해주세요.');
+          return;
+        }
         const emp = await employeeByEmail(email);
-        let scope: Scope | undefined = emp ? ROLE_SCOPE[emp.role] : undefined;
-        // 폴백: 직원 매칭 실패(이메일 권한 미부여 등) 시, 기존 화이트리스트는 경영으로
-        if (!scope && ALLOWED.includes(userId)) scope = '경영';
+        if (!emp) {
+          if (isWhitelisted) { await handleQuestion(channel, text, '경영'); return; }
+          await postSlack(channel, `권한 확인 실패 ②: ERP 직원에서 '${email}' 이메일을 찾지 못했어요. (슬랙 이메일 = ERP employees 이메일 이어야 함) 관리자에게 문의해주세요.`);
+          return;
+        }
+        const scope = ROLE_SCOPE[emp.role];
         if (!scope) {
-          await postSlack(channel, '죄송해요, 이 봇을 사용할 권한이 없어요. (활성 직원 계정·역할이 확인되지 않았습니다) 관리자에게 문의해주세요.');
+          if (isWhitelisted) { await handleQuestion(channel, text, '경영'); return; }
+          await postSlack(channel, `권한 확인 실패 ③: 역할 '${emp.role}'은 봇 조회 권한이 설정되지 않았어요. 관리자에게 문의해주세요.`);
           return;
         }
         await handleQuestion(channel, text, scope);
