@@ -4,6 +4,7 @@ import crypto from 'node:crypto';
 import Anthropic from '@anthropic-ai/sdk';
 import { supabaseFetch, supabaseFetchAll } from '@/lib/supabase';
 import { computeOrderLines, type FullOrder, type FullInv } from '@/lib/salesStats';
+import { repNameFor, loadDbMatches } from '@/lib/orderConvert';
 import type { MallFee } from '@/lib/mallFees';
 
 // ── 슬랙 ERP 비서 (개인 DM 봇) ──────────────────────────────────────
@@ -136,6 +137,38 @@ const SALES_TOOL: Anthropic.Tool = {
   },
 };
 
+// 재고 현황 전용 집계 — inventory 전량 페이징 합산(200건 잘림 방지).
+const STOCK_TOOL: Anthropic.Tool = {
+  name: 'stock_summary',
+  description:
+    '현재 재고 현황을 정식 계산으로 집계한다. 총재고수량·재고평가액(수량×개당원가)·사업자별·마이너스재고 품목. ' +
+    '재고 수량/금액 질문은 반드시 이 도구를 쓴다(query_erp로 inventory를 받아 직접 합산 금지 — 200건 잘림으로 틀린다).',
+  input_schema: {
+    type: 'object',
+    properties: {
+      company: { type: 'string', description: '특정 사업자만: 더블아이/BNKNET/SJ글로벌/IX글로벌. 생략 시 전체+사업자별.' },
+    },
+  },
+};
+
+// 출고(판매 출고) 전용 집계 — 기간 내 주문을 전량 페이징 + 대표상품명 매칭.
+const OUTBOUND_TOOL: Anthropic.Tool = {
+  name: 'outbound_summary',
+  description:
+    '기간별 출고 수량을 정식 계산으로 집계한다. 취소 제외, 대표상품명(수집옵션 반영) 매칭. ' +
+    '총출고수량·사업자별·상위상품·미매칭 내역. 출고/판매수량 질문은 반드시 이 도구를 쓴다. "이번달"이면 start_date=그 달 1일.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      start_date: { type: 'string', description: '시작일 YYYY-MM-DD (포함).' },
+      end_date: { type: 'string', description: '종료일 YYYY-MM-DD (포함). 생략 시 오늘(KST).' },
+      company: { type: 'string', description: '특정 사업자만. 생략 시 전체+사업자별.' },
+      exclude_wholesale: { type: 'boolean', description: '도매(소스=도매) 제외 여부. 기본 false.' },
+    },
+    required: ['start_date'],
+  },
+};
+
 // 보안상 봇이 읽으면 안 되는 테이블 (비밀번호 등 민감정보)
 const BLOCKED_TABLES = new Set(['accounts', 'rpc']);
 
@@ -196,6 +229,7 @@ async function runSalesSummary(input: { start_date?: string; end_date?: string; 
   if (!/^\d{4}-\d{2}-\d{2}$/.test(start) || !/^\d{4}-\d{2}-\d{2}$/.test(end)) return '오류: 날짜는 YYYY-MM-DD 형식이어야 합니다.';
   const companyFilter = String(input.company || '').trim();
   try {
+    await loadDbMatches(true); // 대표상품명 매칭(product_matches) 반영 — 원가·공헌이익 정확도
     const cols = 'upload_date,mall_name,product_name,collect_product,collect_option,quantity,amount,canceled,company,order_number,delivery_fee,source,manual_cost,manual_shipping';
     let oq = `/orders?select=${cols}&upload_date=gte.${start}&upload_date=lte.${end}&order=upload_date.asc`;
     if (companyFilter) oq += `&company=eq.${encodeURIComponent(companyFilter)}`;
@@ -237,6 +271,96 @@ async function runSalesSummary(input: { start_date?: string; end_date?: string; 
     });
   } catch (e) {
     return '매출 집계 오류: ' + ((e as Error)?.message || e);
+  }
+}
+
+// 현재 재고 현황 집계(inventory 전량).
+async function runStockSummary(input: { company?: string }, scope: Scope): Promise<string> {
+  const allow = SCOPE_TABLES[scope];
+  const canInv = allow === 'all' || allow.has('inventory');
+  if (!canInv) return `오류: 재고는 현재 권한(${scope})으로 조회할 수 없습니다.`;
+  const cf = String(input.company || '').trim();
+  try {
+    let q = '/inventory?select=product_name,company,brand,quantity,cost_price';
+    if (cf) q += `&company=eq.${encodeURIComponent(cf)}`;
+    const rows = await supabaseFetchAll<{ product_name?: string; company?: string; brand?: string; quantity?: number; cost_price?: number }>(q);
+    let totalQty = 0, totalVal = 0;
+    const byCo = new Map<string, { qty: number; val: number; items: number }>();
+    const negatives: { 상품: string; 사업자: string; 수량: number }[] = [];
+    for (const r of rows) {
+      const qty = Number(r.quantity) || 0;
+      const val = qty * (Number(r.cost_price) || 0);
+      totalQty += qty; totalVal += val;
+      const co = r.company || '미분류';
+      const e = byCo.get(co) || { qty: 0, val: 0, items: 0 };
+      e.qty += qty; e.val += val; e.items++; byCo.set(co, e);
+      if (qty < 0) negatives.push({ 상품: r.product_name || '(이름없음)', 사업자: co, 수량: qty });
+    }
+    negatives.sort((a, b) => a.수량 - b.수량);
+    const round = (n: number) => Math.round(n);
+    return JSON.stringify({
+      사업자필터: cf || '전체',
+      총재고수량: totalQty,
+      재고평가액_원가: round(totalVal),
+      품목수: rows.length,
+      사업자별: [...byCo.entries()].map(([c, v]) => ({ 사업자: c, 재고수량: v.qty, 평가액: round(v.val), 품목수: v.items })).sort((a, b) => b.평가액 - a.평가액),
+      마이너스재고_품목수: negatives.length,
+      마이너스재고_상위: negatives.slice(0, 20),
+      비고: '현재 재고 스냅샷. 평가액=수량×개당원가. 단위: 원/개.',
+    });
+  } catch (e) {
+    return '재고 집계 오류: ' + ((e as Error)?.message || e);
+  }
+}
+
+// 기간별 출고 수량 집계(주문 전량 + 대표상품명 매칭). 매출현황 옆 '일자별 출고현황'과 동일 규칙.
+async function runOutboundSummary(input: { start_date?: string; end_date?: string; company?: string; exclude_wholesale?: boolean }, scope: Scope): Promise<string> {
+  const allow = SCOPE_TABLES[scope];
+  const canInv = allow === 'all' || allow.has('inventory');
+  if (!canInv) return `오류: 출고는 현재 권한(${scope})으로 조회할 수 없습니다.`;
+  const start = String(input.start_date || '').trim();
+  const end = String(input.end_date || '').trim() || todayKST();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(start) || !/^\d{4}-\d{2}-\d{2}$/.test(end)) return '오류: 날짜는 YYYY-MM-DD 형식이어야 합니다.';
+  const cf = String(input.company || '').trim();
+  const exW = !!input.exclude_wholesale;
+  try {
+    await loadDbMatches(true); // 대표상품명 매칭 반영
+    let oq = `/orders?select=product_name,collect_product,collect_option,quantity,canceled,company,source&upload_date=gte.${start}&upload_date=lte.${end}`;
+    if (cf) oq += `&company=eq.${encodeURIComponent(cf)}`;
+    const orders = await supabaseFetchAll<{ product_name?: string; collect_product?: string; collect_option?: string; quantity?: number; canceled?: boolean; company?: string; source?: string }>(oq);
+    let totalQty = 0;
+    const byCo = new Map<string, number>();
+    const byProd = new Map<string, number>();
+    let unmatchedQty = 0; const unmatchedSet = new Set<string>();
+    for (const r of orders) {
+      if (r.canceled) continue;
+      const q = Number(r.quantity) || 0;
+      if (q < 1) continue;
+      if (exW && r.source === '도매') continue;
+      const { name, matched } = repNameFor(r.collect_product || r.product_name || '', r.collect_option || '');
+      if (matched) {
+        totalQty += q;
+        const co = r.company || '미지정';
+        byCo.set(co, (byCo.get(co) || 0) + q);
+        byProd.set(name, (byProd.get(name) || 0) + q);
+      } else {
+        unmatchedQty += q; unmatchedSet.add(r.collect_product || r.product_name || '(이름없음)');
+      }
+    }
+    const topProd = [...byProd.entries()].map(([p, qv]) => ({ 상품: p, 출고수량: qv })).sort((a, b) => b.출고수량 - a.출고수량).slice(0, 15);
+    return JSON.stringify({
+      기간: `${start} ~ ${end}`,
+      사업자필터: cf || '전체',
+      도매제외: exW,
+      총출고수량_매칭분: totalQty,
+      사업자별: [...byCo.entries()].map(([c, qv]) => ({ 사업자: c, 출고수량: qv })).sort((a, b) => b.출고수량 - a.출고수량),
+      상위상품: topProd,
+      미매칭_상품종수: unmatchedSet.size,
+      미매칭_수량: unmatchedQty,
+      비고: '출고=취소제외 주문수량을 대표상품명(옵션반영)으로 매칭 집계. 미매칭분은 매칭데이터 등록이 필요.',
+    });
+  } catch (e) {
+    return '출고 집계 오류: ' + ((e as Error)?.message || e);
   }
 }
 
@@ -296,6 +420,7 @@ function buildSystem(scope: Scope): string {
 오늘은 한국시간 기준 ${todayKST()} 이다. "이번달/오늘/최근"은 이 날짜를 기준으로 계산한다.
 - 답은 반드시 도구로 조회한 실제 데이터에 근거한다. 추측하지 말 것.
 - ★매출·공헌이익·사업자별/기간 매출은 반드시 sales_summary 도구를 쓴다. query_erp로 orders를 받아 직접 합산하지 말 것(200건 잘림·부가세/실정산 누락으로 반드시 틀린다). "이번달"이면 start_date=그 달 1일, end_date=오늘.
+- ★재고 수량/금액은 반드시 stock_summary, 출고/판매수량은 반드시 outbound_summary 도구를 쓴다. query_erp로 inventory·orders를 받아 직접 합산하지 말 것(잘림·매칭누락으로 틀린다).
 - 그 외 데이터는 아래 데이터 지도를 보고 알맞은 테이블·컬럼으로 query_erp 질의한다. 테이블명을 넘겨짚지 말 것.
 - query_erp 응답에 "⚠️ …잘림" 경고가 있으면 그 데이터로 합계를 내지 말고, 기간/조건을 좁히거나 전용 도구를 쓴다.
 - 한국어 존댓말로, 숫자는 천단위 구분(,)과 '원' 단위로 깔끔하게. 표가 도움되면 간단한 텍스트 표로.
@@ -319,7 +444,7 @@ async function handleQuestion(channel: string, question: string, scope: Scope) {
         thinking: { type: 'adaptive' },
         output_config: { effort: 'medium' },
         system,
-        tools: [ERP_TOOL, SALES_TOOL],
+        tools: [ERP_TOOL, SALES_TOOL, STOCK_TOOL, OUTBOUND_TOOL],
         messages,
       });
       if (resp.stop_reason === 'tool_use') {
@@ -331,6 +456,12 @@ async function handleQuestion(channel: string, question: string, scope: Scope) {
             results.push({ type: 'tool_result', tool_use_id: block.id, content: out });
           } else if (block.type === 'tool_use' && block.name === 'sales_summary') {
             const out = await runSalesSummary(block.input as { start_date?: string; end_date?: string; company?: string }, scope);
+            results.push({ type: 'tool_result', tool_use_id: block.id, content: out });
+          } else if (block.type === 'tool_use' && block.name === 'stock_summary') {
+            const out = await runStockSummary(block.input as { company?: string }, scope);
+            results.push({ type: 'tool_result', tool_use_id: block.id, content: out });
+          } else if (block.type === 'tool_use' && block.name === 'outbound_summary') {
+            const out = await runOutboundSummary(block.input as { start_date?: string; end_date?: string; company?: string; exclude_wholesale?: boolean }, scope);
             results.push({ type: 'tool_result', tool_use_id: block.id, content: out });
           }
         }
