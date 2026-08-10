@@ -22,51 +22,75 @@ const ALLOWED = (process.env.SLACK_ALLOWED_USER_IDS || '')
   .split(',').map(s => s.trim()).filter(Boolean);
 const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY || '';
 
-// ── 역할·채널별 조회 권한 스코프 ─────────────────────────────
-// 보안 경계는 프롬프트가 아니라 백엔드(runQueryErp)에서 강제한다.
-type Scope = '경영' | '영업' | '물류' | '영업물류';
+// ── 조회 권한 = ERP "메뉴" 기준 ──────────────────────────────
+// 보안 경계는 프롬프트가 아니라 백엔드(runQueryErp/도구)에서 강제한다.
+// 채널·개인 모두 "메뉴 묶음(프로필)"으로 권한을 정한다. 메뉴 → 실제 테이블/집계도구로 변환.
+type MenuName =
+  | '매출현황' | '매출목표' | '주문변환' | '재고관리' | '상품마스터' | '거래처관리'
+  | '공지사항' | '업무일지' | '행사일정' | '출퇴근' | '인사관리' | '카드매입' | '결재';
 
-// 스코프 구성용 테이블 목록
-const SALES_TABLES = [
-  'orders', 'order_uploads', 'sales_targets', 'mall_fees',
-  'partners', 'brand_sales', 'order_settlements', 'order_fee_overrides',
-];
-const LOGISTICS_TABLES = [
-  'inventory', 'inventory_logs', 'inventory_snapshots', 'ship_alerts',
-  'orders', 'order_uploads', 'product_matches', 'product_bom', 'products',
-  'purchase_receipts', 'partners', 'approvals',
-];
-
-// 스코프별 허용 테이블(허용목록 = 기본 차단). '경영'은 전체 허용.
-const SCOPE_TABLES: Record<Scope, ReadonlySet<string> | 'all'> = {
-  경영: 'all',
-  영업: new Set(SALES_TABLES),
-  물류: new Set(LOGISTICS_TABLES),
-  영업물류: new Set([...SALES_TABLES, ...LOGISTICS_TABLES]), // 영업+물류 겸직
+// 각 ERP 메뉴가 봇에게 허용하는 테이블·집계도구. (계정관리=비밀번호는 어떤 메뉴에도 없음 → 항상 차단)
+const MENU_DEF: Record<MenuName, { tables: string[]; tools: string[] }> = {
+  매출현황: { tables: ['orders', 'mall_fees', 'brand_sales', 'order_settlements', 'order_fee_overrides'], tools: ['sales_summary'] },
+  매출목표: { tables: ['sales_targets'], tools: [] },
+  주문변환: { tables: ['orders', 'order_uploads'], tools: [] },
+  재고관리: { tables: ['inventory', 'inventory_logs', 'inventory_snapshots', 'ship_alerts'], tools: ['stock_summary', 'outbound_summary'] },
+  상품마스터: { tables: ['products', 'product_matches', 'product_bom'], tools: [] },
+  거래처관리: { tables: ['partners'], tools: [] },
+  공지사항: { tables: ['notices', 'notice_comments'], tools: [] },
+  업무일지: { tables: ['worklogs'], tools: [] },
+  행사일정: { tables: ['calendar_events'], tools: [] },
+  출퇴근: { tables: ['attendance'], tools: [] },
+  인사관리: { tables: ['employees'], tools: [] },        // 급여 포함(단 password_hash는 항상 차단)
+  카드매입: { tables: ['cards', 'purchase_receipts'], tools: [] },
+  결재: { tables: ['approvals', 'approval_items'], tools: [] },
 };
 
-// employees.role → 스코프. 매핑 없는 역할(manager/partner 등)은 접근 불가(안전).
-const ROLE_SCOPE: Record<string, Scope> = {
-  ceo: '경영', admin: '경영',
+// 프로필(권한 묶음) = 메뉴 목록. '전체'는 accounts·rpc만 빼고 전부.
+const PROFILE_MENUS: Record<string, MenuName[] | '전체'> = {
+  물류: ['매출현황', '매출목표', '주문변환', '재고관리', '상품마스터', '거래처관리'],
+  영업: ['매출현황', '매출목표', '주문변환', '재고관리', '상품마스터', '거래처관리', '공지사항', '업무일지'],
+  경영지원: ['매출현황', '매출목표', '주문변환', '재고관리', '상품마스터', '거래처관리', '공지사항', '업무일지', '행사일정', '출퇴근', '카드매입', '결재'],
+  전체: '전체',
+};
+
+type Perm = { label: string; tables: ReadonlySet<string> | 'all'; tools: ReadonlySet<string> };
+const ALL_TOOLS: ReadonlySet<string> = new Set(['sales_summary', 'stock_summary', 'outbound_summary']);
+
+// 프로필명 → 실제 허용 테이블·도구로 변환. 없는 프로필은 null(접근 불가).
+function permForProfile(name: string | undefined): Perm | null {
+  if (!name) return null;
+  const menus = PROFILE_MENUS[name];
+  if (!menus) return null;
+  if (menus === '전체') return { label: name, tables: 'all', tools: ALL_TOOLS };
+  const tables = new Set<string>();
+  const tools = new Set<string>();
+  for (const m of menus) { const d = MENU_DEF[m]; if (d) { d.tables.forEach((t) => tables.add(t)); d.tools.forEach((t) => tools.add(t)); } }
+  return { label: name, tables, tools };
+}
+
+// employees.role → 기본 프로필(개인 DM). 직원별 개별 지정(EMAIL_PROFILE)이 우선.
+const ROLE_PROFILE: Record<string, string> = {
+  ceo: '전체', admin: '전체',
   sales: '영업', md: '영업',
   inventory: '물류',
 };
 
-// 겸직 등으로 역할만으론 부족한 직원의 스코프 개별 지정(이메일 소문자). 역할보다 우선.
-const EMAIL_SCOPE_OVERRIDE: Record<string, Scope> = {
-  'woonggukang@naver.com': '영업물류', // 강웅구: 영업+물류 겸직(급여·카드·영업이익은 여전히 차단)
+// 직원별 개별 권한(이메일 소문자 → 프로필명). 대표님이 직원별로 전달하면 여기에 채운다. 역할보다 우선.
+const EMAIL_PROFILE: Record<string, string> = {
 };
 
-// 팀 채널봇: 채널 ID → 스코프. 채널에서 @봇 부르면 "사람"이 아니라 "채널" 권한으로 답한다.
-// (채널은 멤버 전원이 답을 보므로, 대표라도 #물류 채널에선 물류 범위만 조회 가능)
-// 설정: 환경변수 SLACK_CHANNEL_SCOPES="C012=물류,C345=영업,C678=경영" (채널 ID로 매핑, 스푸핑 불가).
-// 매핑 없는 채널은 기본 차단(조회 불가).
-const CHANNEL_SCOPES: Record<string, Scope> = (() => {
+// 팀 채널봇: 채널 ID → 프로필명. 채널에서 @봇 부르면 "사람"이 아니라 "채널" 권한으로 답한다.
+// (채널은 멤버 전원이 답을 보므로, 대표라도 채널 프로필 범위만 조회 가능)
+// 코드에 직접 넣거나(아래), 환경변수 SLACK_CHANNEL_SCOPES="C012=물류,C345=영업,C678=경영지원"로 지정. 미매핑 채널은 기본 차단.
+const CHANNEL_PROFILE: Record<string, string> = (() => {
+  const m: Record<string, string> = {
+    // 채널 ID → 프로필. 예: 'C0ABCD1234': '물류',
+  };
   const raw = process.env.SLACK_CHANNEL_SCOPES || '';
-  const m: Record<string, Scope> = {};
   for (const pair of raw.split(',')) {
-    const [id, sc] = pair.split('=').map((s) => s.trim());
-    if (id && (sc === '경영' || sc === '영업' || sc === '물류' || sc === '영업물류')) m[id] = sc as Scope;
+    const [id, name] = pair.split('=').map((s) => s.trim());
+    if (id && name && PROFILE_MENUS[name]) m[id] = name;
   }
   return m;
 })();
@@ -187,14 +211,13 @@ const OUTBOUND_TOOL: Anthropic.Tool = {
 // 보안상 봇이 읽으면 안 되는 테이블 (비밀번호 등 민감정보)
 const BLOCKED_TABLES = new Set(['accounts', 'rpc']);
 
-async function runQueryErp(input: { table?: string; query?: string }, scope: Scope): Promise<string> {
+async function runQueryErp(input: { table?: string; query?: string }, perm: Perm): Promise<string> {
   const table = String(input.table || '').trim();
   if (!/^[a-z_][a-z0-9_]*$/.test(table)) return '오류: 잘못된 테이블명';
   if (BLOCKED_TABLES.has(table)) return `오류: '${table}' 테이블은 보안상 조회할 수 없습니다 (rpc·비밀번호 등)`;
-  // 스코프별 허용 테이블 검사 (허용목록 = 기본 차단)
-  const allow = SCOPE_TABLES[scope];
-  if (allow !== 'all' && !allow.has(table)) {
-    return `오류: '${table}' 테이블은 현재 권한(${scope})으로 조회할 수 없습니다.`;
+  // 권한(메뉴)별 허용 테이블 검사 (허용목록 = 기본 차단)
+  if (perm.tables !== 'all' && !perm.tables.has(table)) {
+    return `오류: '${table}' 테이블은 현재 권한(${perm.label})으로 조회할 수 없습니다.`;
   }
   let q = String(input.query || '').trim();
   if (!q) q = 'select=*&limit=20';
@@ -205,11 +228,6 @@ async function runQueryErp(input: { table?: string; query?: string }, scope: Sco
       q = q.replace(/(^|&)select=\*/g, '').replace(/^&/, '');
       q = `select=${EMP_SAFE_COLS}` + (q ? `&${q}` : '');
     }
-  }
-  // 경영 외 스코프의 approvals는 발주서만 (지출결의서·카드구매·급여결재 차단)
-  if (scope !== '경영' && table === 'approvals') {
-    q = q.replace(/(^|&)doc_type=[^&]*/g, '').replace(/^&/, '');
-    q += (q ? '&' : '') + 'doc_type=eq.발주서';
   }
   // 안전장치: 최대 200건으로 제한
   if (!/[?&]?limit=/.test(q)) q += '&limit=200';
@@ -234,11 +252,8 @@ async function runQueryErp(input: { table?: string; query?: string }, scope: Sco
 }
 
 // 매출·공헌이익을 ERP 매출현황과 동일하게 집계(전량 페이징 + computeOrderLines).
-async function runSalesSummary(input: { start_date?: string; end_date?: string; company?: string }, scope: Scope): Promise<string> {
-  // 권한: 매출 접근 가능한 스코프만(영업 계열·경영). 물류 단독은 매출 조회 불가.
-  const allow = SCOPE_TABLES[scope];
-  const canSales = allow === 'all' || allow.has('sales_targets');
-  if (!canSales) return `오류: 매출은 현재 권한(${scope})으로 조회할 수 없습니다.`;
+async function runSalesSummary(input: { start_date?: string; end_date?: string; company?: string }, perm: Perm): Promise<string> {
+  if (!perm.tools.has('sales_summary')) return `오류: 매출은 현재 권한(${perm.label})으로 조회할 수 없습니다.`;
   const start = String(input.start_date || '').trim();
   const end = String(input.end_date || '').trim() || todayKST();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(start) || !/^\d{4}-\d{2}-\d{2}$/.test(end)) return '오류: 날짜는 YYYY-MM-DD 형식이어야 합니다.';
@@ -290,10 +305,8 @@ async function runSalesSummary(input: { start_date?: string; end_date?: string; 
 }
 
 // 현재 재고 현황 집계(inventory 전량).
-async function runStockSummary(input: { company?: string }, scope: Scope): Promise<string> {
-  const allow = SCOPE_TABLES[scope];
-  const canInv = allow === 'all' || allow.has('inventory');
-  if (!canInv) return `오류: 재고는 현재 권한(${scope})으로 조회할 수 없습니다.`;
+async function runStockSummary(input: { company?: string }, perm: Perm): Promise<string> {
+  if (!perm.tools.has('stock_summary')) return `오류: 재고는 현재 권한(${perm.label})으로 조회할 수 없습니다.`;
   const cf = String(input.company || '').trim();
   try {
     let q = '/inventory?select=product_name,company,brand,quantity,cost_price';
@@ -329,10 +342,8 @@ async function runStockSummary(input: { company?: string }, scope: Scope): Promi
 }
 
 // 기간별 출고 수량 집계(주문 전량 + 대표상품명 매칭). 매출현황 옆 '일자별 출고현황'과 동일 규칙.
-async function runOutboundSummary(input: { start_date?: string; end_date?: string; company?: string; exclude_wholesale?: boolean }, scope: Scope): Promise<string> {
-  const allow = SCOPE_TABLES[scope];
-  const canInv = allow === 'all' || allow.has('inventory');
-  if (!canInv) return `오류: 출고는 현재 권한(${scope})으로 조회할 수 없습니다.`;
+async function runOutboundSummary(input: { start_date?: string; end_date?: string; company?: string; exclude_wholesale?: boolean }, perm: Perm): Promise<string> {
+  if (!perm.tools.has('outbound_summary')) return `오류: 출고는 현재 권한(${perm.label})으로 조회할 수 없습니다.`;
   const start = String(input.start_date || '').trim();
   const end = String(input.end_date || '').trim() || todayKST();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(start) || !/^\d{4}-\d{2}-\d{2}$/.test(end)) return '오류: 날짜는 YYYY-MM-DD 형식이어야 합니다.';
@@ -424,13 +435,11 @@ const SCHEMA_GUIDE = `[BNKNET ERP 데이터 지도 — PostgREST 테이블, 모�
 - delivery_fee는 '고객이 낸 배송비'로 매출에 가산되는 값이다. 쿠팡 등 무료배송이면 0이 정상이며, 이것이 이익률을 왜곡하지 않는다.
 - 공헌이익률이 유난히 높으면: ① 해당 몰의 수수료율이 mall_fees에 미등록(rate 없음 → 수수료 0으로 과대) 이거나 ② 고마진 상품이 대량 판매된 경우를 먼저 의심한다. mall_fees에 (company, mall) rate가 있는지 먼저 확인하고 판단할 것.`;
 
-function buildSystem(scope: Scope): string {
-  const allow = SCOPE_TABLES[scope];
-  const scopeNote = allow === 'all'
-    ? '이 사용자는 전체 데이터 조회 권한(경영)이다.'
-    : `이 사용자의 조회 권한은 '${scope}' 범위다. 다음 테이블만 조회할 수 있다: ${[...allow].join(', ')}.\n` +
-      '그 외 테이블(급여·카드·영업이익·인사 등)은 권한이 없어 조회할 수 없다. 권한 밖 내용을 물으면 우회 조회하지 말고 "그 정보는 조회 권한이 없어요"라고 정중히 답한다.' +
-      (allow.has('approvals') ? ' approvals는 발주서(doc_type=발주서)만 조회된다.' : '');
+function buildSystem(perm: Perm): string {
+  const scopeNote = perm.tables === 'all'
+    ? '이 사용자/채널은 전체 데이터 조회 권한이다.'
+    : `이 사용자/채널의 조회 권한(${perm.label})으로 볼 수 있는 것 — 테이블: ${[...perm.tables].join(', ') || '(없음)'} / 집계도구: ${[...perm.tools].join(', ') || '(없음)'}.\n` +
+      '위 목록에 없는 테이블·도구(예: 권한에 없으면 급여·카드·결재·매출 등)는 조회할 수 없다. 권한 밖 내용을 물으면 우회 조회하지 말고 "그 정보는 조회 권한이 없어요"라고 정중히 답한다.';
   return `너는 BNKNET ERP의 사내 데이터 비서다. 사용자의 질문에 ERP 데이터로 정확히 답한다.
 오늘은 한국시간 기준 ${todayKST()} 이다. "이번달/오늘/최근"은 이 날짜를 기준으로 계산한다.
 - 답은 반드시 도구로 조회한 실제 데이터에 근거한다. 추측하지 말 것.
@@ -446,12 +455,12 @@ function buildSystem(scope: Scope): string {
 ${SCHEMA_GUIDE}`;
 }
 
-async function handleQuestion(channel: string, question: string, scope: Scope) {
+async function handleQuestion(channel: string, question: string, perm: Perm) {
   if (!ANTHROPIC_KEY) { await postSlack(channel, '설정 오류: ANTHROPIC_API_KEY 미설정'); return; }
   const client = new Anthropic({ apiKey: ANTHROPIC_KEY });
   const messages: Anthropic.MessageParam[] = [{ role: 'user', content: question }];
   try {
-    const system = buildSystem(scope);
+    const system = buildSystem(perm);
     for (let i = 0; i < 12; i++) { // 도구 호출 루프 상한
       const resp = await client.messages.create({
         model: 'claude-opus-4-8',
@@ -467,16 +476,16 @@ async function handleQuestion(channel: string, question: string, scope: Scope) {
         const results: Anthropic.ToolResultBlockParam[] = [];
         for (const block of resp.content) {
           if (block.type === 'tool_use' && block.name === 'query_erp') {
-            const out = await runQueryErp(block.input as { table?: string; query?: string }, scope);
+            const out = await runQueryErp(block.input as { table?: string; query?: string }, perm);
             results.push({ type: 'tool_result', tool_use_id: block.id, content: out });
           } else if (block.type === 'tool_use' && block.name === 'sales_summary') {
-            const out = await runSalesSummary(block.input as { start_date?: string; end_date?: string; company?: string }, scope);
+            const out = await runSalesSummary(block.input as { start_date?: string; end_date?: string; company?: string }, perm);
             results.push({ type: 'tool_result', tool_use_id: block.id, content: out });
           } else if (block.type === 'tool_use' && block.name === 'stock_summary') {
-            const out = await runStockSummary(block.input as { company?: string }, scope);
+            const out = await runStockSummary(block.input as { company?: string }, perm);
             results.push({ type: 'tool_result', tool_use_id: block.id, content: out });
           } else if (block.type === 'tool_use' && block.name === 'outbound_summary') {
-            const out = await runOutboundSummary(block.input as { start_date?: string; end_date?: string; company?: string; exclude_wholesale?: boolean }, scope);
+            const out = await runOutboundSummary(block.input as { start_date?: string; end_date?: string; company?: string; exclude_wholesale?: boolean }, perm);
             results.push({ type: 'tool_result', tool_use_id: block.id, content: out });
           }
         }
@@ -538,12 +547,12 @@ export async function POST(req: NextRequest) {
       const q = text.replace(/<@[^>]+>/g, '').trim(); // 멘션 토큰 제거
       if (q) {
         after(async () => {
-          const scope = CHANNEL_SCOPES[channel];
-          if (!scope) {
+          const perm = permForProfile(CHANNEL_PROFILE[channel]);
+          if (!perm) {
             await postSlack(channel, '이 채널은 ERP 조회 권한이 설정돼 있지 않아요. (관리자: 채널 권한 매핑 필요) DM으로 물어보시면 개인 권한으로 답해드려요.');
             return;
           }
-          await handleQuestion(channel, q, scope);
+          await handleQuestion(channel, q, perm);
         });
       }
       return NextResponse.json({ ok: true });
@@ -552,27 +561,27 @@ export async function POST(req: NextRequest) {
     if (isDM && isHuman && text) {
       // 3초 내 200 응답 필수 → 즉시 ack, 권한 판별·처리는 응답 후 비동기로
       after(async () => {
-        // 슬랙 계정 → 이메일 → 활성 직원 역할 → 스코프 (단계별로 원인 구분)
+        // 슬랙 계정 → 이메일 → 활성 직원 → 프로필(메뉴 권한) (단계별로 원인 구분)
         const isWhitelisted = ALLOWED.includes(userId);
         const email = await slackUserEmail(userId);
         if (!email) {
-          if (isWhitelisted) { await handleQuestion(channel, text, '경영'); return; }
+          if (isWhitelisted) { await handleQuestion(channel, text, permForProfile('전체')!); return; }
           await postSlack(channel, '권한 확인 실패 ①: 슬랙에서 이메일을 읽지 못했어요. (앱에 users:read.email 권한이 필요) 관리자에게 문의해주세요.');
           return;
         }
         const emp = await employeeByEmail(email);
         if (!emp) {
-          if (isWhitelisted) { await handleQuestion(channel, text, '경영'); return; }
+          if (isWhitelisted) { await handleQuestion(channel, text, permForProfile('전체')!); return; }
           await postSlack(channel, `권한 확인 실패 ②: ERP 직원에서 '${email}' 이메일을 찾지 못했어요. (슬랙 이메일 = ERP employees 이메일 이어야 함) 관리자에게 문의해주세요.`);
           return;
         }
-        const scope = EMAIL_SCOPE_OVERRIDE[email] || ROLE_SCOPE[emp.role];
-        if (!scope) {
-          if (isWhitelisted) { await handleQuestion(channel, text, '경영'); return; }
+        const perm = permForProfile(EMAIL_PROFILE[email] || ROLE_PROFILE[emp.role]);
+        if (!perm) {
+          if (isWhitelisted) { await handleQuestion(channel, text, permForProfile('전체')!); return; }
           await postSlack(channel, `권한 확인 실패 ③: 역할 '${emp.role}'은 봇 조회 권한이 설정되지 않았어요. 관리자에게 문의해주세요.`);
           return;
         }
-        await handleQuestion(channel, text, scope);
+        await handleQuestion(channel, text, perm);
       });
     }
   }
