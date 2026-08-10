@@ -6,6 +6,7 @@ import { supabaseFetch, supabaseFetchAll } from '@/lib/supabase';
 import { computeOrderLines, type FullOrder, type FullInv } from '@/lib/salesStats';
 import { repNameFor, loadDbMatches } from '@/lib/orderConvert';
 import type { MallFee } from '@/lib/mallFees';
+import { OPEX_COMPANIES, OPEX_CATEGORIES, INSURANCE_RATE, toSupply } from '@/lib/opex';
 
 // ── 슬랙 ERP 비서 (DM 개인봇 + 팀 채널봇) ───────────────────────────
 // 직원이 슬랙에서 ERP 데이터를 자연어로 물어보면, Claude가 읽기 전용 도구로 Supabase를 조회·추론해 답한다.
@@ -15,6 +16,7 @@ import type { MallFee } from '@/lib/mallFees';
 //   · 채널(@멘션): SLACK_CHANNEL_SCOPES의 채널→스코프 매핑. 사람 권한 무시, 채널 기준(멤버 전원이 답을 봄).
 // 보안 경계는 프롬프트가 아니라 이 백엔드 — 읽기(GET) 전용, rpc·비밀번호(accounts·employees.password_hash) 차단.
 export const runtime = 'nodejs';
+export const maxDuration = 60; // 복잡한 질문(여러 조회·집계)도 시간 내 답하도록 상향(기본 너무 짧아 무응답 발생)
 
 const SIGNING_SECRET = process.env.SLACK_SIGNING_SECRET || '';
 const BOT_TOKEN = process.env.SLACK_BOT_TOKEN || '';
@@ -27,7 +29,7 @@ const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY || '';
 // 채널·개인 모두 "메뉴 묶음(프로필)"으로 권한을 정한다. 메뉴 → 실제 테이블/집계도구로 변환.
 type MenuName =
   | '매출현황' | '매출목표' | '주문변환' | '재고관리' | '상품마스터' | '거래처관리'
-  | '공지사항' | '업무일지' | '행사일정' | '출퇴근' | '인사관리' | '카드매입' | '결재';
+  | '공지사항' | '업무일지' | '행사일정' | '출퇴근' | '인사관리' | '카드매입' | '결재' | '영업이익';
 
 // 각 ERP 메뉴가 봇에게 허용하는 테이블·집계도구. (계정관리=비밀번호는 어떤 메뉴에도 없음 → 항상 차단)
 const MENU_DEF: Record<MenuName, { tables: string[]; tools: string[] }> = {
@@ -44,6 +46,7 @@ const MENU_DEF: Record<MenuName, { tables: string[]; tools: string[] }> = {
   인사관리: { tables: ['employees'], tools: [] },        // 급여 포함(단 password_hash는 항상 차단)
   카드매입: { tables: ['cards', 'purchase_receipts'], tools: [] },
   결재: { tables: ['approvals', 'approval_items'], tools: [] },
+  영업이익: { tables: ['opex', 'opex_item', 'opex_category'], tools: ['profit_summary'] }, // 판관비·영업이익(민감: 급여 반영)
 };
 
 // 프로필(권한 묶음) = 메뉴 목록. '전체'는 accounts·rpc만 빼고 전부.
@@ -55,7 +58,7 @@ const PROFILE_MENUS: Record<string, MenuName[] | '전체'> = {
 };
 
 type Perm = { label: string; tables: ReadonlySet<string> | 'all'; tools: ReadonlySet<string> };
-const ALL_TOOLS: ReadonlySet<string> = new Set(['sales_summary', 'stock_summary', 'outbound_summary']);
+const ALL_TOOLS: ReadonlySet<string> = new Set(['sales_summary', 'stock_summary', 'outbound_summary', 'profit_summary']);
 
 // 프로필명 → 실제 허용 테이블·도구로 변환. 없는 프로필은 null(접근 불가).
 function permForProfile(name: string | undefined): Perm | null {
@@ -163,14 +166,18 @@ const SALES_TOOL: Anthropic.Tool = {
   name: 'sales_summary',
   description:
     '기간별 매출(공급가액)·공헌이익을 ERP 매출현황과 동일한 정식 계산으로 집계한다. ' +
-    '매출·공헌이익·사업자별/기간 합계 질문은 반드시 이 도구를 쓴다(query_erp로 orders를 받아 직접 합산 금지 — 전량 반영 안 돼 틀림). ' +
-    '부가세 제외(÷1.1), 취소 제외, 오픈마켓 실정산·몰수수료·원가·세트구성까지 반영해 화면과 100% 일치한다.',
+    '매출·공헌이익·사업자별/몰별/상품별/기간(주차 포함) 합계 질문은 반드시 이 도구를 쓴다(query_erp로 orders를 받아 직접 합산 금지 — 전량 반영 안 돼 틀림). ' +
+    '부가세 제외(÷1.1), 취소 제외, 오픈마켓 실정산·몰수수료·원가·세트구성까지 반영해 화면과 100% 일치한다. ' +
+    '주차별은 start_date~end_date로 그 주 범위를 지정한다(예: 7월3주=07-14~07-20). 몰·상품 지정 시 해당 조건만 집계.',
   input_schema: {
     type: 'object',
     properties: {
-      start_date: { type: 'string', description: '시작일 YYYY-MM-DD (포함). 예: 이번달이면 그 달 1일.' },
+      start_date: { type: 'string', description: '시작일 YYYY-MM-DD (포함). 예: 이번달이면 그 달 1일, 특정 주면 그 주 월요일.' },
       end_date: { type: 'string', description: '종료일 YYYY-MM-DD (포함). 생략 시 오늘(KST).' },
-      company: { type: 'string', description: '특정 사업자만 볼 때: 더블아이/BNKNET/SJ글로벌/IX글로벌. 생략 시 전체 사업자 합산+사업자별 내역.' },
+      company: { type: 'string', description: '특정 사업자만: 더블아이/BNKNET/SJ글로벌/IX글로벌. 생략 시 전체.' },
+      mall: { type: 'string', description: '특정 판매몰만(부분일치). 예: 네이버, 스마트스토어, 쿠팡, 지마켓. 생략 시 전체 몰.' },
+      product: { type: 'string', description: '특정 상품/브랜드만(대표상품명·브랜드 부분일치). 예: 덴프스. 생략 시 전체 상품.' },
+      group_by: { type: 'string', enum: ['company', 'mall', 'product'], description: '내역을 무엇별로 나눌지. 기본 company(사업자별).' },
     },
     required: ['start_date'],
   },
@@ -205,6 +212,22 @@ const OUTBOUND_TOOL: Anthropic.Tool = {
       exclude_wholesale: { type: 'boolean', description: '도매(소스=도매) 제외 여부. 기본 false.' },
     },
     required: ['start_date'],
+  },
+};
+
+// 영업이익 전용 집계 — 월·사업자 단위(ERP 매출현황 영업이익 탭과 동일). 급여·판관비 포함 민감지표.
+const PROFIT_TOOL: Anthropic.Tool = {
+  name: 'profit_summary',
+  description:
+    '월별·사업자별 영업이익을 ERP 영업이익 탭과 동일하게 집계한다(영업이익=공헌이익−판관비). ' +
+    '판관비=수동입력+승인된 지출결의서 태깅+급여×4대보험까지 반영. 영업이익 질문은 반드시 이 도구를 쓴다. ' +
+    '★영업이익은 "월 단위"만 가능하다(판관비가 월 고정비라 주차별/몰별/상품별로 나눌 수 없음 — 그렇게 요청되면 사유를 설명하고 월 기준으로 안내).',
+  input_schema: {
+    type: 'object',
+    properties: {
+      year_month: { type: 'string', description: '기준월 YYYY-MM. 생략 시 이번달(KST).' },
+      company: { type: 'string', description: '특정 사업자만: 더블아이/BNKNET/SJ글로벌/IX글로벌. 생략 시 전체+사업자별.' },
+    },
   },
 };
 
@@ -252,12 +275,15 @@ async function runQueryErp(input: { table?: string; query?: string }, perm: Perm
 }
 
 // 매출·공헌이익을 ERP 매출현황과 동일하게 집계(전량 페이징 + computeOrderLines).
-async function runSalesSummary(input: { start_date?: string; end_date?: string; company?: string }, perm: Perm): Promise<string> {
+async function runSalesSummary(input: { start_date?: string; end_date?: string; company?: string; mall?: string; product?: string; group_by?: string }, perm: Perm): Promise<string> {
   if (!perm.tools.has('sales_summary')) return `오류: 매출은 현재 권한(${perm.label})으로 조회할 수 없습니다.`;
   const start = String(input.start_date || '').trim();
   const end = String(input.end_date || '').trim() || todayKST();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(start) || !/^\d{4}-\d{2}-\d{2}$/.test(end)) return '오류: 날짜는 YYYY-MM-DD 형식이어야 합니다.';
   const companyFilter = String(input.company || '').trim();
+  const mallFilter = String(input.mall || '').trim().toLowerCase();
+  const productFilter = String(input.product || '').trim().toLowerCase();
+  const groupBy = (['company', 'mall', 'product'].includes(String(input.group_by)) ? input.group_by : 'company') as 'company' | 'mall' | 'product';
   try {
     await loadDbMatches(true); // 대표상품명 매칭(product_matches) 반영 — 원가·공헌이익 정확도
     const cols = 'upload_date,mall_name,product_name,collect_product,collect_option,quantity,amount,canceled,company,order_number,delivery_fee,source,manual_cost,manual_shipping';
@@ -278,29 +304,136 @@ async function runSalesSummary(input: { start_date?: string; end_date?: string; 
 
     const { lines } = computeOrderLines(orders, inventory, fees, bom, settle, feeOverride);
     let rev = 0, prof = 0, cnt = 0;
-    const byCo = new Map<string, { rev: number; prof: number; cnt: number }>();
+    const groupKeyLabel = { company: '사업자', mall: '몰', product: '상품' }[groupBy];
+    const byG = new Map<string, { rev: number; prof: number; cnt: number }>();
     for (const r of lines) {
+      if (mallFilter && !String(r.mall || '').toLowerCase().includes(mallFilter)) continue;
+      if (productFilter && !(`${r.rep} ${r.brand}`.toLowerCase().includes(productFilter))) continue;
+      const key = groupBy === 'company' ? r.company : groupBy === 'mall' ? (r.mall || '(몰 미상)') : r.rep;
       rev += r.rev; cnt++;
       if (r.profitKnown) prof += r.profit;
-      const e = byCo.get(r.company) || { rev: 0, prof: 0, cnt: 0 };
+      const e = byG.get(key) || { rev: 0, prof: 0, cnt: 0 };
       e.rev += r.rev; e.cnt++; if (r.profitKnown) e.prof += r.profit;
-      byCo.set(r.company, e);
+      byG.set(key, e);
     }
     const round = (n: number) => Math.round(n);
-    const companies = [...byCo.entries()]
-      .map(([c, v]) => ({ 사업자: c, 매출: round(v.rev), 공헌이익: round(v.prof), 주문라인수: v.cnt }))
-      .sort((a, b) => b.매출 - a.매출);
+    const breakdown = [...byG.entries()]
+      .map(([k, v]) => ({ [groupKeyLabel]: k, 매출: round(v.rev), 공헌이익: round(v.prof), 주문라인수: v.cnt }))
+      .sort((a, b) => (b.매출 as number) - (a.매출 as number))
+      .slice(0, 30);
+    if (cnt === 0) {
+      return JSON.stringify({ 기간: `${start} ~ ${end}`, 사업자필터: companyFilter || '전체', 몰필터: input.mall || '전체', 상품필터: input.product || '전체', 결과: '해당 조건의 매출 데이터가 없습니다(취소 제외).', 총매출_공급가액: 0, 총공헌이익: 0 });
+    }
     return JSON.stringify({
       기간: `${start} ~ ${end}`,
       사업자필터: companyFilter || '전체',
+      몰필터: input.mall || '전체',
+      상품필터: input.product || '전체',
+      묶음기준: groupKeyLabel,
       총매출_공급가액: round(rev),
       총공헌이익: round(prof),
       주문라인수: cnt,
-      사업자별: companies,
-      비고: 'ERP 매출현황과 동일 계산(부가세 제외 공급가액, 취소·오픈마켓 실정산·몰수수료·원가 반영). 단위: 원.',
+      [`${groupKeyLabel}별`]: breakdown,
+      비고: 'ERP 매출현황과 동일 계산(부가세 제외 공급가액, 취소·오픈마켓 실정산·몰수수료·원가 반영). 몰·상품은 부분일치. 단위: 원.',
     });
   } catch (e) {
     return '매출 집계 오류: ' + ((e as Error)?.message || e);
+  }
+}
+
+// 영업이익(월·사업자) 집계 — ERP 매출현황 '영업이익' 탭과 동일: 공헌이익 − 판관비(공급가액).
+// 판관비 = 수동(opex+opex_item) + 승인된 지출결의서 태깅(approval_items) + 급여×4대보험(insurance). 과세는 ÷1.1.
+async function runProfitSummary(input: { year_month?: string; company?: string }, perm: Perm): Promise<string> {
+  if (!perm.tools.has('profit_summary')) return `오류: 영업이익은 현재 권한(${perm.label})으로 조회할 수 없습니다. (급여·판관비 포함 민감 지표라 경영 권한 전용)`;
+  const ym = String(input.year_month || '').trim() || todayKST().slice(0, 7);
+  if (!/^\d{4}-\d{2}$/.test(ym)) return '오류: year_month는 YYYY-MM 형식이어야 합니다. 영업이익은 월 단위만 가능(판관비가 월 고정비라 주차/몰/상품별로 나눌 수 없음).';
+  const [y, mo] = ym.split('-').map(Number);
+  const onlyCo = String(input.company || '').trim();
+  try {
+    await loadDbMatches(true);
+    const cols = 'upload_date,mall_name,product_name,collect_product,collect_option,quantity,amount,canceled,company,order_number,delivery_fee,source,manual_cost,manual_shipping';
+    const [orders, inventory, fees, bom, stRows, foRows, opexRows, opexItems, cats, apps, appItems, emps] = await Promise.all([
+      supabaseFetchAll<FullOrder>(`/orders?select=${cols}&upload_date=gte.${ym}-01&upload_date=lte.${ym}-31&order=upload_date.asc`),
+      supabaseFetchAll<FullInv>('/inventory?select=product_name,company,brand,cost_price'),
+      supabaseFetchAll<MallFee>('/mall_fees?select=company,mall,rate'),
+      supabaseFetchAll<{ set_name: string; component_name: string; component_qty: number }>('/product_bom?select=set_name,component_name,component_qty').catch(() => []),
+      supabaseFetchAll<{ order_number: string; fee: number; cost: number; amount: number }>('/order_settlements?select=order_number,fee,cost,amount').catch(() => []),
+      supabaseFetchAll<{ order_number: string; fee_rate: number }>('/order_fee_overrides?select=order_number,fee_rate').catch(() => []),
+      supabaseFetchAll<{ company?: string; category?: string; amount?: number }>(`/opex?year=eq.${y}&month=eq.${mo}&select=company,category,amount`).catch(() => []),
+      supabaseFetchAll<{ company?: string; category?: string; amount?: number }>(`/opex_item?year=eq.${y}&month=eq.${mo}&select=company,category,amount`).catch(() => []),
+      supabaseFetchAll<{ key: string; taxable?: boolean; active?: boolean }>('/opex_category?select=key,taxable,active').catch(() => []),
+      supabaseFetchAll<{ id: string; company?: string; spend_date?: string; issue_date?: string }>('/approvals?doc_type=eq.지출결의서&status=eq.approved&select=id,company,spend_date,issue_date').catch(() => []),
+      supabaseFetchAll<{ approval_id?: string; amount?: number; opex_category?: string; canceled?: boolean }>('/approval_items?opex_category=not.is.null&select=approval_id,amount,opex_category,canceled').catch(() => []),
+      supabaseFetchAll<{ company?: string; salary?: number; status?: string; salary_alloc?: Record<string, number> | null }>('/employees?select=company,salary,status,salary_alloc').catch(() => []),
+    ]);
+    const settle = new Map<string, { fee: number; cost: number; amount: number }>();
+    for (const s of stRows) if (s.order_number) settle.set(String(s.order_number), { fee: Number(s.fee) || 0, cost: Number(s.cost) || 0, amount: Number(s.amount) || 0 });
+    const feeOverride = new Map<string, number>();
+    for (const r of foRows) if (r.order_number) feeOverride.set(String(r.order_number), Number(r.fee_rate) || 0);
+
+    // 과세여부 맵(DB + 폴백) / 활성 카테고리
+    const taxMap: Record<string, boolean> = {};
+    for (const c of cats) taxMap[c.key] = c.taxable !== false;
+    for (const c of OPEX_CATEGORIES) if (!(c.key in taxMap)) taxMap[c.key] = c.taxable;
+    const insuranceActive = cats.length ? cats.some((c) => c.key === 'insurance' && c.active !== false) : true;
+
+    // 공헌이익(월·사업자) — computeOrderLines
+    const { lines } = computeOrderLines(orders, inventory, fees, bom, settle, feeOverride);
+    const profByCo: Record<string, number> = {};
+    for (const l of lines) {
+      if (!l.date || l.date.slice(0, 7) !== ym) continue;
+      if (!OPEX_COMPANIES.includes(l.company)) continue;
+      if (l.profitKnown) profByCo[l.company] = (profByCo[l.company] || 0) + l.profit;
+    }
+
+    // 판관비 공급가액(월·사업자) = 수동 + 결재태깅 + 급여4대보험
+    const opexSupplyByCo: Record<string, number> = {};
+    const add = (co: string, v: number) => { if (co) opexSupplyByCo[co] = (opexSupplyByCo[co] || 0) + v; };
+    for (const r of [...opexRows, ...opexItems]) add(String(r.company || ''), toSupply(taxMap[String(r.category)] ?? true, Number(r.amount) || 0));
+    // 결재(지출결의서) 태깅: 승인건의 spend_date||issue_date가 해당 월인 것만
+    const appYm = new Map<string, { company: string; ym: string }>();
+    for (const a of apps) { const d = a.spend_date || a.issue_date || ''; appYm.set(String(a.id), { company: a.company || '', ym: d.slice(0, 7) }); }
+    for (const it of appItems) {
+      if (it.canceled || !it.opex_category) continue;
+      const p = appYm.get(String(it.approval_id));
+      if (!p || p.ym !== ym) continue;
+      add(p.company, toSupply(taxMap[String(it.opex_category)] ?? true, Number(it.amount) || 0));
+    }
+    // 급여 → 4대보험(insurance, 면세=그대로). salary_alloc 있으면 사업자별 배분, 없으면 소속 1곳.
+    if (insuranceActive) {
+      for (const e of emps) {
+        if (e.status && e.status !== 'active') continue;
+        const alloc = e.salary_alloc && typeof e.salary_alloc === 'object' && Object.keys(e.salary_alloc).length ? e.salary_alloc : null;
+        if (alloc) {
+          for (const [co, annual] of Object.entries(alloc)) { const mn = (Number(annual) || 0) / 12; if (mn > 0 && OPEX_COMPANIES.includes(co)) add(co, mn * INSURANCE_RATE); }
+        } else {
+          const mn = (Number(e.salary) || 0) / 12; const co = e.company || '';
+          if (mn > 0 && OPEX_COMPANIES.includes(co)) add(co, mn * INSURANCE_RATE);
+        }
+      }
+    }
+
+    const round = (n: number) => Math.round(n);
+    const targetCos = onlyCo ? [onlyCo] : OPEX_COMPANIES;
+    let tProf = 0, tOpex = 0, tOper = 0;
+    const rowsOut = targetCos.map((co) => {
+      const cm = profByCo[co] || 0;
+      const ox = opexSupplyByCo[co] || 0;
+      const op = cm - ox;
+      tProf += cm; tOpex += ox; tOper += op;
+      return { 사업자: co, 공헌이익: round(cm), 판관비: round(ox), 영업이익: round(op) };
+    });
+    return JSON.stringify({
+      기준월: ym,
+      사업자필터: onlyCo || '전체',
+      총공헌이익: round(tProf),
+      총판관비_공급가액: round(tOpex),
+      총영업이익: round(tOper),
+      사업자별: rowsOut,
+      비고: '영업이익=공헌이익−판관비(공급가액). 판관비=수동입력+승인된 지출결의서 태깅+급여×4대보험(9%). 과세항목 ÷1.1. 월 단위만 산출(주차/몰/상품별 불가). ERP 매출현황 영업이익 탭과 동일.',
+    });
+  } catch (e) {
+    return '영업이익 집계 오류: ' + ((e as Error)?.message || e);
   }
 }
 
@@ -444,10 +577,13 @@ function buildSystem(perm: Perm): string {
 오늘은 한국시간 기준 ${todayKST()} 이다. "이번달/오늘/최근"은 이 날짜를 기준으로 계산한다.
 - 답은 반드시 도구로 조회한 실제 데이터에 근거한다. 추측하지 말 것.
 - ★매출·공헌이익·사업자별/기간 매출은 반드시 sales_summary 도구를 쓴다. query_erp로 orders를 받아 직접 합산하지 말 것(200건 잘림·부가세/실정산 누락으로 반드시 틀린다). "이번달"이면 start_date=그 달 1일, end_date=오늘.
+  · 몰별/상품별/주차별 매출도 sales_summary로 한다. 몰=mall, 상품/브랜드=product, 내역 나눔=group_by(company/mall/product), 주차=start_date~end_date(그 주 범위). 예) "7월3주 네이버 덴프스 매출" → start_date=07-14,end_date=07-20,mall=네이버,product=덴프스.
 - ★재고 수량/금액은 반드시 stock_summary, 출고/판매수량은 반드시 outbound_summary 도구를 쓴다. query_erp로 inventory·orders를 받아 직접 합산하지 말 것(잘림·매칭누락으로 틀린다).
+- ★영업이익은 반드시 profit_summary 도구를 쓴다. 단 영업이익은 "월 단위"만 가능(판관비가 월 고정비). 주차/몰/상품별 영업이익을 물으면 왜 불가한지 설명하고 월 기준 영업이익 또는 공헌이익으로 안내한다.
 - 그 외 데이터는 아래 데이터 지도를 보고 알맞은 테이블·컬럼으로 query_erp 질의한다. 테이블명을 넘겨짚지 말 것.
 - query_erp 응답에 "⚠️ …잘림" 경고가 있으면 그 데이터로 합계를 내지 말고, 기간/조건을 좁히거나 전용 도구를 쓴다.
 - 한국어 존댓말로, 숫자는 천단위 구분(,)과 '원' 단위로 깔끔하게. 표가 도움되면 간단한 텍스트 표로.
+- ★답을 못 하는 경우에도 절대 침묵하지 말 것. 반드시 "왜 불가한지" 사유를 한 줄로 설명한다(예: 권한 없음 / 해당 지표 미지원 / 데이터 없음 / 조건이 너무 넓음). 도구가 "오류:"로 시작하는 결과를 주면 그 사유를 사용자 말로 풀어 전달한다.
 - 데이터로 확인 안 되는 건 모른다고 솔직히 말한다. 답변은 결론(핵심 숫자)부터 제시한다.
 
 [조회 권한] ${scopeNote}
@@ -459,16 +595,22 @@ async function handleQuestion(channel: string, question: string, perm: Perm) {
   if (!ANTHROPIC_KEY) { await postSlack(channel, '설정 오류: ANTHROPIC_API_KEY 미설정'); return; }
   const client = new Anthropic({ apiKey: ANTHROPIC_KEY });
   const messages: Anthropic.MessageParam[] = [{ role: 'user', content: question }];
+  const startedAt = Date.now();
+  const SOFT_LIMIT_MS = 48_000; // maxDuration(60s) 전에 여유를 두고, 넘기 전에 사유를 남기고 종료(무응답 방지)
   try {
     const system = buildSystem(perm);
     for (let i = 0; i < 12; i++) { // 도구 호출 루프 상한
+      if (Date.now() - startedAt > SOFT_LIMIT_MS) {
+        await postSlack(channel, '질문이 복잡해서 시간 내에 다 처리하지 못했어요. 조금 좁혀서 다시 물어봐 주세요 — 예: 기간을 짧게(한 주씩), 또는 항목을 나눠서(매출 / 영업이익 따로). 몰·상품을 지정하면 더 빨라요.');
+        return;
+      }
       const resp = await client.messages.create({
         model: 'claude-opus-4-8',
         max_tokens: 8192,
         thinking: { type: 'adaptive' },
         output_config: { effort: 'medium' },
         system,
-        tools: [ERP_TOOL, SALES_TOOL, STOCK_TOOL, OUTBOUND_TOOL],
+        tools: [ERP_TOOL, SALES_TOOL, STOCK_TOOL, OUTBOUND_TOOL, PROFIT_TOOL],
         messages,
       });
       if (resp.stop_reason === 'tool_use') {
@@ -486,6 +628,9 @@ async function handleQuestion(channel: string, question: string, perm: Perm) {
             results.push({ type: 'tool_result', tool_use_id: block.id, content: out });
           } else if (block.type === 'tool_use' && block.name === 'outbound_summary') {
             const out = await runOutboundSummary(block.input as { start_date?: string; end_date?: string; company?: string; exclude_wholesale?: boolean }, perm);
+            results.push({ type: 'tool_result', tool_use_id: block.id, content: out });
+          } else if (block.type === 'tool_use' && block.name === 'profit_summary') {
+            const out = await runProfitSummary(block.input as { year_month?: string; company?: string }, perm);
             results.push({ type: 'tool_result', tool_use_id: block.id, content: out });
           }
         }
