@@ -2,7 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { after } from 'next/server';
 import crypto from 'node:crypto';
 import Anthropic from '@anthropic-ai/sdk';
-import { supabaseFetch } from '@/lib/supabase';
+import { supabaseFetch, supabaseFetchAll } from '@/lib/supabase';
+import { computeOrderLines, type FullOrder, type FullInv } from '@/lib/salesStats';
+import type { MallFee } from '@/lib/mallFees';
 
 // ── 슬랙 ERP 비서 (개인 DM 봇) ──────────────────────────────────────
 // 직원이 슬랙 DM으로 ERP 데이터를 자연어로 물어보면, Claude가
@@ -115,6 +117,25 @@ const ERP_TOOL: Anthropic.Tool = {
   },
 };
 
+// 매출·공헌이익 전용 집계 도구 — ERP 매출현황과 '똑같은' 계산을 서버에서 전량 수행.
+// query_erp로 큰 표를 LLM이 직접 합산하면 200건 잘림·부가세/실정산 누락으로 틀린다.
+const SALES_TOOL: Anthropic.Tool = {
+  name: 'sales_summary',
+  description:
+    '기간별 매출(공급가액)·공헌이익을 ERP 매출현황과 동일한 정식 계산으로 집계한다. ' +
+    '매출·공헌이익·사업자별/기간 합계 질문은 반드시 이 도구를 쓴다(query_erp로 orders를 받아 직접 합산 금지 — 전량 반영 안 돼 틀림). ' +
+    '부가세 제외(÷1.1), 취소 제외, 오픈마켓 실정산·몰수수료·원가·세트구성까지 반영해 화면과 100% 일치한다.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      start_date: { type: 'string', description: '시작일 YYYY-MM-DD (포함). 예: 이번달이면 그 달 1일.' },
+      end_date: { type: 'string', description: '종료일 YYYY-MM-DD (포함). 생략 시 오늘(KST).' },
+      company: { type: 'string', description: '특정 사업자만 볼 때: 더블아이/BNKNET/SJ글로벌/IX글로벌. 생략 시 전체 사업자 합산+사업자별 내역.' },
+    },
+    required: ['start_date'],
+  },
+};
+
 // 보안상 봇이 읽으면 안 되는 테이블 (비밀번호 등 민감정보)
 const BLOCKED_TABLES = new Set(['accounts', 'rpc']);
 
@@ -146,13 +167,76 @@ async function runQueryErp(input: { table?: string; query?: string }, scope: Sco
   if (!/[?&]?limit=/.test(q)) q += '&limit=200';
   try {
     const res = await supabaseFetch(`/${table}?${q}`, {
-      headers: { 'Range-Unit': 'items', Range: '0-199' },
+      headers: { 'Range-Unit': 'items', Range: '0-199', Prefer: 'count=exact' },
     });
     const txt = await res.text();
     if (!res.ok) return `조회 실패(HTTP ${res.status}): ${txt.slice(0, 500)}`;
-    return txt.slice(0, 60000); // 과도한 응답 방지
+    // 조용한 잘림 방지: 전체 건수(content-range)가 반환분보다 많으면 명시 경고.
+    const cr = res.headers.get('content-range') || '';        // 예: "0-199/1234"
+    const total = cr.includes('/') ? cr.split('/')[1] : '';
+    let out = txt.slice(0, 60000);
+    if (total && total !== '*' && Number(total) > 200) {
+      out = `⚠️ 총 ${total}건 중 200건만 반환됨(잘림). 이 데이터로 합계·평균을 직접 계산하면 실제와 다릅니다. ` +
+        `매출·공헌이익은 sales_summary 도구를 쓰고, 그 밖의 큰 집계는 기간/조건을 좁혀 다시 조회하세요.\n` + out;
+    }
+    return out;
   } catch (e) {
     return '조회 오류: ' + ((e as Error)?.message || e);
+  }
+}
+
+// 매출·공헌이익을 ERP 매출현황과 동일하게 집계(전량 페이징 + computeOrderLines).
+async function runSalesSummary(input: { start_date?: string; end_date?: string; company?: string }, scope: Scope): Promise<string> {
+  // 권한: 매출 접근 가능한 스코프만(영업 계열·경영). 물류 단독은 매출 조회 불가.
+  const allow = SCOPE_TABLES[scope];
+  const canSales = allow === 'all' || allow.has('sales_targets');
+  if (!canSales) return `오류: 매출은 현재 권한(${scope})으로 조회할 수 없습니다.`;
+  const start = String(input.start_date || '').trim();
+  const end = String(input.end_date || '').trim() || todayKST();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(start) || !/^\d{4}-\d{2}-\d{2}$/.test(end)) return '오류: 날짜는 YYYY-MM-DD 형식이어야 합니다.';
+  const companyFilter = String(input.company || '').trim();
+  try {
+    const cols = 'upload_date,mall_name,product_name,collect_product,collect_option,quantity,amount,canceled,company,order_number,delivery_fee,source,manual_cost,manual_shipping';
+    let oq = `/orders?select=${cols}&upload_date=gte.${start}&upload_date=lte.${end}&order=upload_date.asc`;
+    if (companyFilter) oq += `&company=eq.${encodeURIComponent(companyFilter)}`;
+    const [orders, inventory, fees, bom, stRows, foRows] = await Promise.all([
+      supabaseFetchAll<FullOrder>(oq),
+      supabaseFetchAll<FullInv>('/inventory?select=product_name,company,brand,cost_price'),
+      supabaseFetchAll<MallFee>('/mall_fees?select=company,mall,rate'),
+      supabaseFetchAll<{ set_name: string; component_name: string; component_qty: number }>('/product_bom?select=set_name,component_name,component_qty').catch(() => []),
+      supabaseFetchAll<{ order_number: string; fee: number; cost: number; amount: number }>('/order_settlements?select=order_number,fee,cost,amount').catch(() => []),
+      supabaseFetchAll<{ order_number: string; fee_rate: number }>('/order_fee_overrides?select=order_number,fee_rate').catch(() => []),
+    ]);
+    const settle = new Map<string, { fee: number; cost: number; amount: number }>();
+    for (const s of stRows) if (s.order_number) settle.set(String(s.order_number), { fee: Number(s.fee) || 0, cost: Number(s.cost) || 0, amount: Number(s.amount) || 0 });
+    const feeOverride = new Map<string, number>();
+    for (const r of foRows) if (r.order_number) feeOverride.set(String(r.order_number), Number(r.fee_rate) || 0);
+
+    const { lines } = computeOrderLines(orders, inventory, fees, bom, settle, feeOverride);
+    let rev = 0, prof = 0, cnt = 0;
+    const byCo = new Map<string, { rev: number; prof: number; cnt: number }>();
+    for (const r of lines) {
+      rev += r.rev; cnt++;
+      if (r.profitKnown) prof += r.profit;
+      const e = byCo.get(r.company) || { rev: 0, prof: 0, cnt: 0 };
+      e.rev += r.rev; e.cnt++; if (r.profitKnown) e.prof += r.profit;
+      byCo.set(r.company, e);
+    }
+    const round = (n: number) => Math.round(n);
+    const companies = [...byCo.entries()]
+      .map(([c, v]) => ({ 사업자: c, 매출: round(v.rev), 공헌이익: round(v.prof), 주문라인수: v.cnt }))
+      .sort((a, b) => b.매출 - a.매출);
+    return JSON.stringify({
+      기간: `${start} ~ ${end}`,
+      사업자필터: companyFilter || '전체',
+      총매출_공급가액: round(rev),
+      총공헌이익: round(prof),
+      주문라인수: cnt,
+      사업자별: companies,
+      비고: 'ERP 매출현황과 동일 계산(부가세 제외 공급가액, 취소·오픈마켓 실정산·몰수수료·원가 반영). 단위: 원.',
+    });
+  } catch (e) {
+    return '매출 집계 오류: ' + ((e as Error)?.message || e);
   }
 }
 
@@ -167,8 +251,8 @@ const SCHEMA_GUIDE = `[BNKNET ERP 데이터 지도 — PostgREST 테이블, 모�
 
 ■ 매출·주문
 - orders: 매출/주문 원장. 컬럼 upload_date(등록일 YYYY-MM-DD), company, mall_name(판매몰), product_name, collect_product(수집상품명), quantity(수량), amount(매출액,원), canceled(취소 boolean), order_number, delivery_fee, source, manual_cost, manual_shipping.
-  · 매출 합계 = amount 합. 반드시 취소 제외(canceled=is.false). 기간은 upload_date로 필터.
-  · 예) 이번달 매출: /orders?select=amount,company,canceled&canceled=is.false&upload_date=gte.<이번달1일>&upload_date=lte.<오늘> → amount를 직접 합산. 사업자별은 company로 그룹.
+  · ★매출·공헌이익·사업자별/기간 매출은 orders를 직접 합산하지 말고 반드시 sales_summary 도구로 구한다(정식 계산·전량 반영). orders 직접 합산은 200건 잘림·부가세/실정산 누락으로 틀린다.
+  · orders 직접 조회는 개별 주문 확인·건수 등 소량 목적에만. 기간은 upload_date, 취소 제외는 canceled=is.false.
 - order_uploads: 주문 업로드 이력. ship_alerts: 재고 미차감/출고 알림.
 - sales_targets: 매출 목표. brand_sales: 과거(6월 이전) 브랜드별 매출(period_date,brand,sales,margin) 참고용.
 
@@ -210,8 +294,10 @@ function buildSystem(scope: Scope): string {
       (allow.has('approvals') ? ' approvals는 발주서(doc_type=발주서)만 조회된다.' : '');
   return `너는 BNKNET ERP의 사내 데이터 비서다. 사용자의 질문에 ERP 데이터로 정확히 답한다.
 오늘은 한국시간 기준 ${todayKST()} 이다. "이번달/오늘/최근"은 이 날짜를 기준으로 계산한다.
-- 답은 반드시 query_erp 도구로 조회한 실제 데이터에 근거한다. 추측하지 말 것.
-- 아래 데이터 지도를 보고 알맞은 테이블·컬럼으로 질의한다. 테이블명을 넘겨짚지 말 것.
+- 답은 반드시 도구로 조회한 실제 데이터에 근거한다. 추측하지 말 것.
+- ★매출·공헌이익·사업자별/기간 매출은 반드시 sales_summary 도구를 쓴다. query_erp로 orders를 받아 직접 합산하지 말 것(200건 잘림·부가세/실정산 누락으로 반드시 틀린다). "이번달"이면 start_date=그 달 1일, end_date=오늘.
+- 그 외 데이터는 아래 데이터 지도를 보고 알맞은 테이블·컬럼으로 query_erp 질의한다. 테이블명을 넘겨짚지 말 것.
+- query_erp 응답에 "⚠️ …잘림" 경고가 있으면 그 데이터로 합계를 내지 말고, 기간/조건을 좁히거나 전용 도구를 쓴다.
 - 한국어 존댓말로, 숫자는 천단위 구분(,)과 '원' 단위로 깔끔하게. 표가 도움되면 간단한 텍스트 표로.
 - 데이터로 확인 안 되는 건 모른다고 솔직히 말한다. 답변은 결론(핵심 숫자)부터 제시한다.
 
@@ -233,7 +319,7 @@ async function handleQuestion(channel: string, question: string, scope: Scope) {
         thinking: { type: 'adaptive' },
         output_config: { effort: 'medium' },
         system,
-        tools: [ERP_TOOL],
+        tools: [ERP_TOOL, SALES_TOOL],
         messages,
       });
       if (resp.stop_reason === 'tool_use') {
@@ -242,6 +328,9 @@ async function handleQuestion(channel: string, question: string, scope: Scope) {
         for (const block of resp.content) {
           if (block.type === 'tool_use' && block.name === 'query_erp') {
             const out = await runQueryErp(block.input as { table?: string; query?: string }, scope);
+            results.push({ type: 'tool_result', tool_use_id: block.id, content: out });
+          } else if (block.type === 'tool_use' && block.name === 'sales_summary') {
+            const out = await runSalesSummary(block.input as { start_date?: string; end_date?: string; company?: string }, scope);
             results.push({ type: 'tool_result', tool_use_id: block.id, content: out });
           }
         }
