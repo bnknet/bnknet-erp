@@ -20,20 +20,25 @@ const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY || '';
 
 // ── 역할·채널별 조회 권한 스코프 ─────────────────────────────
 // 보안 경계는 프롬프트가 아니라 백엔드(runQueryErp)에서 강제한다.
-type Scope = '경영' | '영업' | '물류';
+type Scope = '경영' | '영업' | '물류' | '영업물류';
+
+// 스코프 구성용 테이블 목록
+const SALES_TABLES = [
+  'orders', 'order_uploads', 'sales_targets', 'mall_fees',
+  'partners', 'brand_sales', 'order_settlements', 'order_fee_overrides',
+];
+const LOGISTICS_TABLES = [
+  'inventory', 'inventory_logs', 'inventory_snapshots', 'ship_alerts',
+  'orders', 'order_uploads', 'product_matches', 'product_bom', 'products',
+  'purchase_receipts', 'partners', 'approvals',
+];
 
 // 스코프별 허용 테이블(허용목록 = 기본 차단). '경영'은 전체 허용.
 const SCOPE_TABLES: Record<Scope, ReadonlySet<string> | 'all'> = {
   경영: 'all',
-  영업: new Set([
-    'orders', 'order_uploads', 'sales_targets', 'mall_fees',
-    'partners', 'brand_sales', 'order_settlements', 'order_fee_overrides',
-  ]),
-  물류: new Set([
-    'inventory', 'inventory_logs', 'inventory_snapshots', 'ship_alerts',
-    'orders', 'order_uploads', 'product_matches', 'product_bom', 'products',
-    'purchase_receipts', 'partners', 'approvals',
-  ]),
+  영업: new Set(SALES_TABLES),
+  물류: new Set(LOGISTICS_TABLES),
+  영업물류: new Set([...SALES_TABLES, ...LOGISTICS_TABLES]), // 영업+물류 겸직
 };
 
 // employees.role → 스코프. 매핑 없는 역할(manager/partner 등)은 접근 불가(안전).
@@ -41,6 +46,11 @@ const ROLE_SCOPE: Record<string, Scope> = {
   ceo: '경영', admin: '경영',
   sales: '영업', md: '영업',
   inventory: '물류',
+};
+
+// 겸직 등으로 역할만으론 부족한 직원의 스코프 개별 지정(이메일 소문자). 역할보다 우선.
+const EMAIL_SCOPE_OVERRIDE: Record<string, Scope> = {
+  'woonggukang@naver.com': '영업물류', // 강웅구: 영업+물류 겸직(급여·카드·영업이익은 여전히 차단)
 };
 
 // employees에서 봇이 노출해도 되는 컬럼(비밀번호 password_hash는 절대 제외)
@@ -127,8 +137,8 @@ async function runQueryErp(input: { table?: string; query?: string }, scope: Sco
       q = `select=${EMP_SAFE_COLS}` + (q ? `&${q}` : '');
     }
   }
-  // 물류 스코프의 approvals는 발주서만 (지출결의서·카드구매·급여결재 차단)
-  if (scope === '물류' && table === 'approvals') {
+  // 경영 외 스코프의 approvals는 발주서만 (지출결의서·카드구매·급여결재 차단)
+  if (scope !== '경영' && table === 'approvals') {
     q = q.replace(/(^|&)doc_type=[^&]*/g, '').replace(/^&/, '');
     q += (q ? '&' : '') + 'doc_type=eq.발주서';
   }
@@ -197,7 +207,7 @@ function buildSystem(scope: Scope): string {
     ? '이 사용자는 전체 데이터 조회 권한(경영)이다.'
     : `이 사용자의 조회 권한은 '${scope}' 범위다. 다음 테이블만 조회할 수 있다: ${[...allow].join(', ')}.\n` +
       '그 외 테이블(급여·카드·영업이익·인사 등)은 권한이 없어 조회할 수 없다. 권한 밖 내용을 물으면 우회 조회하지 말고 "그 정보는 조회 권한이 없어요"라고 정중히 답한다.' +
-      (scope === '물류' ? ' approvals는 발주서(doc_type=발주서)만 조회된다.' : '');
+      (allow.has('approvals') ? ' approvals는 발주서(doc_type=발주서)만 조회된다.' : '');
   return `너는 BNKNET ERP의 사내 데이터 비서다. 사용자의 질문에 ERP 데이터로 정확히 답한다.
 오늘은 한국시간 기준 ${todayKST()} 이다. "이번달/오늘/최근"은 이 날짜를 기준으로 계산한다.
 - 답은 반드시 query_erp 도구로 조회한 실제 데이터에 근거한다. 추측하지 말 것.
@@ -304,7 +314,7 @@ export async function POST(req: NextRequest) {
           await postSlack(channel, `권한 확인 실패 ②: ERP 직원에서 '${email}' 이메일을 찾지 못했어요. (슬랙 이메일 = ERP employees 이메일 이어야 함) 관리자에게 문의해주세요.`);
           return;
         }
-        const scope = ROLE_SCOPE[emp.role];
+        const scope = EMAIL_SCOPE_OVERRIDE[email] || ROLE_SCOPE[emp.role];
         if (!scope) {
           if (isWhitelisted) { await handleQuestion(channel, text, '경영'); return; }
           await postSlack(channel, `권한 확인 실패 ③: 역할 '${emp.role}'은 봇 조회 권한이 설정되지 않았어요. 관리자에게 문의해주세요.`);
