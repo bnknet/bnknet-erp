@@ -827,7 +827,9 @@ export const PRODUCT_MAP: Record<string, string> = {
 export function extractQtyAndName(name: string): [number, string] {
   if (!name) return [1, ''];
   name = String(name).trim();
-  const m = name.match(/,?\s*(\d+)\s*(박스|개|포|세트)\s*(\([^)]*\))?\s*$/);
+  // 끝의 "N개/박스/포/세트" 뒤에 짧은 영문 꼬리표(예: "…분말 2개 BN")가 붙어도 수량 인식.
+  // ("12개월분"류는 뒤가 한글이라 계속 미인식 → 회귀 없음)
+  const m = name.match(/,?\s*(\d+)\s*(박스|개|포|세트)\s*(\([^)]*\))?\s*([A-Za-z]{1,4})?\s*$/);
   if (m) return [parseInt(m[1]), name.slice(0, m.index).replace(/,\s*$/, '').trim()];
   return [1, name];
 }
@@ -997,7 +999,7 @@ export function repNameFor(collectName: string, collectOption = ''): { name: str
 }
 
 // 이름 끝에 수량이 없고(예: "…6박스 12개월분") 이름 속 'N박스'가 진짜 수량인 경우를 잡는다.
-const TRAIL_QTY_RE = /,?\s*(\d+)\s*(박스|개|포|세트)\s*(\([^)]*\))?\s*$/;
+const TRAIL_QTY_RE = /,?\s*(\d+)\s*(박스|개|포|세트)\s*(\([^)]*\))?\s*([A-Za-z]{1,4})?\s*$/;
 export function extractBoxQty(name: string): number | null {
   const all = String(name || '').match(/(\d+)\s*박스/g);
   if (!all) return null;
