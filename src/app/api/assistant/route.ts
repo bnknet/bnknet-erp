@@ -7,11 +7,12 @@ import { computeOrderLines, type FullOrder, type FullInv } from '@/lib/salesStat
 import { repNameFor, loadDbMatches } from '@/lib/orderConvert';
 import type { MallFee } from '@/lib/mallFees';
 
-// ── 슬랙 ERP 비서 (개인 DM 봇) ──────────────────────────────────────
-// 직원이 슬랙 DM으로 ERP 데이터를 자연어로 물어보면, Claude가
-// 읽기 전용 도구로 Supabase를 조회·추론해 답한다.
-// 권한: 슬랙 계정 이메일 → employees(활성) 역할 → 스코프(경영/영업/물류)로 조회 범위 제한.
-//       (매칭 실패 시 SLACK_ALLOWED_USER_IDS 화이트리스트는 경영으로 폴백)
+// ── 슬랙 ERP 비서 (DM 개인봇 + 팀 채널봇) ───────────────────────────
+// 직원이 슬랙에서 ERP 데이터를 자연어로 물어보면, Claude가 읽기 전용 도구로 Supabase를 조회·추론해 답한다.
+// 권한(조회 범위):
+//   · DM(1:1): 슬랙 이메일 → employees(활성) 역할 → 스코프(경영/영업/물류/영업물류). 개인 권한 기준.
+//     (매칭 실패 시 SLACK_ALLOWED_USER_IDS 화이트리스트는 경영으로 폴백)
+//   · 채널(@멘션): SLACK_CHANNEL_SCOPES의 채널→스코프 매핑. 사람 권한 무시, 채널 기준(멤버 전원이 답을 봄).
 // 보안 경계는 프롬프트가 아니라 이 백엔드 — 읽기(GET) 전용, rpc·비밀번호(accounts·employees.password_hash) 차단.
 export const runtime = 'nodejs';
 
@@ -55,6 +56,20 @@ const ROLE_SCOPE: Record<string, Scope> = {
 const EMAIL_SCOPE_OVERRIDE: Record<string, Scope> = {
   'woonggukang@naver.com': '영업물류', // 강웅구: 영업+물류 겸직(급여·카드·영업이익은 여전히 차단)
 };
+
+// 팀 채널봇: 채널 ID → 스코프. 채널에서 @봇 부르면 "사람"이 아니라 "채널" 권한으로 답한다.
+// (채널은 멤버 전원이 답을 보므로, 대표라도 #물류 채널에선 물류 범위만 조회 가능)
+// 설정: 환경변수 SLACK_CHANNEL_SCOPES="C012=물류,C345=영업,C678=경영" (채널 ID로 매핑, 스푸핑 불가).
+// 매핑 없는 채널은 기본 차단(조회 불가).
+const CHANNEL_SCOPES: Record<string, Scope> = (() => {
+  const raw = process.env.SLACK_CHANNEL_SCOPES || '';
+  const m: Record<string, Scope> = {};
+  for (const pair of raw.split(',')) {
+    const [id, sc] = pair.split('=').map((s) => s.trim());
+    if (id && (sc === '경영' || sc === '영업' || sc === '물류' || sc === '영업물류')) m[id] = sc as Scope;
+  }
+  return m;
+})();
 
 // employees에서 봇이 노출해도 되는 컬럼(비밀번호 password_hash는 절대 제외)
 const EMP_SAFE_COLS = 'id,name,email,role,company,phone,hire_date,status,position,salary,pay_day,created_at';
@@ -512,10 +527,27 @@ export async function POST(req: NextRequest) {
   const event = body.event as Record<string, unknown> | undefined;
   if (body.type === 'event_callback' && event) {
     const isDM = event.type === 'message' && event.channel_type === 'im';
+    const isMention = event.type === 'app_mention'; // 채널에서 @봇 호출
     const isHuman = !event.bot_id && !event.subtype; // 봇 자신·수정메시지 제외
     const userId = String(event.user || '');
     const channel = String(event.channel || '');
     const text = String(event.text || '').trim();
+
+    // 팀 채널: @멘션 → 채널 기준 권한으로 답(사람 권한 무시). 채널이 볼 수 있는 것만.
+    if (isMention && isHuman) {
+      const q = text.replace(/<@[^>]+>/g, '').trim(); // 멘션 토큰 제거
+      if (q) {
+        after(async () => {
+          const scope = CHANNEL_SCOPES[channel];
+          if (!scope) {
+            await postSlack(channel, '이 채널은 ERP 조회 권한이 설정돼 있지 않아요. (관리자: 채널 권한 매핑 필요) DM으로 물어보시면 개인 권한으로 답해드려요.');
+            return;
+          }
+          await handleQuestion(channel, q, scope);
+        });
+      }
+      return NextResponse.json({ ok: true });
+    }
 
     if (isDM && isHuman && text) {
       // 3초 내 200 응답 필수 → 즉시 ack, 권한 판별·처리는 응답 후 비동기로
