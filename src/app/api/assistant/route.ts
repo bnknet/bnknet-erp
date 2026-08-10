@@ -4,11 +4,12 @@ import crypto from 'node:crypto';
 import Anthropic from '@anthropic-ai/sdk';
 import { supabaseFetch } from '@/lib/supabase';
 
-// ── 슬랙 ERP 비서 (MVP) ─────────────────────────────────────────────
-// 대표·실장이 슬랙 DM으로 ERP 데이터를 자연어로 물어보면, Claude가
+// ── 슬랙 ERP 비서 (개인 DM 봇) ──────────────────────────────────────
+// 직원이 슬랙 DM으로 ERP 데이터를 자연어로 물어보면, Claude가
 // 읽기 전용 도구로 Supabase를 조회·추론해 답한다.
-// 권한: SLACK_ALLOWED_USER_IDS(슬랙 계정 화이트리스트)에 있는 사람만.
-// 보안 경계는 프롬프트가 아니라 이 백엔드 — 읽기(GET) 전용, rpc 차단.
+// 권한: 슬랙 계정 이메일 → employees(활성) 역할 → 스코프(경영/영업/물류)로 조회 범위 제한.
+//       (매칭 실패 시 SLACK_ALLOWED_USER_IDS 화이트리스트는 경영으로 폴백)
+// 보안 경계는 프롬프트가 아니라 이 백엔드 — 읽기(GET) 전용, rpc·비밀번호(accounts·employees.password_hash) 차단.
 export const runtime = 'nodejs';
 
 const SIGNING_SECRET = process.env.SLACK_SIGNING_SECRET || '';
@@ -16,6 +17,34 @@ const BOT_TOKEN = process.env.SLACK_BOT_TOKEN || '';
 const ALLOWED = (process.env.SLACK_ALLOWED_USER_IDS || '')
   .split(',').map(s => s.trim()).filter(Boolean);
 const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY || '';
+
+// ── 역할·채널별 조회 권한 스코프 ─────────────────────────────
+// 보안 경계는 프롬프트가 아니라 백엔드(runQueryErp)에서 강제한다.
+type Scope = '경영' | '영업' | '물류';
+
+// 스코프별 허용 테이블(허용목록 = 기본 차단). '경영'은 전체 허용.
+const SCOPE_TABLES: Record<Scope, ReadonlySet<string> | 'all'> = {
+  경영: 'all',
+  영업: new Set([
+    'orders', 'order_uploads', 'sales_targets', 'mall_fees',
+    'partners', 'brand_sales', 'order_settlements', 'order_fee_overrides',
+  ]),
+  물류: new Set([
+    'inventory', 'inventory_logs', 'inventory_snapshots', 'ship_alerts',
+    'orders', 'order_uploads', 'product_matches', 'product_bom', 'products',
+    'purchase_receipts', 'partners', 'approvals',
+  ]),
+};
+
+// employees.role → 스코프. 매핑 없는 역할(manager/partner 등)은 접근 불가(안전).
+const ROLE_SCOPE: Record<string, Scope> = {
+  ceo: '경영', admin: '경영',
+  sales: '영업', md: '영업',
+  inventory: '물류',
+};
+
+// employees에서 봇이 노출해도 되는 컬럼(비밀번호 password_hash는 절대 제외)
+const EMP_SAFE_COLS = 'id,name,email,role,company,phone,hire_date,status,position,salary,pay_day,created_at';
 
 // 슬랙 서명 검증 (요청이 실제 슬랙에서 온 것인지 HMAC로 확인)
 function verifySlack(raw: string, ts: string, sig: string): boolean {
@@ -37,6 +66,29 @@ async function postSlack(channel: string, text: string) {
   });
 }
 
+// 슬랙 계정 → 이메일 (users:read.email 권한 필요). 직원 매칭·권한 판별용.
+async function slackUserEmail(userId: string): Promise<string> {
+  if (!BOT_TOKEN || !userId) return '';
+  try {
+    const r = await fetch(`https://slack.com/api/users.info?user=${encodeURIComponent(userId)}`, {
+      headers: { Authorization: `Bearer ${BOT_TOKEN}` },
+    });
+    const j = await r.json();
+    return j?.ok ? String(j.user?.profile?.email || '').toLowerCase() : '';
+  } catch { return ''; }
+}
+
+// 이메일 → 활성 직원의 역할·사업자. 없으면 null.
+async function employeeByEmail(email: string): Promise<{ role: string; company: string } | null> {
+  if (!email) return null;
+  try {
+    const res = await supabaseFetch(`/employees?email=eq.${encodeURIComponent(email)}&status=eq.active&select=role,company&limit=1`);
+    if (!res.ok) return null;
+    const rows = await res.json();
+    return Array.isArray(rows) && rows[0] ? rows[0] : null;
+  } catch { return null; }
+}
+
 // Claude가 쓰는 유일한 도구: ERP 읽기 전용 조회 (PostgREST GET)
 const ERP_TOOL: Anthropic.Tool = {
   name: 'query_erp',
@@ -56,12 +108,30 @@ const ERP_TOOL: Anthropic.Tool = {
 // 보안상 봇이 읽으면 안 되는 테이블 (비밀번호 등 민감정보)
 const BLOCKED_TABLES = new Set(['accounts', 'rpc']);
 
-async function runQueryErp(input: { table?: string; query?: string }): Promise<string> {
+async function runQueryErp(input: { table?: string; query?: string }, scope: Scope): Promise<string> {
   const table = String(input.table || '').trim();
   if (!/^[a-z_][a-z0-9_]*$/.test(table)) return '오류: 잘못된 테이블명';
   if (BLOCKED_TABLES.has(table)) return `오류: '${table}' 테이블은 보안상 조회할 수 없습니다 (rpc·비밀번호 등)`;
+  // 스코프별 허용 테이블 검사 (허용목록 = 기본 차단)
+  const allow = SCOPE_TABLES[scope];
+  if (allow !== 'all' && !allow.has(table)) {
+    return `오류: '${table}' 테이블은 현재 권한(${scope})으로 조회할 수 없습니다.`;
+  }
   let q = String(input.query || '').trim();
   if (!q) q = 'select=*&limit=20';
+  // employees: 비밀번호(password_hash) 노출 차단 — 안전 컬럼만 허용
+  if (table === 'employees') {
+    if (/password/i.test(q)) return '오류: 보호된 컬럼(비밀번호)은 조회할 수 없습니다.';
+    if (!/[?&]?select=/.test(q) || /select=\*/.test(q)) {
+      q = q.replace(/(^|&)select=\*/g, '').replace(/^&/, '');
+      q = `select=${EMP_SAFE_COLS}` + (q ? `&${q}` : '');
+    }
+  }
+  // 물류 스코프의 approvals는 발주서만 (지출결의서·카드구매·급여결재 차단)
+  if (scope === '물류' && table === 'approvals') {
+    q = q.replace(/(^|&)doc_type=[^&]*/g, '').replace(/^&/, '');
+    q += (q ? '&' : '') + 'doc_type=eq.발주서';
+  }
   // 안전장치: 최대 200건으로 제한
   if (!/[?&]?limit=/.test(q)) q += '&limit=200';
   try {
@@ -121,23 +191,31 @@ const SCHEMA_GUIDE = `[BNKNET ERP 데이터 지도 — PostgREST 테이블, 모�
 - delivery_fee는 '고객이 낸 배송비'로 매출에 가산되는 값이다. 쿠팡 등 무료배송이면 0이 정상이며, 이것이 이익률을 왜곡하지 않는다.
 - 공헌이익률이 유난히 높으면: ① 해당 몰의 수수료율이 mall_fees에 미등록(rate 없음 → 수수료 0으로 과대) 이거나 ② 고마진 상품이 대량 판매된 경우를 먼저 의심한다. mall_fees에 (company, mall) rate가 있는지 먼저 확인하고 판단할 것.`;
 
-function buildSystem(): string {
-  return `너는 BNKNET ERP의 사내 데이터 비서다. 대표·실장의 질문에 ERP 데이터로 정확히 답한다.
+function buildSystem(scope: Scope): string {
+  const allow = SCOPE_TABLES[scope];
+  const scopeNote = allow === 'all'
+    ? '이 사용자는 전체 데이터 조회 권한(경영)이다.'
+    : `이 사용자의 조회 권한은 '${scope}' 범위다. 다음 테이블만 조회할 수 있다: ${[...allow].join(', ')}.\n` +
+      '그 외 테이블(급여·카드·영업이익·인사 등)은 권한이 없어 조회할 수 없다. 권한 밖 내용을 물으면 우회 조회하지 말고 "그 정보는 조회 권한이 없어요"라고 정중히 답한다.' +
+      (scope === '물류' ? ' approvals는 발주서(doc_type=발주서)만 조회된다.' : '');
+  return `너는 BNKNET ERP의 사내 데이터 비서다. 사용자의 질문에 ERP 데이터로 정확히 답한다.
 오늘은 한국시간 기준 ${todayKST()} 이다. "이번달/오늘/최근"은 이 날짜를 기준으로 계산한다.
 - 답은 반드시 query_erp 도구로 조회한 실제 데이터에 근거한다. 추측하지 말 것.
 - 아래 데이터 지도를 보고 알맞은 테이블·컬럼으로 질의한다. 테이블명을 넘겨짚지 말 것.
 - 한국어 존댓말로, 숫자는 천단위 구분(,)과 '원' 단위로 깔끔하게. 표가 도움되면 간단한 텍스트 표로.
 - 데이터로 확인 안 되는 건 모른다고 솔직히 말한다. 답변은 결론(핵심 숫자)부터 제시한다.
 
+[조회 권한] ${scopeNote}
+
 ${SCHEMA_GUIDE}`;
 }
 
-async function handleQuestion(channel: string, question: string) {
+async function handleQuestion(channel: string, question: string, scope: Scope) {
   if (!ANTHROPIC_KEY) { await postSlack(channel, '설정 오류: ANTHROPIC_API_KEY 미설정'); return; }
   const client = new Anthropic({ apiKey: ANTHROPIC_KEY });
   const messages: Anthropic.MessageParam[] = [{ role: 'user', content: question }];
   try {
-    const system = buildSystem();
+    const system = buildSystem(scope);
     for (let i = 0; i < 12; i++) { // 도구 호출 루프 상한
       const resp = await client.messages.create({
         model: 'claude-opus-4-8',
@@ -153,7 +231,7 @@ async function handleQuestion(channel: string, question: string) {
         const results: Anthropic.ToolResultBlockParam[] = [];
         for (const block of resp.content) {
           if (block.type === 'tool_use' && block.name === 'query_erp') {
-            const out = await runQueryErp(block.input as { table?: string; query?: string });
+            const out = await runQueryErp(block.input as { table?: string; query?: string }, scope);
             results.push({ type: 'tool_result', tool_use_id: block.id, content: out });
           }
         }
@@ -210,13 +288,20 @@ export async function POST(req: NextRequest) {
     const text = String(event.text || '').trim();
 
     if (isDM && isHuman && text) {
-      if (!ALLOWED.includes(userId)) {
-        // 권한 없는 계정: 즉시 안내 후 종료
-        after(async () => { await postSlack(channel, '죄송해요, 이 봇을 사용할 권한이 없어요. 관리자에게 문의해주세요.'); });
-        return NextResponse.json({ ok: true });
-      }
-      // 3초 내 200 응답 필수 → 즉시 ack, 실제 처리는 응답 후 비동기로
-      after(async () => { await handleQuestion(channel, text); });
+      // 3초 내 200 응답 필수 → 즉시 ack, 권한 판별·처리는 응답 후 비동기로
+      after(async () => {
+        // 슬랙 계정 → 이메일 → 활성 직원 역할 → 스코프
+        const email = await slackUserEmail(userId);
+        const emp = await employeeByEmail(email);
+        let scope: Scope | undefined = emp ? ROLE_SCOPE[emp.role] : undefined;
+        // 폴백: 직원 매칭 실패(이메일 권한 미부여 등) 시, 기존 화이트리스트는 경영으로
+        if (!scope && ALLOWED.includes(userId)) scope = '경영';
+        if (!scope) {
+          await postSlack(channel, '죄송해요, 이 봇을 사용할 권한이 없어요. (활성 직원 계정·역할이 확인되지 않았습니다) 관리자에게 문의해주세요.');
+          return;
+        }
+        await handleQuestion(channel, text, scope);
+      });
     }
   }
 
