@@ -88,7 +88,10 @@ const EMAIL_PROFILE: Record<string, string> = {
 // 코드에 직접 넣거나(아래), 환경변수 SLACK_CHANNEL_SCOPES="C012=물류,C345=영업,C678=경영지원"로 지정. 미매핑 채널은 기본 차단.
 const CHANNEL_PROFILE: Record<string, string> = (() => {
   const m: Record<string, string> = {
-    // 채널 ID → 프로필. 예: 'C0ABCD1234': '물류',
+    // 채널 ID → 프로필 (2026-08-11 설정)
+    'C0BP1UUNSR3': '물류',      // #물류
+    'C0BP94MHVK6': '영업',      // #영업
+    'C0BP1V1BXT7': '경영지원',  // #경영지원
   };
   const raw = process.env.SLACK_CHANNEL_SCOPES || '';
   for (const pair of raw.split(',')) {
