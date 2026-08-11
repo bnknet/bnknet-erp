@@ -343,7 +343,14 @@ async function runSalesSummary(input: { start_date?: string; end_date?: string; 
 
 // 영업이익(월·사업자) 집계 — ERP 매출현황 '영업이익' 탭과 동일: 공헌이익 − 판관비(공급가액).
 // 판관비 = 수동(opex+opex_item) + 승인된 지출결의서 태깅(approval_items) + 급여×4대보험(insurance). 과세는 ÷1.1.
+// 영업이익 검증 전 — 비활성. 물으면 "안내 어려움 + 공헌이익 대체"로 응답. (ERP 대조 검증 후 true)
+const PROFIT_SUMMARY_ENABLED = false;
+
 async function runProfitSummary(input: { year_month?: string; company?: string }, perm: Perm): Promise<string> {
+  if (!PROFIT_SUMMARY_ENABLED) {
+    return '안내불가(영업이익 준비중): 영업이익은 아직 ERP 실제값과 대조 검증 전이라 정확히 안내드리기 어렵습니다. ' +
+      '사용자에게 "영업이익은 아직 안내가 어렵다"고 정중히 알리고, 대신 공헌이익으로 대체해 안내하세요(sales_summary 사용).';
+  }
   if (!perm.tools.has('profit_summary')) return `오류: 영업이익은 현재 권한(${perm.label})으로 조회할 수 없습니다. (급여·판관비 포함 민감 지표라 경영 권한 전용)`;
   const ym = String(input.year_month || '').trim() || todayKST().slice(0, 7);
   if (!/^\d{4}-\d{2}$/.test(ym)) return '오류: year_month는 YYYY-MM 형식이어야 합니다. 영업이익은 월 단위만 가능(판관비가 월 고정비라 주차/몰/상품별로 나눌 수 없음).';
@@ -579,7 +586,7 @@ function buildSystem(perm: Perm): string {
 - ★매출·공헌이익·사업자별/기간 매출은 반드시 sales_summary 도구를 쓴다. query_erp로 orders를 받아 직접 합산하지 말 것(200건 잘림·부가세/실정산 누락으로 반드시 틀린다). "이번달"이면 start_date=그 달 1일, end_date=오늘.
   · 몰별/상품별/주차별 매출도 sales_summary로 한다. 몰=mall, 상품/브랜드=product, 내역 나눔=group_by(company/mall/product), 주차=start_date~end_date(그 주 범위). 예) "7월3주 네이버 덴프스 매출" → start_date=07-14,end_date=07-20,mall=네이버,product=덴프스.
 - ★재고 수량/금액은 반드시 stock_summary, 출고/판매수량은 반드시 outbound_summary 도구를 쓴다. query_erp로 inventory·orders를 받아 직접 합산하지 말 것(잘림·매칭누락으로 틀린다).
-- ★영업이익은 반드시 profit_summary 도구를 쓴다. 단 영업이익은 "월 단위"만 가능(판관비가 월 고정비). 주차/몰/상품별 영업이익을 물으면 왜 불가한지 설명하고 월 기준 영업이익 또는 공헌이익으로 안내한다.
+- 영업이익은 현재 안내가 어렵다(검증 전, 준비중). 영업이익을 물으면 "영업이익은 아직 안내가 어려워요(준비 중)"라고 정중히 말하고, 대신 공헌이익(sales_summary)으로 대체해 안내한다.
 - 그 외 데이터는 아래 데이터 지도를 보고 알맞은 테이블·컬럼으로 query_erp 질의한다. 테이블명을 넘겨짚지 말 것.
 - query_erp 응답에 "⚠️ …잘림" 경고가 있으면 그 데이터로 합계를 내지 말고, 기간/조건을 좁히거나 전용 도구를 쓴다.
 - 한국어 존댓말로, 숫자는 천단위 구분(,)과 '원' 단위로 깔끔하게. 표가 도움되면 간단한 텍스트 표로.
