@@ -26,6 +26,8 @@ interface OrderRow {
   manual_shipping?: number;
   shipping_method?: string; // '택배' | '직접수령' | '화물'
   courier_count?: number;   // 택배 출고 건수(직접주문 입력값)
+  recipient_name?: string;  // 수취인명 (실제 송장 수=합배송 묶음 계산용)
+  address?: string;         // 주소 (〃)
 }
 interface InvRow {
   product_name: string;
@@ -205,7 +207,7 @@ export default function SalesContent() {
   }
 
   // 주문 조회 공통 SELECT
-  const ORDER_SELECT = '/orders?select=upload_date,mall_name,product_name,collect_product,collect_option,quantity,amount,canceled,company,order_number,delivery_fee,source,manual_cost,manual_shipping,shipping_method,courier_count';
+  const ORDER_SELECT = '/orders?select=upload_date,mall_name,product_name,collect_product,collect_option,quantity,amount,canceled,company,order_number,delivery_fee,source,manual_cost,manual_shipping,shipping_method,courier_count,recipient_name,address';
   const kstToday = () => new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10);
   const kstCutoff3mo = () => { const d = new Date(Date.now() + 9 * 3600 * 1000); d.setMonth(d.getMonth() - 3); return d.toISOString().slice(0, 10); };
 
@@ -429,6 +431,11 @@ export default function SalesContent() {
     //   · courier_count 입력값 있으면 그 값(직접주문), 없으면 주문번호당 1건
     const orderParcels = new Map<string, number>();
     let noKeyCourier = 0;
+    // 실제 송장 수(합배송 반영): 같은 날·사업자·수취인·주소는 여러 주문이어도 송장 1장.
+    // 주소·수취인 없는 라인은 주문번호 기준 폴백(수동 택배수 courier_count 반영).
+    const realParcelKeys = new Set<string>();
+    const realFallback = new Map<string, number>();
+    let realNoKey = 0;
     for (const o of orders) {
       if (o.canceled) continue;
       const d = o.upload_date || '';
@@ -438,16 +445,28 @@ export default function SalesContent() {
       if ((o.shipping_method || '택배') !== '택배') continue; // 직접수령·화물 제외
       const explicit = o.courier_count != null ? Number(o.courier_count) || 0 : null;
       const key = o.order_number ? `${o.company || ''}|${o.order_number}` : '';
-      if (!key) { noKeyCourier += explicit != null ? explicit : 1; continue; }
-      if (explicit != null) orderParcels.set(key, explicit);      // 명시값 우선
+      if (!key) { noKeyCourier += explicit != null ? explicit : 1; }
+      else if (explicit != null) orderParcels.set(key, explicit);      // 명시값 우선
       else if (!orderParcels.has(key)) orderParcels.set(key, 1);  // 기본 주문당 1택배
+      // 실송장: 수취인+주소가 있으면 (날짜·사업자·수취인·주소)로 묶음
+      const addrKey = `${(o.recipient_name || '').trim()}|${(o.address || '').trim()}`;
+      if (addrKey !== '|') {
+        realParcelKeys.add(`${d}|${o.company || ''}|${addrKey}`);
+      } else if (key) {
+        if (explicit != null) realFallback.set(key, explicit);
+        else if (!realFallback.has(key)) realFallback.set(key, 1);
+      } else {
+        realNoKey += explicit != null ? explicit : 1;
+      }
     }
     let curCourier = noKeyCourier;
     for (const v of orderParcels.values()) curCourier += v;
+    let curRealCourier = realParcelKeys.size + realNoKey;
+    for (const v of realFallback.values()) curRealCourier += v;
 
     return {
       ranges,
-      cur: { rev: curRev, prof: curProf, mrev: curMrev, cnt: curCnt, qty: curQty, fee: curFee, unim: curUnim, courier: curCourier },
+      cur: { rev: curRev, prof: curProf, mrev: curMrev, cnt: curCnt, qty: curQty, fee: curFee, unim: curUnim, courier: curCourier, realCourier: curRealCourier },
       prev,
       trend, byMall, byCompany, byBrand, byProduct, missingEditable, missingUnreg, missingFee,
       missingCount: missingEditable.length + missingUnreg.length,
@@ -713,7 +732,9 @@ export default function SalesContent() {
               <div className="flex-1 min-w-0">
                 <div className="text-sm text-gray-400">택배 출고</div>
                 <div className="text-2xl font-bold text-teal-600 mt-0.5">{cur.courier.toLocaleString('ko-KR')}건</div>
-                <div className="text-[11px] text-gray-400 mt-0.5">직접수령·화물 제외</div>
+                <div className="text-[11px] text-gray-400 mt-0.5">
+                  실제 송장 {cur.realCourier.toLocaleString('ko-KR')}건 <span className="text-gray-300">(합배송 반영)</span> · 직접수령·화물 제외
+                </div>
               </div>
             </>
           )}
