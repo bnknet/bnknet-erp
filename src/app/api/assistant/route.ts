@@ -623,7 +623,7 @@ async function handleQuestion(channel: string, question: string, perm: Perm) {
         return;
       }
       const resp = await client.messages.create({
-        model: 'claude-opus-4-8',
+        model: 'claude-sonnet-5', // 비용 절감: Opus 대비 약 40% 수준(입출력 단가). 품질 이슈 시 'claude-opus-4-8'로 복원
         max_tokens: 8192,
         thinking: { type: 'adaptive' },
         output_config: { effort: 'medium' },
