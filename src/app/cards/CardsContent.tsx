@@ -76,6 +76,7 @@ export default function CardsContent() {
   const me = getUser();
   const router = useRouter();
   const canManage = me?.role === 'ceo' || me?.role === 'admin'; // 등록·수정·삭제 = 대표·실장
+  const canPrepay = canManage || me?.email === 'woonggukang@naver.com'; // 선결제 처리 = 대표·실장 + 카드 실무(강웅구)
   const canView = !!me && me.role !== 'md'; // 조회 = 전 직원(단 MD 제외)
 
   const [tab, setTab] = useState<Tab>('calendar');
@@ -906,7 +907,7 @@ export default function CardsContent() {
           </div>
           <div className="flex items-center justify-between gap-2 flex-wrap">
             <p className="text-xs text-gray-400">💡 잔여한도(실시간) = 기준 잔여값에서 시작 · 카드구매 결재 −차감 / 선결제 결재 +복구. (기준 잔여값은 카드 수정에서 확인·변경)</p>
-            {canManage && (
+            {canPrepay && (
               <button onClick={() => { setPrepayDate(todayStr); setPrepayItemChecked(new Set()); setPrepayExpanded(new Set()); setPrepayItemsMap({}); setPrepayOpen(true); }}
                 className="px-4 py-2 text-sm font-medium bg-green-600 hover:bg-green-700 text-white rounded-lg whitespace-nowrap">💚 선결제 처리</button>
             )}
