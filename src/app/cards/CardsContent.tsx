@@ -586,6 +586,35 @@ export default function CardsContent() {
   const prepaidIdSet = new Set(prepaidItems.map(pi => pi.id)); // 이미 선결제된 항목
   const prepayLogs = logs.filter(l => l.action === '선결제처리'); // 선결제 이력
 
+  // 매입 헤더의 '구매일' = 지출결의서 세부내역(approval_items.item_date) 기준.
+  // (approvals.spend_date는 상신 시점 값이라 실제 구매일과 다를 수 있음 → 품목 구매일로 표시)
+  const [prepayItemDates, setPrepayItemDates] = useState<Record<string, string>>({});
+  useEffect(() => {
+    if (!prepayOpen) return;
+    (async () => {
+      const ids = prepayCandidates.map(p => p.id);
+      const byAppr: Record<string, string[]> = {};
+      for (let i = 0; i < ids.length; i += 50) {
+        const batch = ids.slice(i, i + 50);
+        try {
+          const res = await supabaseFetch(`/approval_items?approval_id=in.(${batch.join(',')})&select=approval_id,item_date`);
+          const rows = await res.json();
+          if (Array.isArray(rows)) for (const r of rows) {
+            if (!r.approval_id || !r.item_date) continue;
+            (byAppr[r.approval_id] = byAppr[r.approval_id] || []).push(String(r.item_date));
+          }
+        } catch { /* 실패 시 spend_date 폴백 표시 */ }
+      }
+      const out: Record<string, string> = {};
+      for (const [aid, ds] of Object.entries(byAppr)) {
+        const s = [...new Set(ds)].sort();
+        out[aid] = s.length > 1 ? `${s[0]} ~ ${s[s.length - 1]}` : s[0];
+      }
+      setPrepayItemDates(out);
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prepayOpen]);
+
   // 매입 펼치기(구매상품 상세 로드)
   async function togglePrepayExpand(approvalId: string) {
     setPrepayExpanded(prev => { const n = new Set(prev); if (n.has(approvalId)) n.delete(approvalId); else n.add(approvalId); return n; });
@@ -689,8 +718,8 @@ export default function CardsContent() {
                     className="w-full flex items-center gap-3 px-5 py-3 text-left hover:bg-green-50/40">
                     <span className={`text-gray-300 text-xs w-3 flex-shrink-0 transition-transform ${expanded ? 'rotate-90' : ''}`}>▶</span>
                     <div className="flex-1 min-w-0">
-                      <div className="text-base text-gray-800 font-medium truncate">{cardName(p.card_id)} · {p.purchase_vendor || '구매'}</div>
-                      <div className="text-xs text-gray-400">구매일 {p.spend_date || '-'} · 결제예정 {p.payment_due_date} · {p.company}{selCnt > 0 && <span className="text-green-600 font-medium"> · 선택 {selCnt}건</span>}</div>
+                      <div className="text-base text-gray-800 font-medium truncate">{cardLabel(p.card_id)} · {p.purchase_vendor || '구매'}</div>
+                      <div className="text-xs text-gray-400">구매일 {prepayItemDates[p.id] || p.spend_date || '-'} · 결제예정 {p.payment_due_date} · {p.company} · 상신 {p.organizer || '-'}{selCnt > 0 && <span className="text-green-600 font-medium"> · 선택 {selCnt}건</span>}</div>
                     </div>
                     <div className="text-base font-semibold text-green-700 tabular-nums flex-shrink-0 underline decoration-dotted">{won(p.total_amount)}원</div>
                   </button>
