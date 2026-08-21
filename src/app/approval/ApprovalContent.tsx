@@ -1877,7 +1877,10 @@ export default function ApprovalContent() {
               </div>
             )}
             {docType === '카드구매' && isPrepay && (
-              <p className="text-sm text-green-700 bg-green-50 border border-green-200 rounded-lg px-3 py-2 mb-3">💳 선결제: 기존 카드 사용분을 앞당겨 결제 → 승인되면 해당 카드 <b>잔여한도가 복구</b>됩니다. 아래 <b>‘지출’ 날짜에 실제 결제(한도복구)일</b>을 넣으세요 — 결제 캘린더에 그 날짜로 −금액이 기록됩니다. (카드 청구일이 아니라 실제 빠지는 날)</p>
+              <>
+                <p className="text-sm text-green-700 bg-green-50 border border-green-200 rounded-lg px-3 py-2 mb-2">💳 선결제: 기존 카드 사용분을 앞당겨 결제 → 승인되면 해당 카드 <b>잔여한도가 복구</b>됩니다. 아래 <b>‘지출’ 날짜에 실제 결제(한도복구)일</b>을 넣으세요 — 결제 캘린더에 그 날짜로 −금액이 기록됩니다. (카드 청구일이 아니라 실제 빠지는 날)</p>
+                <p className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-3">⚠️ <b>ERP에 이미 카드구매 결재가 있는 건은 여기로 올리지 마세요</b> — 한도가 <b>이중으로 복구</b>되어 잔여한도가 실제와 어긋납니다. 그 경우 <b>카드매입 → 한도현황 → 💚 선결제 처리</b>에서 해당 매입의 상품을 체크해 처리하세요. 이 결재는 <b>ERP 등록 전(기준값 이전) 카드값 상환 전용</b>입니다.</p>
+              </>
             )}
             {/* 결제카드·구매처는 카드구매(선결제 포함) 전용. 지출결의서엔 노출 안 함(카드 연결로 인한 한도 오차 방지) */}
             {docType === '카드구매' && (

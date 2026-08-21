@@ -584,7 +584,7 @@ export default function CardsContent() {
     && (typeFilter === 'all' || cardTypeOf(p.card_id) === typeFilter),
   ).sort((a, b) => (a.payment_due_date || '').localeCompare(b.payment_due_date || ''));
   const prepaidIdSet = new Set(prepaidItems.map(pi => pi.id)); // 이미 선결제된 항목
-  const prepayLogs = logs.filter(l => l.action === '선결제처리'); // 선결제 이력
+  const prepayLogs = logs.filter(l => l.action === '선결제처리' || l.action === '선결제복구'); // 선결제 이력(복구 포함)
 
   // 매입 헤더의 '구매일' = 지출결의서 세부내역(approval_items.item_date) 기준.
   // (approvals.spend_date는 상신 시점 값이라 실제 구매일과 다를 수 있음 → 품목 구매일로 표시)
@@ -660,7 +660,8 @@ export default function CardsContent() {
     setPrepaySaving(true);
     try {
       const nowIso = new Date().toISOString();
-      const parts: string[] = [];
+      // 이력은 카드별 요약으로 간결하게(항목 나열 금지 — 수십 건이면 읽을 수 없음)
+      const byCard = new Map<string, { cnt: number; amt: number }>();
       for (const key of prepaySelKeys) {
         const info = prepayKeyInfo(key);
         if (key.startsWith('appr:')) {
@@ -677,9 +678,11 @@ export default function CardsContent() {
             body: JSON.stringify({ prepaid_date: prepayDate, prepaid_at: nowIso }),
           });
         }
-        parts.push(`${info.cardId ? cardName(info.cardId) + '/' : ''}${info.label} ${won(info.amount)}원`);
+        const e = byCard.get(info.cardId) || { cnt: 0, amt: 0 };
+        e.cnt++; e.amt += info.amount; byCard.set(info.cardId, e);
       }
-      await logCardChange('선결제처리', `${prepaySelKeys.length}건 · ${won(prepaySelTotal)}원 · 선결제일 ${prepayDate}`, parts.join(' · '), me?.name || '').catch(() => {});
+      const detail = [...byCard.entries()].map(([cid, v]) => `${cid ? cardLabel(cid) : '(카드 미상)'} · ${v.cnt}건 · ${won(v.amt)}원`).join('  |  ');
+      await logCardChange('선결제처리', `${prepaySelKeys.length}건 · ${won(prepaySelTotal)}원 · 선결제일 ${prepayDate}`, detail, me?.name || '').catch(() => {});
       setPrepayOpen(false);
       setPrepayItemChecked(new Set());
       setPrepayExpanded(new Set());
@@ -687,6 +690,31 @@ export default function CardsContent() {
       await loadPurchases();
       await loadLogs();
     } catch (e) { alert('선결제 처리 중 오류: ' + ((e as Error)?.message || e)); }
+    finally { setPrepaySaving(false); }
+  }
+
+  // 선결제 원상복구(취소) — 잘못 처리한 선결제를 되돌림. 대표·실장 전용. 이력('선결제복구') 기록.
+  async function revertPrepay(p: CardPurchase) {
+    if (!canManage) return;
+    const items = prepayItemsMap[p.id] || [];
+    const doneItems = items.filter(it => it.id && it.prepaid_date && !it.canceled);
+    if (doneItems.length === 0) { alert('복구할 선결제 항목이 없습니다.'); return; }
+    const total = doneItems.reduce((s, it) => s + (it.amount || 0), 0);
+    if (!confirm(`이 매입의 선결제 ${doneItems.length}건 (${won(total)}원)을 원상복구할까요?\n\n→ 선결제 표시가 해제되어 한도가 다시 차감되고, 결제 캘린더도 원래 결제예정일(${p.payment_due_date}) 기준으로 돌아갑니다.`)) return;
+    setPrepaySaving(true);
+    try {
+      const ids = doneItems.map(it => it.id).join(',');
+      const res = await supabaseFetch(`/approval_items?id=in.(${ids})`, {
+        method: 'PATCH', headers: { Prefer: 'return=minimal' },
+        body: JSON.stringify({ prepaid_date: null, prepaid_at: null }),
+      });
+      if (!res.ok) { alert(`선결제 복구 실패 (HTTP ${res.status})`); return; }
+      await logCardChange('선결제복구', `${doneItems.length}건 · ${won(total)}원 · ${cardLabel(p.card_id)}`,
+        `${p.purchase_vendor || '구매'} · 결제예정 ${p.payment_due_date} 매입의 선결제를 원상복구(한도 재차감)`, me?.name || '').catch(() => {});
+      setPrepayItemsMap(prev => ({ ...prev, [p.id]: (prev[p.id] || []).map(it => it.prepaid_date ? { ...it, prepaid_date: undefined } : it) }));
+      await loadPurchases();
+      await loadLogs();
+    } catch (e) { alert('선결제 복구 중 오류: ' + ((e as Error)?.message || e)); }
     finally { setPrepaySaving(false); }
   }
 
@@ -756,6 +784,13 @@ export default function CardsContent() {
                           </label>
                         );
                       })}
+                      {canManage && Array.isArray(items) && items.some(it => it.id && it.prepaid_date && !it.canceled) && (
+                        <div className="px-8 py-2 border-t border-gray-100 text-right">
+                          <button onClick={() => revertPrepay(p)} disabled={prepaySaving}
+                            className="text-xs text-red-500 hover:text-red-700 underline decoration-dotted disabled:opacity-50"
+                            title="잘못 처리한 선결제를 되돌립니다 (한도 재차감·캘린더 원복)">↩ 이 매입의 선결제 원상복구</button>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -767,8 +802,11 @@ export default function CardsContent() {
               <div className="px-5 py-2 text-sm font-semibold text-gray-500 bg-gray-50">📜 선결제 이력</div>
               {prepayLogs.slice(0, 30).map(l => (
                 <div key={l.id} className="px-5 py-2 border-b border-gray-50">
-                  <div className="text-sm text-gray-700">{l.target}</div>
-                  {l.detail && <div className="text-xs text-gray-400 mt-0.5 break-words">{l.detail}</div>}
+                  <div className="text-sm text-gray-700">
+                    {l.action === '선결제복구' && <span className="text-[10px] font-bold text-red-500 bg-red-50 px-1.5 py-0.5 rounded mr-1.5">복구</span>}
+                    {l.target}
+                  </div>
+                  {l.detail && <div className="text-xs text-gray-400 mt-0.5 break-words line-clamp-2" title={l.detail}>{l.detail}</div>}
                   <div className="text-xs text-gray-300 mt-0.5">{l.actor || '-'} · {l.created_at?.slice(0, 16).replace('T', ' ')}</div>
                 </div>
               ))}
