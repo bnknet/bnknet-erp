@@ -100,10 +100,13 @@ export default function SalesTargetContent() {
     rows.filter(r => r.company === company).reduce((s, r) => s + (r.target_amount || 0), 0);
   const companyYearActual = (company: string) =>
     Array.from({ length: 12 }, (_, i) => i + 1).reduce((s, m) => s + actualOf(company, m), 0);
-  // 목표 공헌이익률 (월별 동일값 → 입력된 값 중 첫 값)
+  // 목표 공헌이익률 — 월별 마진율이 다를 수 있어 연간 가중평균(Σ목표매출×마진율 ÷ Σ목표매출)으로 계산
   const companyMargin = (company: string) => {
-    const r = rows.find(r => r.company === company && r.target_margin != null);
-    return r?.target_margin ?? null;
+    const rs = rows.filter(r => r.company === company && r.target_margin != null && (r.target_amount || 0) > 0);
+    if (rs.length === 0) return null;
+    const amt = rs.reduce((s, r) => s + (r.target_amount || 0), 0);
+    const weighted = rs.reduce((s, r) => s + (r.target_amount || 0) * (r.target_margin || 0), 0);
+    return amt > 0 ? Math.round((weighted / amt) * 10) / 10 : null;
   };
 
   // 금액 조회: 실적은 주문 자동집계, 목표는 sales_targets
