@@ -85,7 +85,6 @@ const EMAIL_PROFILE: Record<string, string> = {
   'mqw100@naver.com': '직원',       // 박정진
   'dudgns3531@naver.com': '직원',   // 최영훈
   'elinson1016@gmail.com': '직원',  // 손사빈
-  'neulahh.s2@gmail.com': '직원',   // 이하늘
   'woonggukang@naver.com': '경영지원', // 강웅구
   'khbang123@naver.com': '전체',    // 방기협(대표)
   'bpride5073@gmail.com': '전체',   // 방성훈
