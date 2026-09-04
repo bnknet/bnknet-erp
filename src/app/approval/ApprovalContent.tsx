@@ -1133,12 +1133,15 @@ export default function ApprovalContent() {
   async function downloadItemTemplate() {
     const XLSX = await import('xlsx');
     const sample = [
-      { '월/일': '07/01', '구매상품': '예시) 비타민C 1000mg', '구매수량': 2, '금액': 50000, '비고': '' },
-      { '월/일': '', '구매상품': '', '구매수량': '', '금액': '', '비고': '' },
+      { '월/일': '07/01', '구매상품': '예시) 비타민C 1000mg', '구매수량': 2, '금액': 50000, '판관비': opexCats[0]?.label || '', '비고': '' },
+      { '월/일': '', '구매상품': '', '구매수량': '', '금액': '', '판관비': '', '비고': '' },
     ];
-    const ws = XLSX.utils.json_to_sheet(sample, { header: ['월/일', '구매상품', '구매수량', '금액', '비고'] });
+    const ws = XLSX.utils.json_to_sheet(sample, { header: ['월/일', '구매상품', '구매수량', '금액', '판관비', '비고'] });
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, '품목');
+    // 판관비 항목은 아래 목록의 이름을 그대로 적어야 인식된다 → 참고 시트로 동봉
+    const catWs = XLSX.utils.json_to_sheet(opexCats.map(c => ({ '판관비 항목(그대로 복사해서 사용)': c.label })));
+    XLSX.utils.book_append_sheet(wb, catWs, '판관비 항목 목록');
     XLSX.writeFile(wb, '매입품의서_품목양식.xlsx');
   }
 
@@ -1184,17 +1187,27 @@ export default function ApprovalContent() {
         if (m) return `${p2(+m[1])}/${p2(+m[2])}`;
         return s;
       };
+      // 판관비 셀: 항목 이름(라벨) 또는 key 어느 쪽을 적어도 인식. 못 알아보면 빈 값(수동 선택).
+      let opexMiss = 0;
+      const opexOf = (v: unknown): string => {
+        const s = String(v ?? '').trim();
+        if (!s || s === '-') return '';
+        const hit = opexCats.find(c => c.label === s || c.key === s);
+        if (!hit) { opexMiss++; return ''; }
+        return hit.key;
+      };
       const parsed: ApprovalItem[] = rows.map((r, idx) => ({
         item_date: fmtItemDate(pick(r, ['월/일', '월일', '날짜', '일자'])),
         description: String(pick(r, ['구매상품', '적요', '상품', '품목', '내용'])).trim(),
         quantity: num(pick(r, ['구매수량', '수량'])),
         amount: num(pick(r, ['금액', '가격'])),
         note: String(pick(r, ['비고', '메모'])).trim(),
+        opex_category: opexOf(pick(r, ['판관비', '판관비항목', '판관비 항목'])),
         sort_order: idx,
       })).filter(it => it.description || it.amount);
-      if (!parsed.length) { alert('읽을 항목이 없습니다. 양식의 열 이름(월/일·구매상품·구매수량·금액·비고)을 확인하세요.'); return; }
+      if (!parsed.length) { alert('읽을 항목이 없습니다. 양식의 열 이름(월/일·구매상품·구매수량·금액·판관비·비고)을 확인하세요.'); return; }
       setItems(parsed.map((it, i) => ({ ...it, sort_order: i })));
-      alert(`✅ ${parsed.length}건을 불러왔습니다. 내용 확인 후 상신하세요.`);
+      alert(`✅ ${parsed.length}건을 불러왔습니다. 내용 확인 후 상신하세요.${opexMiss ? `\n⚠️ 판관비 항목 ${opexMiss}건은 이름이 목록과 달라 비워뒀습니다. 화면에서 직접 선택해주세요. (양식의 '판관비 항목 목록' 시트 참고)` : ''}`);
     } catch {
       alert('엑셀 읽기에 실패했습니다. 다운로드한 .xlsx 양식 파일인지 확인하세요.');
     }
