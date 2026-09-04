@@ -722,9 +722,9 @@ export default function ApprovalContent() {
               approval_id: approvalId,
               item_date: i.item_date || '',
               description: i.description || '',
-              quantity: i.quantity ?? 0,
-              unit_price: i.unit_price ?? 0,
-              amount: i.amount ?? 0,
+              quantity: Math.round(Number(i.quantity) || 0),
+              unit_price: Math.round(Number(i.unit_price) || 0),
+              amount: Math.round(Number(i.amount) || 0),
               note: i.note || '',
               sort_order: idx,
               // 태깅 안 한 품목은 null 저장(영업이익 자동합산 쿼리 효율·정확)
@@ -732,7 +732,8 @@ export default function ApprovalContent() {
             }))),
           });
           if (!insRes.ok) {
-            alert(`본문(품목) 저장에 실패했습니다 (HTTP ${insRes.status}). 기존 내용은 그대로 유지됩니다. 잠시 후 다시 시도해주세요.`);
+            const detail = await insRes.text().catch(() => '');
+            alert(`본문(품목) 저장에 실패했습니다 (HTTP ${insRes.status}). 기존 내용은 그대로 유지됩니다. 잠시 후 다시 시도해주세요.${detail ? `\n\n[상세] ${detail.slice(0, 300)}` : ''}`);
             setSaving(false); return;
           }
           // 삽입 성공 → 편집이면 예전 품목만 삭제(방금 넣은 새 품목은 유지)
@@ -1152,7 +1153,9 @@ export default function ApprovalContent() {
       const wb = XLSX.read(buf, { type: 'array' });
       const ws = wb.Sheets[wb.SheetNames[0]];
       const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws, { defval: '' });
-      const num = (v: unknown) => Number(String(v).replace(/[^\d.-]/g, '')) || 0;
+      // 반올림 필수: 엑셀 수식 결과는 522180.00000000006 같은 부동소수점 오차를 품을 수 있어
+      // 그대로 저장하면 정수 컬럼에서 HTTP 400이 난다.
+      const num = (v: unknown) => Math.round(Number(String(v).replace(/[^\d.-]/g, '')) || 0);
       const pick = (r: Record<string, unknown>, keys: string[]) => {
         for (const k of keys) if (r[k] !== undefined && r[k] !== '') return r[k];
         return '';
