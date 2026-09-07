@@ -827,9 +827,10 @@ export const PRODUCT_MAP: Record<string, string> = {
 export function extractQtyAndName(name: string): [number, string] {
   if (!name) return [1, ''];
   name = String(name).trim();
-  // 끝의 "N개/박스/포/세트" 뒤에 짧은 영문 꼬리표(예: "…분말 2개 BN")가 붙어도 수량 인식.
+  // 끝의 "N개/박스/세트" 뒤에 짧은 영문 꼬리표(예: "…분말 2개 BN")가 붙어도 수량 인식.
   // ("12개월분"류는 뒤가 한글이라 계속 미인식 → 회귀 없음)
-  const m = name.match(/,?\s*(\d+)\s*(박스|개|포|세트)\s*(\([^)]*\))?\s*([A-Za-z]{1,4})?\s*$/);
+  // "N포"는 포장규격(소포 수)이라 상품명 끝에 있어도 수량으로 쓰지 않음 (09-07 오출고 사고 이후 제외).
+  const m = name.match(/,?\s*(\d+)\s*(박스|개|세트)\s*(\([^)]*\))?\s*([A-Za-z]{1,4})?\s*$/);
   if (m) return [parseInt(m[1]), name.slice(0, m.index).replace(/,\s*$/, '').trim()];
   return [1, name];
 }
@@ -1005,7 +1006,7 @@ export function repNameFor(collectName: string, collectOption = ''): { name: str
 }
 
 // 이름 끝에 수량이 없고(예: "…6박스 12개월분") 이름 속 'N박스'가 진짜 수량인 경우를 잡는다.
-const TRAIL_QTY_RE = /,?\s*(\d+)\s*(박스|개|포|세트)\s*(\([^)]*\))?\s*([A-Za-z]{1,4})?\s*$/;
+const TRAIL_QTY_RE = /,?\s*(\d+)\s*(박스|개|세트)\s*(\([^)]*\))?\s*([A-Za-z]{1,4})?\s*$/;
 export function extractBoxQty(name: string): number | null {
   const all = String(name || '').match(/(\d+)\s*박스/g);
   if (!all) return null;
@@ -1021,10 +1022,10 @@ export interface ConvertedOrderRow extends RawOrderRow {
   '상품명': string;
   '수량(주문수량*EA)': number;
   '_is_bundle': 0 | 1;
-  '_qty_warn': 0 | 1;   // 수량 확인 필요 (파싱 근거 불일치 또는 비정상 대량)
+  '_qty_warn': 0 | 1 | 2;   // 0 정상 / 1 대량(단위수량이 QTY_WARN_THRESHOLD 이상, 노란 확인) / 2 옵션·상품명 수량 불일치(빨간 확인)
 }
 
-// 수량 경고 기준: 옵션·상품명에서 뽑은 수량이 서로 다르거나, 한 건이 이 수량 이상이면 확인 요청
+// 수량 경고 기준: 단위수량(수집수량 곱하기 전)이 이 값 이상이면 "대량 확인" 표시
 export const QTY_WARN_THRESHOLD = 10;
 
 export function convertOrders(raw: RawOrderRow[]): ConvertedOrderRow[] {
@@ -1047,8 +1048,9 @@ export function convertOrders(raw: RawOrderRow[]): ConvertedOrderRow[] {
     const [nameQty] = extractQtyAndName(collectName);
     const optQty = extractQtyFromOption(collectOpt);
     // 수량 우선순위: 이름 끝 명시수량(있으면 기존 로직) → 없고 'N박스'면 박스 수 → 옵션수량 → 1
+    const nameHasQty = TRAIL_QTY_RE.test(collectName);
     let unitQty: number;
-    if (TRAIL_QTY_RE.test(collectName)) {
+    if (nameHasQty) {
       unitQty = optQty !== null ? optQty : nameQty;           // 기존 동작 유지(회귀 방지)
     } else {
       const boxQty = extractBoxQty(collectName);              // "…6박스 12개월분"류
@@ -1058,15 +1060,17 @@ export function convertOrders(raw: RawOrderRow[]): ConvertedOrderRow[] {
     // 상품명 치환은 matchProduct로 통일 + 수집옵션 색상(자연갈색/흑색 등) 반영.
     // 변환 저장되는 product_name이 재고/매출 매칭과 100% 동일 기준이 되도록.
     const mappedName = applyOptionColor(matchProduct(collectName, collectOpt).name, collectOpt);
-    // 안전장치: 옵션 수량과 상품명 수량이 다르거나, 비정상 대량이면 확인 요청 표시
-    const qtyWarn = (optQty !== null && optQty !== nameQty) || finalQty >= QTY_WARN_THRESHOLD;
+    // 안전장치(수량 확인 표시): 2 = 옵션 수량과 상품명 끝 명시수량이 서로 다름(어느 쪽이 맞는지 판단 불가, 드묾 → 빨강)
+    //                       1 = 단위수량이 기준 이상인 대량 주문(정상일 수 있으나 오출고 시 손실이 커 노랑)
+    const qtyWarn: 0 | 1 | 2 = (optQty !== null && nameHasQty && optQty !== nameQty) ? 2
+      : unitQty >= QTY_WARN_THRESHOLD ? 1 : 0;
 
     return {
       ...row,
       '상품명': mappedName,
       '수량(주문수량*EA)': finalQty,
       '_is_bundle': bundleRows.has(idx) ? 1 : 0,
-      '_qty_warn': qtyWarn ? 1 : 0,
+      '_qty_warn': qtyWarn,
     };
   });
 
