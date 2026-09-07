@@ -714,11 +714,11 @@ export default function OrdersContent() {
       setResultData(converted);
       const bundleCount = converted.filter((r) => r._is_bundle).length;
       const productCount = new Set(converted.map((r) => r['상품명']).filter(Boolean)).size;
-      const qtyWarnCount = converted.filter((r) => qtyRiskReason(r as Record<string, unknown>)).length;
+      const qtyWarnCount = converted.filter((r) => r['_qty_warn'] || qtyRiskReason(r as Record<string, unknown>)).length;
       setStatus({
         type: qtyWarnCount ? 'error' : 'success',
         msg: `✅ 변환 완료 — 총 ${converted.length}건 / 합구매 ${bundleCount}건 / 상품 ${productCount}종`
-          + (qtyWarnCount ? ` · ⚠️ 수량 확인 필요 ${qtyWarnCount}건 (아래 노란 행 확인 후 송장 출력)` : ''),
+          + (qtyWarnCount ? ` · ⚠️ 수량 확인 필요 ${qtyWarnCount}건 (아래 빨간/노란 행 확인 후 송장 출력)` : ''),
       });
     } catch {
       setStatus({ type: 'error', msg: '❌ 파일 처리 중 오류가 발생했습니다' });
@@ -921,8 +921,14 @@ export default function OrdersContent() {
           const d = warn.negative.slice(0, 20).map(n => (typeof n === 'string' ? n : JSON.stringify(n))).join(', ');
           alerts.push({ company, kind: 'negative', detail: `재고 부족(마이너스) ${warn.negative.length}건: ${d}`, order_count: warn.negative.length, created_by: me?.name || '' });
         }
+        // 수량 파싱 근거 불일치(옵션 vs 상품명) 또는 비정상 대량(10개↑) — 09-07 "30포:3개→30개" 오출고 재발 방지 안전망
+        const qtyHardRows = resultData.filter((r) => r['_qty_warn']);
+        if (qtyHardRows.length) {
+          const d = qtyHardRows.slice(0, 20).map((r) => `${String(r['상품명'] || '(상품명 없음)')}=${r['수량(주문수량*EA)']}개`).join(', ');
+          alerts.push({ company, kind: 'qty_check', detail: `⚠️ 수량 확인 필요 ${qtyHardRows.length}건 — 옵션/상품명 수량 불일치 또는 한 건 10개 이상. 송장 출력 전 반드시 확인: ${d}`, order_count: qtyHardRows.length, created_by: me?.name || '' });
+        }
         // 수량표기 확인 필요(개입/매/병/팩/1+1 등 미인식 단위) — 송장 수량 오출고 방지 안전망
-        const qtyRiskRows = resultData.filter((r) => qtyRiskReason(r as Record<string, unknown>));
+        const qtyRiskRows = resultData.filter((r) => !r['_qty_warn'] && qtyRiskReason(r as Record<string, unknown>));
         if (qtyRiskRows.length) {
           const seen = new Map<string, number>();
           for (const r of qtyRiskRows) {
@@ -1314,6 +1320,28 @@ export default function OrdersContent() {
           {resultData.length > 0 && (
             <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
               <h3 className="font-semibold text-gray-700 mb-4">변환 결과 미리보기</h3>
+
+              {/* ⚠️ 수량 확인 필요 — 옵션/상품명 수량 불일치 또는 비정상 대량. 출고 전 반드시 확인 */}
+              {(() => {
+                const warns = resultData.filter((r) => r['_qty_warn']);
+                if (warns.length === 0) return null;
+                return (
+                  <div className="mb-4 bg-red-50 border border-red-300 rounded-xl p-4">
+                    <div className="font-bold text-red-700">⚠️ 수량 확인 필요 {warns.length}건 — 출고 전 반드시 확인하세요</div>
+                    <div className="text-sm text-red-500 mt-0.5">옵션과 상품명에서 읽은 수량이 다르거나 한 건 수량이 10개 이상인 주문입니다. 아래 빨간 행을 확인하고, 잘못됐으면 저장 전에 실장님께 알려주세요.</div>
+                    <div className="mt-2 space-y-1 max-h-48 overflow-y-auto">
+                      {warns.slice(0, 30).map((r, i) => (
+                        <div key={i} className="text-sm bg-white border border-red-100 rounded-lg px-3 py-1.5 flex items-center justify-between gap-2">
+                          <span className="text-gray-700 truncate">{String(r['★수집상품명'] || r['수집상품명'] || r['상품명'])} <span className="text-gray-400">/ 옵션: {String(r['★수집옵션'] || r['수집옵션'] || '-')}</span></span>
+                          <span className="text-red-600 font-bold flex-shrink-0">{r['수량(주문수량*EA)']}개</span>
+                        </div>
+                      ))}
+                      {warns.length > 30 && <div className="text-xs text-red-400">외 {warns.length - 30}건</div>}
+                    </div>
+                  </div>
+                );
+              })()}
+
               <div className="overflow-x-auto">
                 <table className="w-full text-base">
                   <thead>
@@ -1328,8 +1356,9 @@ export default function OrdersContent() {
                   <tbody>
                     {resultData.slice(0, 50).map((row, i) => {
                       const risk = qtyRiskReason(row as Record<string, unknown>);
+                      const hard = !!row['_qty_warn']; // 파싱 근거 불일치/비정상 대량 → 빨강 (노란 미인식 단위보다 우선)
                       return (
-                      <tr key={i} className={`border-b border-gray-50 ${risk ? 'bg-yellow-50 hover:bg-yellow-100' : 'hover:bg-gray-50'}`}>
+                      <tr key={i} className={`border-b border-gray-50 ${hard ? 'bg-red-50 hover:bg-red-100' : risk ? 'bg-yellow-50 hover:bg-yellow-100' : 'hover:bg-gray-50'}`}>
                         <td className="py-2 px-3 whitespace-nowrap">
                           <span className="bg-blue-100 text-blue-700 text-sm px-2 py-0.5 rounded-md">
                             {String(row['몰명'] || '-')}
@@ -1337,12 +1366,15 @@ export default function OrdersContent() {
                         </td>
                         <td className="py-2 px-3 text-gray-700">
                           {row['상품명']}
-                          {risk && (
+                          {hard && (
+                            <span className="block text-xs text-red-600 mt-0.5">⚠️ 옵션/상품명 수량 불일치 또는 대량 — 수량 확인</span>
+                          )}
+                          {!hard && risk && (
                             <span className="block text-xs text-yellow-700 mt-0.5" title={risk}>⚠️ {risk}</span>
                           )}
                         </td>
-                        <td className={`py-2 px-3 text-center ${risk ? 'text-yellow-800 font-bold' : 'text-gray-600'}`}>
-                          {risk && <span className="mr-1">⚠️</span>}{row['수량(주문수량*EA)']}
+                        <td className={`py-2 px-3 text-center ${hard ? 'text-red-600 font-bold' : risk ? 'text-yellow-800 font-bold' : 'text-gray-600'}`}>
+                          {(hard || risk) && <span className="mr-1">⚠️</span>}{row['수량(주문수량*EA)']}
                         </td>
                         <td className="py-2 px-3 text-right text-gray-700 font-medium">
                           ₩{(Number(row['금액']) || 0).toLocaleString()}

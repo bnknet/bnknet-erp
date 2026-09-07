@@ -834,9 +834,15 @@ export function extractQtyAndName(name: string): [number, string] {
   return [1, name];
 }
 
+// 옵션에서 "주문수량"만 추출. "N포"는 포장규격(소포 수)이라 절대 수량으로 쓰지 않음.
+// - "30포:3개" 형식 → 콜론 뒤 "3개"가 주문수량
+// - "3개"/"2박스"/"1세트" → 그 숫자
+// - "30포", "60g 5개" 등은 null → 상품명 끝의 "N개"로 판단
 export function extractQtyFromOption(option: string): number | null {
   if (!option) return null;
-  const m = String(option).trim().match(/^(\d+)\s*(박스|개|포)/);
+  const s = String(option).trim();
+  const tail = s.includes(':') ? s.slice(s.lastIndexOf(':') + 1).trim() : s;
+  const m = tail.match(/^(\d+)\s*(개|박스|세트)/);
   return m ? parseInt(m[1]) : null;
 }
 
@@ -1015,7 +1021,11 @@ export interface ConvertedOrderRow extends RawOrderRow {
   '상품명': string;
   '수량(주문수량*EA)': number;
   '_is_bundle': 0 | 1;
+  '_qty_warn': 0 | 1;   // 수량 확인 필요 (파싱 근거 불일치 또는 비정상 대량)
 }
+
+// 수량 경고 기준: 옵션·상품명에서 뽑은 수량이 서로 다르거나, 한 건이 이 수량 이상이면 확인 요청
+export const QTY_WARN_THRESHOLD = 10;
 
 export function convertOrders(raw: RawOrderRow[]): ConvertedOrderRow[] {
   const addrCount: Record<string, number[]> = {};
@@ -1048,12 +1058,15 @@ export function convertOrders(raw: RawOrderRow[]): ConvertedOrderRow[] {
     // 상품명 치환은 matchProduct로 통일 + 수집옵션 색상(자연갈색/흑색 등) 반영.
     // 변환 저장되는 product_name이 재고/매출 매칭과 100% 동일 기준이 되도록.
     const mappedName = applyOptionColor(matchProduct(collectName, collectOpt).name, collectOpt);
+    // 안전장치: 옵션 수량과 상품명 수량이 다르거나, 비정상 대량이면 확인 요청 표시
+    const qtyWarn = (optQty !== null && optQty !== nameQty) || finalQty >= QTY_WARN_THRESHOLD;
 
     return {
       ...row,
       '상품명': mappedName,
       '수량(주문수량*EA)': finalQty,
       '_is_bundle': bundleRows.has(idx) ? 1 : 0,
+      '_qty_warn': qtyWarn ? 1 : 0,
     };
   });
 
