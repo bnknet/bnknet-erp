@@ -502,7 +502,13 @@ export default function OrdersContent() {
         method: 'POST', headers: { Prefer: 'return=representation' },
         body: JSON.stringify({ p_order_id: id, p_cancel_qty: qty, p_reason: reason, p_type: type, p_by: me?.name || '' }),
       });
-      if (!res.ok) throw new Error(String(res.status));
+      if (!res.ok) {
+        // 서버 오류 원인(예: 컬럼 없음, 함수 없음)을 그대로 보여줘야 담당자가 바로 전달할 수 있음
+        const body = await res.text().catch(() => '');
+        let msg = body;
+        try { msg = (JSON.parse(body) as { message?: string })?.message || body; } catch { /* 본문이 JSON이 아니면 원문 그대로 */ }
+        throw new Error(`HTTP ${res.status} ${msg}`.trim());
+      }
       const r = await res.json();
       if (r?.error) { alert(`❌ ${r.error}`); return; }
       const detail = r?.full_canceled ? `${qty}개 ${type} → 전체 취소 · 사유: ${reason}` : `${qty}개 ${type}(남은 ${r?.new_qty}개) · 사유: ${reason}`;
@@ -510,8 +516,8 @@ export default function OrdersContent() {
       if (r?.full_canceled) alert(`✅ 전체 수량 ${type} → 주문 전체가 취소 처리되었습니다 (재고 복구됨).`);
       else alert(`✅ ${qty}개 ${type} 처리 완료 (남은 수량 ${r?.new_qty}개, 금액·재고 자동 반영).`);
       setOrderChecked(new Set());
-    } catch {
-      alert('❌ 부분취소 처리 중 오류. (db/partial_cancel.sql 적용 여부 확인)');
+    } catch (e) {
+      alert(`❌ 부분취소 처리 중 오류 (변경은 모두 취소되었습니다)\n${e instanceof Error ? e.message : String(e)}\n\n이 메시지를 실장님께 전달해 주세요.`);
     }
     await searchOrders();
   }
