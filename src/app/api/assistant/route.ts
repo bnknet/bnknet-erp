@@ -380,7 +380,10 @@ async function runProfitSummary(input: { year_month?: string; company?: string }
       supabaseFetchAll<{ company?: string; category?: string; amount?: number }>(`/opex_item?year=eq.${y}&month=eq.${mo}&select=company,category,amount`).catch(() => []),
       supabaseFetchAll<{ key: string; taxable?: boolean; active?: boolean }>('/opex_category?select=key,taxable,active').catch(() => []),
       supabaseFetchAll<{ id: string; company?: string; spend_date?: string; issue_date?: string }>('/approvals?doc_type=eq.지출결의서&status=eq.approved&select=id,company,spend_date,issue_date').catch(() => []),
-      supabaseFetchAll<{ approval_id?: string; amount?: number; opex_category?: string; canceled?: boolean }>('/approval_items?opex_category=not.is.null&select=approval_id,amount,opex_category,canceled').catch(() => []),
+      // opex_excluded(영업이익 탭에서 체크 해제한 품목)는 제외. 컬럼 미적용 DB에서는 기존 조회로 폴백.
+      supabaseFetchAll<{ approval_id?: string; amount?: number; opex_category?: string; canceled?: boolean; opex_excluded?: boolean }>('/approval_items?opex_category=not.is.null&select=approval_id,amount,opex_category,canceled,opex_excluded')
+        .catch(() => supabaseFetchAll<{ approval_id?: string; amount?: number; opex_category?: string; canceled?: boolean; opex_excluded?: boolean }>('/approval_items?opex_category=not.is.null&select=approval_id,amount,opex_category,canceled'))
+        .catch(() => []),
       supabaseFetchAll<{ company?: string; salary?: number; status?: string; salary_alloc?: Record<string, number> | null }>('/employees?select=company,salary,status,salary_alloc').catch(() => []),
     ]);
     const settle = new Map<string, { fee: number; cost: number; amount: number }>();
@@ -411,7 +414,7 @@ async function runProfitSummary(input: { year_month?: string; company?: string }
     const appYm = new Map<string, { company: string; ym: string }>();
     for (const a of apps) { const d = a.spend_date || a.issue_date || ''; appYm.set(String(a.id), { company: a.company || '', ym: d.slice(0, 7) }); }
     for (const it of appItems) {
-      if (it.canceled || !it.opex_category) continue;
+      if (it.canceled || it.opex_excluded || !it.opex_category) continue;
       const p = appYm.get(String(it.approval_id));
       if (!p || p.ym !== ym) continue;
       add(p.company, toSupply(taxMap[String(it.opex_category)] ?? true, Number(it.amount) || 0));

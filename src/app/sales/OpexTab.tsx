@@ -100,10 +100,16 @@ export default function OpexTab({ orders, inventory, fees, bomRows, settle, feeO
     return { map, othersProf, othersRev, othersMrev };
   }, [orders, inventory, fees, bomRows, settle, feeOverride, ym]);
 
-  // 결재(지출결의서) 자동 태깅분: `${company}|${category}` → 지급액 합
-  const [autoMap, setAutoMap] = useState<Record<string, number>>({});
-  // 세부내역용: 결재 태깅 품목 목록
-  const [resvDetail, setResvDetail] = useState<{ company: string; category: string; amount: number; desc: string; label: string }[]>([]);
+  // 결재(지출결의서) 태깅 품목 목록. excluded=true(체크 해제)면 세부내역엔 보이되 계산에서는 빠진다.
+  // (건당 택배비처럼 이미 공헌이익에서 차감된 비용의 이중 차감 방지 — approval_items.opex_excluded 에 저장)
+  const [resvDetail, setResvDetail] = useState<{ id: string; company: string; category: string; amount: number; desc: string; label: string; excluded: boolean }[]>([]);
+  const [exclSupported, setExclSupported] = useState(true); // false = db/approval_item_opex_excluded.sql 미적용
+  // 자동 태깅 합계: `${company}|${category}` → 지급액 합 (제외 품목은 빼고)
+  const autoMap = useMemo(() => {
+    const m: Record<string, number> = {};
+    for (const d of resvDetail) if (!d.excluded) m[`${d.company}|${d.category}`] = (m[`${d.company}|${d.category}`] || 0) + d.amount;
+    return m;
+  }, [resvDetail]);
   // 인사(HR) — 재직 직원 연봉·담당 사업자 → 인건비·4대보험 자동
   const [employees, setEmployees] = useState<{ name?: string; company?: string; salary?: number; status?: string; salary_alloc?: Record<string, number> | null }[]>([]);
   useEffect(() => {
@@ -132,32 +138,51 @@ export default function OpexTab({ orders, inventory, fees, bomRows, settle, feeO
   // (지출일→없으면 발의일 기준 월 매칭. 품목 opex_category 별로 item.amount 합)
   async function loadAutoOpex(ymStr: string) {
     try {
+      type TagItem = { id?: string; approval_id?: string; amount?: number; opex_category?: string; canceled?: boolean; description?: string; opex_excluded?: boolean };
+      let supported = true;
       const [apps, its] = await Promise.all([
         supabaseFetchAll<{ id: string; company?: string; organizer?: string; spend_date?: string; issue_date?: string }>(
           '/approvals?doc_type=eq.지출결의서&status=eq.approved&select=id,company,organizer,spend_date,issue_date',
         ),
-        supabaseFetchAll<{ approval_id?: string; amount?: number; opex_category?: string; canceled?: boolean; description?: string }>(
-          '/approval_items?opex_category=not.is.null&select=approval_id,amount,opex_category,canceled,description',
-        ),
+        supabaseFetchAll<TagItem>('/approval_items?opex_category=not.is.null&select=id,approval_id,amount,opex_category,canceled,description,opex_excluded')
+          .catch(() => {
+            // opex_excluded 컬럼 미적용 DB → 기존 방식으로 조회(전부 포함). 체크박스는 안내만.
+            supported = false;
+            return supabaseFetchAll<TagItem>('/approval_items?opex_category=not.is.null&select=id,approval_id,amount,opex_category,canceled,description');
+          }),
       ]);
+      setExclSupported(supported);
       const appMap = new Map<string, { company: string; ym: string; label: string }>();
       for (const a of Array.isArray(apps) ? apps : []) {
         const d = (a.spend_date || a.issue_date || '');
         appMap.set(String(a.id), { company: a.company || '미분류', ym: d.slice(0, 7), label: `${d || ''}${a.organizer ? ' · ' + a.organizer : ''}` });
       }
-      const m: Record<string, number> = {};
-      const detail: { company: string; category: string; amount: number; desc: string; label: string }[] = [];
+      const detail: { id: string; company: string; category: string; amount: number; desc: string; label: string; excluded: boolean }[] = [];
       for (const it of Array.isArray(its) ? its : []) {
         if (it.canceled || !it.opex_category) continue;
         const p = appMap.get(String(it.approval_id));
         if (!p || p.ym !== ymStr) continue; // 승인된 지출결의서 & 해당 월만
-        const amt = Number(it.amount) || 0;
-        m[`${p.company}|${it.opex_category}`] = (m[`${p.company}|${it.opex_category}`] || 0) + amt;
-        detail.push({ company: p.company, category: it.opex_category, amount: amt, desc: it.description || '(품목)', label: p.label });
+        detail.push({ id: String(it.id || ''), company: p.company, category: it.opex_category, amount: Number(it.amount) || 0, desc: it.description || '(품목)', label: p.label, excluded: !!it.opex_excluded });
       }
-      setAutoMap(m);
       setResvDetail(detail);
-    } catch { setAutoMap({}); setResvDetail([]); }
+    } catch { setResvDetail([]); }
+  }
+  // 결재 자동연동 품목을 계산에 포함/제외 (체크 해제 = 제외). 저장 실패 시 화면을 되돌리고 알림.
+  async function toggleResvInclude(id: string, include: boolean) {
+    if (!id) return;
+    if (!exclSupported) { alert('이 기능은 DB 설정이 필요합니다. db/approval_item_opex_excluded.sql 을 Supabase에서 실행해 주세요.'); return; }
+    setResvDetail((prev) => prev.map((d) => (d.id === id ? { ...d, excluded: !include } : d)));
+    try {
+      const res = await supabaseFetch(`/approval_items?id=eq.${id}`, {
+        method: 'PATCH', headers: { Prefer: 'return=representation' },
+        body: JSON.stringify({ opex_excluded: !include }),
+      });
+      const saved = res.ok ? await res.json() : null;
+      if (!res.ok || !Array.isArray(saved) || saved.length !== 1) throw new Error(`HTTP ${res.status}`);
+    } catch (e) {
+      setResvDetail((prev) => prev.map((d) => (d.id === id ? { ...d, excluded: include } : d)));
+      alert(`저장 실패 — 변경이 반영되지 않았습니다. (${e instanceof Error ? e.message : ''})`);
+    }
   }
   useEffect(() => { loadOpex(year, month); loadAutoOpex(ym); setOpenCats(new Set()); }, [year, month, ym]);
 
@@ -355,7 +380,7 @@ export default function OpexTab({ orders, inventory, fees, bomRows, settle, feeO
 
   // 전체 펼치기/접기 대상 = 세부내역이 있는 카테고리
   const detailCatKeys = inputCats
-    .filter((c) => manualList(company, c.key).length > 0 || autoHr(company, c.key) > 0 || autoResv(company, c.key) > 0)
+    .filter((c) => manualList(company, c.key).length > 0 || autoHr(company, c.key) > 0 || resvDetail.some((d) => d.company === company && d.category === c.key))
     .map((c) => c.key);
   const allOpen = detailCatKeys.length > 0 && detailCatKeys.every((k) => openCats.has(k));
   const toggleAll = () => setOpenCats(allOpen ? new Set() : new Set(detailCatKeys));
@@ -452,9 +477,11 @@ export default function OpexTab({ orders, inventory, fees, bomRows, settle, feeO
             const mans = manualList(company, c.key);
             const manTotal = mans.reduce((a, x) => a + x.amount, 0);
             const catTotalSupply = toSupply(c.taxable, manTotal) + toSupply(c.taxable, hr + resv);
-            const hasDetail = manTotal > 0 || hr > 0 || resv > 0;
             const open = openCats.has(c.key);
             const resvItems = resvDetail.filter(d => d.company === company && d.category === c.key);
+            const exclItems = resvItems.filter(d => d.excluded);
+            const exclTotal = exclItems.reduce((a, d) => a + d.amount, 0);
+            const hasDetail = manTotal > 0 || hr > 0 || resvItems.length > 0; // 전부 제외해도 다시 체크할 수 있게 펼침 유지
             return (
             <div key={c.key} className="border-b border-gray-50 last:border-b-0 pb-2">
               <div className="flex items-center gap-3 flex-wrap">
@@ -473,6 +500,9 @@ export default function OpexTab({ orders, inventory, fees, bomRows, settle, feeO
                   )}
                   {resv > 0 && (
                     <div className="text-xs text-emerald-600">+ 결재 지출결의서 자동 {won(resv)}</div>
+                  )}
+                  {exclItems.length > 0 && (
+                    <div className="text-xs text-gray-400">계산 제외 {exclItems.length}건 · {won(exclTotal)}</div>
                   )}
                   {!hasDetail && <div className="text-xs text-gray-300">입력 없음</div>}
                 </div>
@@ -498,7 +528,15 @@ export default function OpexTab({ orders, inventory, fees, bomRows, settle, feeO
                     <div className="flex justify-between text-indigo-600"><span>인사 · 급여합 {won(hr / INSURANCE_RATE)} × {Math.round(INSURANCE_RATE * 100)}%</span><span className="tabular-nums">{won(hr)}</span></div>
                   )}
                   {resvItems.map((d, i) => (
-                    <div key={i} className="flex justify-between text-emerald-600"><span>결재 · {d.desc} {d.label && <span className="text-gray-400">({d.label})</span>}</span><span className="tabular-nums">{won(d.amount)}</span></div>
+                    <label key={d.id || i} className={`flex justify-between items-center gap-2 cursor-pointer ${d.excluded ? 'text-gray-400' : 'text-emerald-600'}`}
+                      title={d.excluded ? '계산에서 제외됨 — 체크하면 다시 포함' : '체크를 해제하면 판관비·영업이익 계산에서 제외'}>
+                      <span className="flex items-center gap-2 min-w-0">
+                        <input type="checkbox" checked={!d.excluded} onChange={(e) => toggleResvInclude(d.id, e.target.checked)} className="w-4 h-4 flex-none accent-emerald-600" />
+                        <span className={d.excluded ? 'line-through' : ''}>결재 · {d.desc} {d.label && <span className="text-gray-400">({d.label})</span>}</span>
+                        {d.excluded && <span className="flex-none text-xs bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded">제외</span>}
+                      </span>
+                      <span className={`tabular-nums flex-none ${d.excluded ? 'line-through' : ''}`}>{won(d.amount)}</span>
+                    </label>
                   ))}
                 </div>
               )}
@@ -523,6 +561,7 @@ export default function OpexTab({ orders, inventory, fees, bomRows, settle, feeO
         ⚠️ 건당 택배 실운임(2,300원)은 이미 공헌이익에서 차감됩니다. 판관비 ‘물류·보관비’에는 <b>고정 창고비만</b> 넣어주세요(이중차감 방지).
         판관비는 <b>지급액(카드·계산서 총액) 그대로</b> 입력하세요. 과세 항목은 부가세 포함 금액을 넣으면 자동으로 부가세 제외(÷1.1)되어 반영됩니다. (면세 항목은 그대로)
         <br />각 항목의 금액은 <b>수동 추가 + 자동(결재·인사)을 모두 합산한 통합 금액</b>입니다. ‘+ 추가’ 또는 상단 <b>판관비 추가등록</b>으로 항목별 금액을 등록하면 기존 내용과 합산됩니다.
+        <br />결재 자동연동 품목 중 <b>이미 공헌이익에서 차감된 비용(건당 택배비 등)</b>은 항목을 펼쳐 <b>체크를 해제</b>하면 판관비·영업이익 계산에서 빠집니다(결재 문서는 그대로, 다시 체크하면 복원).
         <br /><b className="text-emerald-600">결재(지출결의서) 판관비 태깅분</b>과 <b className="text-indigo-600">4대보험(인사 연봉 기준)</b>은 위 색상 표시로 <b>자동 합산</b>됩니다. 자동으로 잡히는 항목은 여기서 또 입력하지 마세요(이중 반영 방지).
         <br /><b>인건비(급여)는 자동 반영하지 않습니다</b> — 급여는 지출결의서로 등록되므로 이중 반영 방지. 4대보험 = 급여×약{Math.round(INSURANCE_RATE * 100)}%(회사부담 추정). 임대료 등 결재·인사에 없는 고정비만 수동 입력.
       </p>
