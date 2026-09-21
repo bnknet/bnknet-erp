@@ -55,6 +55,7 @@ interface PayEvent {
   amount: number;       // + 출금(매입 청구·선결제 결제), − 입금(환불). 부분선결제는 그날 나간 돈이므로 +
   type: 'charge' | 'refund' | 'prepay';
   purchase: CardPurchase;
+  paid?: boolean;       // 결제완료 — 선결제일이 오늘까지 지난 부분선결제(이미 카드사에 납부). '결제 예정' 합계에서는 0으로 취급
 }
 
 const CARD_COMPANIES = ['현대', '삼성', '신한', '국민', '롯데', '하나', '우리', 'BC', '농협', '기타'];
@@ -304,9 +305,16 @@ export default function CardsContent() {
     if (pi.id && canceledItemIds.has(pi.id)) continue; // 취소된 항목은 환불로만 표시(이중반영 방지)
     const p = pi.approval_id ? purchaseById(pi.approval_id) : null;
     if (p && pi.prepaid_date && pi.amount) {
-      events.push({ date: pi.prepaid_date, cardId: p.card_id, amount: (pi.amount || 0), type: 'prepay', purchase: p });
+      // 선결제일이 오늘까지 지났으면 이미 납부한 돈 → '결제완료'(앞으로 나갈 금액 0). 미래 날짜 선결제는 그날 나갈 예정 금액.
+      events.push({ date: pi.prepaid_date, cardId: p.card_id, amount: (pi.amount || 0), type: 'prepay', purchase: p, paid: pi.prepaid_date <= todayStr });
     }
   }
+  // 결제 예정 합계용 금액(결제완료는 0) / 결제완료 금액 / 구분 표시
+  const dueAmt = (e: PayEvent) => (e.paid ? 0 : e.amount);
+  const paidAmt = (e: PayEvent) => (e.paid ? e.amount : 0);
+  const evLabel = (e: PayEvent) => (e.type === 'refund' ? '환불' : e.type === 'prepay' ? (e.paid ? '결제완료' : '선결제') : '매입');
+  const evBadge = (e: PayEvent) => (e.type === 'refund' ? 'bg-red-50 text-red-500' : e.type === 'prepay' ? (e.paid ? 'bg-gray-100 text-gray-500' : 'bg-green-50 text-green-600') : 'bg-blue-50 text-blue-600');
+  const evAmtCls = (e: PayEvent) => (e.paid ? 'text-gray-400 line-through' : e.amount < 0 ? 'text-red-500' : 'text-gray-700');
 
   async function openPurchaseDetail(e: PayEvent) {
     setDetailEvent(e);
@@ -360,7 +368,8 @@ export default function CardsContent() {
   const rangeEvents = (rangeFrom && rangeTo)
     ? filteredEvents.filter(e => e.date >= rangeFrom && e.date <= rangeTo).slice().sort((a, b) => a.date.localeCompare(b.date))
     : [];
-  const rangeTotal = rangeEvents.reduce((s, e) => s + e.amount, 0);
+  const rangeTotal = rangeEvents.reduce((s, e) => s + dueAmt(e), 0);
+  const rangePaid = rangeEvents.reduce((s, e) => s + paidAmt(e), 0);
 
   // 날짜별 합산
   const byDate: Record<string, PayEvent[]> = {};
@@ -374,11 +383,11 @@ export default function CardsContent() {
   function cardMonthTotal(cardId: string): number {
     return events
       .filter(e => e.cardId === cardId && e.date >= monthStart && e.date <= monthEnd)
-      .reduce((s, e) => s + e.amount, 0);
+      .reduce((s, e) => s + dueAmt(e), 0);
   }
-  const monthTotalAll = filteredEvents
-    .filter(e => e.date >= monthStart && e.date <= monthEnd)
-    .reduce((s, e) => s + e.amount, 0);
+  const monthEvents = filteredEvents.filter(e => e.date >= monthStart && e.date <= monthEnd);
+  const monthTotalAll = monthEvents.reduce((s, e) => s + dueAmt(e), 0);
+  const monthPaidAll = monthEvents.reduce((s, e) => s + paidAmt(e), 0); // 선결제로 이미 납부한 금액(합계에서 제외)
 
   // 달력 그리드 구성
   const firstDay = new Date(year, month, 1).getDay();
@@ -472,7 +481,7 @@ export default function CardsContent() {
       .sort((a, b) => a.date.localeCompare(b.date))
       .map(e => ({
         결제예정일: e.date,
-        구분: e.type === 'charge' ? '매입' : e.type === 'prepay' ? '선결제' : '환불',
+        구분: e.paid ? '결제완료(선결제)' : evLabel(e),
         카드: cardName(e.cardId),
         사업자: e.purchase.company,
         담당: e.purchase.organizer,
@@ -512,7 +521,7 @@ export default function CardsContent() {
   function viewSchedule() {
     const rows = filteredEvents.slice().sort((a, b) => a.date.localeCompare(b.date)).map(e => [
       e.date,
-      e.type === 'charge' ? '매입' : e.type === 'prepay' ? '선결제' : '환불',
+      e.paid ? '결제완료(선결제)' : evLabel(e),
       cardName(e.cardId),
       e.purchase.company,
       e.purchase.organizer,
@@ -1232,6 +1241,7 @@ export default function CardsContent() {
             <div>
               <div className="text-sm text-slate-300">{year}년 {month + 1}월 결제 예정 합계 {typeFilter !== 'all' && `· ${typeFilter}`}</div>
               <div className="text-2xl font-bold mt-1">{won(monthTotalAll)}원</div>
+              {monthPaidAll > 0 && <div className="text-xs text-slate-300 mt-1">✓ 선결제로 이미 납부한 {won(monthPaidAll)}원은 제외(결제완료)</div>}
             </div>
             <div className="text-sm text-slate-300 text-right">매입 − 취소환불<br />상계 금액</div>
           </div>
@@ -1241,7 +1251,7 @@ export default function CardsContent() {
             <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
               <div className="flex items-center justify-between mb-3">
                 <h3 className="font-bold text-gray-800">{rangeFrom} ~ {rangeTo} 결제 내역 {typeFilter !== 'all' && `· ${typeFilter}`}</h3>
-                <span className="text-sm font-bold text-gray-700">합계 {won(rangeTotal)}원</span>
+                <span className="text-sm font-bold text-gray-700">합계 {won(rangeTotal)}원{rangePaid > 0 && <span className="ml-2 text-xs font-normal text-gray-400">결제완료 {won(rangePaid)}원 제외</span>}</span>
               </div>
               {rangeEvents.length === 0 ? (
                 <div className="text-center py-6 text-sm text-gray-400">해당 기간 결제 내역이 없습니다</div>
@@ -1261,11 +1271,11 @@ export default function CardsContent() {
                       <tr key={i} onClick={() => openPurchaseDetail(e)} className="cursor-pointer hover:bg-blue-50/40">
                         <td className="py-2 text-gray-600 whitespace-nowrap">{e.date}</td>
                         <td className="py-2">
-                          <span className={`text-xs px-2 py-0.5 rounded-md font-medium ${e.type === 'refund' ? 'bg-red-50 text-red-500' : e.type === 'prepay' ? 'bg-green-50 text-green-600' : 'bg-blue-50 text-blue-600'}`}>{e.type === 'refund' ? '환불' : e.type === 'prepay' ? '선결제' : '매입'}</span>
+                          <span className={`text-xs px-2 py-0.5 rounded-md font-medium ${evBadge(e)}`}>{evLabel(e)}</span>
                         </td>
                         <td className="py-2 text-gray-600">{cardLabel(e.cardId)}</td>
                         <td className="py-2 text-gray-500">{e.purchase.company}</td>
-                        <td className={`py-2 text-right font-medium ${e.amount < 0 ? 'text-red-500' : 'text-gray-700'}`}>{won(e.amount)}원</td>
+                        <td className={`py-2 text-right font-medium ${evAmtCls(e)}`}>{won(e.amount)}원</td>
                       </tr>
                     ))}
                   </tbody>
@@ -1285,7 +1295,8 @@ export default function CardsContent() {
               {cells.map((date, i) => {
                 if (!date) return <div key={i} className="min-h-[90px] border-b border-r border-gray-50 bg-gray-50/30" />;
                 const dayEvents = byDate[date] || [];
-                const dayTotal = dayEvents.reduce((s, e) => s + e.amount, 0);
+                const dayTotal = dayEvents.reduce((s, e) => s + dueAmt(e), 0);
+                const dayPaid = dayEvents.reduce((s, e) => s + paidAmt(e), 0);
                 const dayNum = Number(date.slice(-2));
                 const dow = new Date(date).getDay();
                 const isToday = date === todayStr;
@@ -1297,6 +1308,7 @@ export default function CardsContent() {
                     {dayEvents.length > 0 && (
                       <div className="mt-1 space-y-0.5">
                         <div className={`text-sm font-bold ${dayTotal < 0 ? 'text-red-500' : 'text-gray-700'}`}>{won(dayTotal)}</div>
+                        {dayPaid > 0 && <div className="text-[10px] text-green-600 font-medium leading-tight">✓ 결제완료 {won(dayPaid)}</div>}
                         <div className="text-[10px] text-gray-400">{dayEvents.length}건</div>
                       </div>
                     )}
@@ -1328,22 +1340,25 @@ export default function CardsContent() {
                   {byDate[selectedDay].map((e, idx) => (
                     <tr key={idx} onClick={() => openPurchaseDetail(e)} className="cursor-pointer hover:bg-blue-50/40">
                       <td className="py-2">
-                        <span className={`text-sm px-2 py-0.5 rounded-md font-medium ${e.type === 'refund' ? 'bg-red-50 text-red-500' : e.type === 'prepay' ? 'bg-green-50 text-green-600' : 'bg-blue-50 text-blue-600'}`}>
-                          {e.type === 'refund' ? '환불' : e.type === 'prepay' ? '선결제' : '매입'}
+                        <span className={`text-sm px-2 py-0.5 rounded-md font-medium ${evBadge(e)}`}>
+                          {evLabel(e)}
                         </span>
                       </td>
                       <td className="py-2 text-gray-600">{cardLabel(e.cardId)}</td>
                       <td className="py-2 text-gray-500">{e.purchase.company}</td>
                       <td className="py-2 text-gray-500">{e.purchase.organizer}</td>
                       <td className="py-2 text-gray-500">{e.purchase.purchase_vendor || '-'}</td>
-                      <td className={`py-2 text-right font-medium ${e.amount < 0 ? 'text-red-500' : 'text-gray-700'}`}>{won(e.amount)}원 ›</td>
+                      <td className={`py-2 text-right font-medium ${evAmtCls(e)}`}>{won(e.amount)}원 ›</td>
                     </tr>
                   ))}
                 </tbody>
                 <tfoot>
                   <tr className="border-t border-gray-200 font-bold">
-                    <td colSpan={5} className="py-2 text-sm text-gray-400">합계 (상계)</td>
-                    <td className="py-2 text-right text-gray-800">{won(byDate[selectedDay].reduce((s, e) => s + e.amount, 0))}원</td>
+                    <td colSpan={5} className="py-2 text-sm text-gray-400">
+                      나갈 금액 합계 (상계)
+                      {byDate[selectedDay].some(e => e.paid) && <span className="ml-2 font-normal text-green-600">✓ 결제완료 {won(byDate[selectedDay].reduce((s, e) => s + paidAmt(e), 0))}원 제외</span>}
+                    </td>
+                    <td className="py-2 text-right text-gray-800">{won(byDate[selectedDay].reduce((s, e) => s + dueAmt(e), 0))}원</td>
                   </tr>
                 </tfoot>
               </table>
@@ -1368,8 +1383,8 @@ export default function CardsContent() {
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg my-6 max-h-[92vh] flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
             <div className="flex items-start justify-between p-5 border-b border-gray-100 flex-none">
               <div>
-                <span className={`text-xs px-2 py-0.5 rounded-md font-medium ${detailEvent.type === 'refund' ? 'bg-red-50 text-red-500' : detailEvent.type === 'prepay' ? 'bg-green-50 text-green-600' : 'bg-blue-50 text-blue-600'}`}>
-                  {detailEvent.type === 'refund' ? '환불' : detailEvent.type === 'prepay' ? '선결제(한도복구)' : '카드 매입'}
+                <span className={`text-xs px-2 py-0.5 rounded-md font-medium ${evBadge(detailEvent)}`}>
+                  {detailEvent.type === 'refund' ? '환불' : detailEvent.type === 'prepay' ? (detailEvent.paid ? '결제완료 (선결제 납부)' : '선결제(한도복구)') : '카드 매입'}
                 </span>
                 <h3 className="text-lg font-bold text-gray-800 mt-2">{detailEvent.purchase.purchase_vendor || '구매 내역'}</h3>
               </div>
