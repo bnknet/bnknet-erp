@@ -32,6 +32,7 @@ interface CardPurchase {
   issue_date?: string;     // 상신(발의)일
   purchase_vendor?: string;
   is_card_payment?: boolean;
+  submitter_name?: string; // 상신자
 }
 
 interface PurchaseItem {
@@ -101,6 +102,8 @@ export default function CardsContent() {
   const [openLimitGroups, setOpenLimitGroups] = useState<Set<string>>(new Set()); // 한도현황 사용내역 펼침
   const [detailEvent, setDetailEvent] = useState<PayEvent | null>(null);
   const [detailItems, setDetailItems] = useState<PurchaseItem[]>([]);
+  // 상세 모달용 선결제 납부 내역(처리 묶음별): 선결제일·처리시각·처리자·건수·금액
+  const [prepayInfo, setPrepayInfo] = useState<{ date: string; at: string; by: string; cnt: number; amt: number }[]>([]);
   const [cancelChecked, setCancelChecked] = useState<Set<string>>(new Set());
   const [cancelRefundDate, setCancelRefundDate] = useState('');
   const [canceledItems, setCanceledItems] = useState<PurchaseItem[]>([]); // 취소된 항목(환불 이벤트용)
@@ -126,7 +129,7 @@ export default function CardsContent() {
     // 카드 매입은 계속 누적 → 1000건 넘어도 전부 가져오기
     const data = await supabaseFetchAll<CardPurchase>(
       '/approvals?doc_type=in.(지출결의서,카드구매)&status=eq.approved&card_id=not.is.null' +
-      '&select=id,company,organizer,total_amount,card_id,payment_due_date,purchase_status,refund_due_date,spend_date,issue_date,purchase_vendor,is_card_payment&order=payment_due_date.asc'
+      '&select=id,company,organizer,total_amount,card_id,payment_due_date,purchase_status,refund_due_date,spend_date,issue_date,purchase_vendor,is_card_payment,submitter_name&order=payment_due_date.asc'
     );
     setPurchases(data);
     // 취소된 항목(부분취소 포함) — 환불 이벤트/한도 계산용
@@ -321,10 +324,34 @@ export default function CardsContent() {
     setDetailItems([]);
     setCancelChecked(new Set());
     setCancelRefundDate(todayStr);
+    setPrepayInfo([]);
     const res = await supabaseFetch(`/approval_items?approval_id=eq.${e.purchase.id}&order=sort_order.asc`);
     const d = await res.json();
-    setDetailItems(Array.isArray(d) ? d : []);
+    const list: PurchaseItem[] = Array.isArray(d) ? d : [];
+    setDetailItems(list);
+    // 선결제 납부 내역: 같은 처리(prepaid_at 동일)끼리 묶고, 처리자는 그 직후 기록된 '선결제처리' 이력에서 찾는다.
+    const groups = new Map<string, { date: string; at: string; by: string; cnt: number; amt: number }>();
+    for (const it of list) {
+      if (!it.prepaid_date || it.canceled) continue;
+      const k = `${it.prepaid_date}|${it.prepaid_at || ''}`;
+      const g = groups.get(k) || { date: it.prepaid_date, at: it.prepaid_at || '', by: '', cnt: 0, amt: 0 };
+      g.cnt++; g.amt += it.amount || 0; groups.set(k, g);
+    }
+    const infos = Array.from(groups.values());
+    await Promise.all(infos.map(async (g) => {
+      if (!g.at) return;
+      try {
+        const from = new Date(g.at);
+        const to = new Date(from.getTime() + 15 * 60 * 1000); // 품목 수십 건 저장 후 이력이 기록되므로 여유 15분
+        const lr = await supabaseFetch(`/card_logs?action=eq.선결제처리&created_at=gte.${from.toISOString()}&created_at=lte.${to.toISOString()}&order=created_at.asc&limit=1&select=actor`);
+        const ld = lr.ok ? await lr.json() : [];
+        if (Array.isArray(ld) && ld[0]?.actor) g.by = String(ld[0].actor);
+      } catch { /* 처리자 조회 실패는 표시만 생략 */ }
+    }));
+    setPrepayInfo(infos.sort((a, b) => (a.at || a.date).localeCompare(b.at || b.date)));
   }
+  // ISO 시각 → KST 'YYYY-MM-DD HH:mm'
+  const kstStamp = (iso?: string) => (iso ? new Date(new Date(iso).getTime() + 9 * 3600 * 1000).toISOString().slice(0, 16).replace('T', ' ') : '');
 
   // 선택 항목 부분 취소
   async function cancelSelectedItems() {
@@ -1397,7 +1424,7 @@ export default function CardsContent() {
                 { l: '결제카드', v: cardLabel(detailEvent.cardId) },
                 { l: '사업자', v: detailEvent.purchase.company },
                 { l: '담당', v: detailEvent.purchase.organizer },
-                { l: '상신일자', v: detailEvent.purchase.issue_date || '-' },
+                { l: '상신 (일자 · 상신자)', v: `${detailEvent.purchase.issue_date || '-'}${detailEvent.purchase.submitter_name ? ' · ' + detailEvent.purchase.submitter_name : ''}` },
                 { l: '구매처', v: detailEvent.purchase.purchase_vendor || '-' },
                 { l: '구매일', v: detailEvent.purchase.spend_date || '-' },
                 { l: detailEvent.type === 'refund' ? '환불예정일' : detailEvent.type === 'prepay' ? '선결제일' : '결제예정일', v: detailEvent.date },
@@ -1408,6 +1435,24 @@ export default function CardsContent() {
                 </div>
               ))}
             </div>
+
+            {prepayInfo.length > 0 && (
+              <div className="mb-4 bg-green-50 border border-green-200 rounded-xl px-4 py-3 text-sm">
+                <div className="font-bold text-green-700 mb-1">✓ 선결제 납부 내역</div>
+                <div className="space-y-1">
+                  {prepayInfo.map((g, i) => (
+                    <div key={i} className="flex flex-wrap items-baseline justify-between gap-x-3 text-gray-700">
+                      <span>
+                        선결제일 <b>{g.date}</b>
+                        {g.at && <span className="text-gray-500"> · 처리 {kstStamp(g.at)}</span>}
+                        {g.by && <span className="text-gray-500"> · {g.by}</span>}
+                      </span>
+                      <span className="tabular-nums font-medium">{g.cnt}건 · {won(g.amt)}원</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             <div className="border border-gray-200 rounded-xl overflow-hidden">
               <div className="flex bg-gray-50 border-b border-gray-200 text-xs font-medium text-gray-500">
