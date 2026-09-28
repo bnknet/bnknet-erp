@@ -824,9 +824,16 @@ export const PRODUCT_MAP: Record<string, string> = {
   "휴온스 엘루비 메노락토 오리진, 3개, 90정": "메노락토 오리진 유산균 90캡슐",
 };
 
+// "N개" 뒤에 용량·규격 표기가 한 번 더 붙는 쿠팡 표기(예: "…30포, 3개, 60g")의 수량 인식.
+// 수량 단위를 개/박스/세트로 제한: "…30포, 60g"의 '30포'는 포장 규격이라 수량으로 오인하면 안 됨.
+export const TRAIL_QTY_SPEC_RE = /,?\s*(\d+)\s*(박스|개|세트)\s*(\([^)]*\))?\s*,\s*\d+(?:\.\d+)?\s*(?:g|kg|mg|ml|l|정|포|캡슐|매|환|병|스틱)\s*$/i;
+
 export function extractQtyAndName(name: string): [number, string] {
   if (!name) return [1, ''];
   name = String(name).trim();
+  // "N개, 60g"처럼 수량 뒤 용량 표기가 붙는 경우 먼저 인식
+  const s = name.match(TRAIL_QTY_SPEC_RE);
+  if (s) return [parseInt(s[1]), name.slice(0, s.index).replace(/,\s*$/, '').trim()];
   // 끝의 "N개/박스/세트" 뒤에 짧은 영문 꼬리표(예: "…분말 2개 BN")가 붙어도 수량 인식.
   // ("12개월분"류는 뒤가 한글이라 계속 미인식 → 회귀 없음)
   // "N포"는 포장규격(소포 수)이라 상품명 끝에 있어도 수량으로 쓰지 않음 (09-07 오출고 사고 이후 제외).
@@ -1048,7 +1055,7 @@ export function convertOrders(raw: RawOrderRow[]): ConvertedOrderRow[] {
     const [nameQty] = extractQtyAndName(collectName);
     const optQty = extractQtyFromOption(collectOpt);
     // 수량 우선순위: 이름 끝 명시수량(있으면 기존 로직) → 없고 'N박스'면 박스 수 → 옵션수량 → 1
-    const nameHasQty = TRAIL_QTY_RE.test(collectName);
+    const nameHasQty = TRAIL_QTY_RE.test(collectName) || TRAIL_QTY_SPEC_RE.test(collectName);
     let unitQty: number;
     if (nameHasQty) {
       unitQty = optQty !== null ? optQty : nameQty;           // 기존 동작 유지(회귀 방지)
