@@ -296,7 +296,7 @@ async function runSalesSummary(input: { start_date?: string; end_date?: string; 
   const groupBy = (['company', 'mall', 'product'].includes(String(input.group_by)) ? input.group_by : 'company') as 'company' | 'mall' | 'product';
   try {
     await loadDbMatches(true); // 대표상품명 매칭(product_matches) 반영 — 원가·공헌이익 정확도
-    const cols = 'upload_date,mall_name,product_name,collect_product,collect_option,quantity,amount,canceled,company,order_number,delivery_fee,source,manual_cost,manual_shipping';
+    const cols = 'upload_date,mall_name,product_name,collect_product,collect_option,quantity,amount,canceled,company,order_number,delivery_fee,source,manual_cost,manual_shipping,unit_cost';
     let oq = `/orders?select=${cols}&upload_date=gte.${start}&upload_date=lte.${end}&order=upload_date.asc`;
     if (companyFilter) oq += `&company=eq.${encodeURIComponent(companyFilter)}`;
     const [orders, inventory, fees, bom, stRows, foRows] = await Promise.all([
@@ -368,7 +368,7 @@ async function runProfitSummary(input: { year_month?: string; company?: string }
   const onlyCo = String(input.company || '').trim();
   try {
     await loadDbMatches(true);
-    const cols = 'upload_date,mall_name,product_name,collect_product,collect_option,quantity,amount,canceled,company,order_number,delivery_fee,source,manual_cost,manual_shipping';
+    const cols = 'upload_date,mall_name,product_name,collect_product,collect_option,quantity,amount,canceled,company,order_number,delivery_fee,source,manual_cost,manual_shipping,unit_cost';
     const [orders, inventory, fees, bom, stRows, foRows, opexRows, opexItems, cats, apps, appItems, emps] = await Promise.all([
       supabaseFetchAll<FullOrder>(`/orders?select=${cols}&upload_date=gte.${ym}-01&upload_date=lte.${ym}-31&order=upload_date.asc`),
       supabaseFetchAll<FullInv>('/inventory?select=product_name,company,brand,cost_price'),

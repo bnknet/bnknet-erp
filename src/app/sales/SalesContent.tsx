@@ -207,7 +207,7 @@ export default function SalesContent() {
   }
 
   // 주문 조회 공통 SELECT
-  const ORDER_SELECT = '/orders?select=upload_date,mall_name,product_name,collect_product,collect_option,quantity,amount,canceled,company,order_number,delivery_fee,source,manual_cost,manual_shipping,shipping_method,courier_count,recipient_name,address';
+  const ORDER_SELECT = '/orders?select=upload_date,mall_name,product_name,collect_product,collect_option,quantity,amount,canceled,company,order_number,delivery_fee,source,manual_cost,manual_shipping,unit_cost,shipping_method,courier_count,recipient_name,address';
   const kstToday = () => new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10);
   const kstCutoff3mo = () => { const d = new Date(Date.now() + 9 * 3600 * 1000); d.setMonth(d.getMonth() - 3); return d.toISOString().slice(0, 10); };
 

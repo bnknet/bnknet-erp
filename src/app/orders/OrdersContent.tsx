@@ -4,7 +4,7 @@ import { useState, useRef, useEffect, useMemo, Fragment } from 'react';
 import { convertOrders, buildSupabaseRows, repNameFor, loadDbMatches, type ConvertedOrderRow, type RawOrderRow } from '@/lib/orderConvert';
 import { supabaseFetch, supabaseFetchAll, supabaseUpload, safeStorageKey } from '@/lib/supabase';
 import { getUser } from '@/lib/auth';
-import { computeOrderLines } from '@/lib/salesStats';
+import { computeOrderLines, makeUnitCostResolver, type FullInv } from '@/lib/salesStats';
 import { type MallFee } from '@/lib/mallFees';
 
 type Tab = 'convert' | 'history' | 'manage' | 'register' | 'log';
@@ -246,12 +246,15 @@ export default function OrdersContent() {
       const rand = Math.random().toString(36).slice(2, 6).toUpperCase();
       const orderNo = `M-${mDate.replace(/-/g, '')}-${rand}`;
       const isW = mType === 'wholesale';
+      const unitCostOf = isW ? null : await loadUnitCostResolver();
       const rows = valid.map((l) => ({
         upload_date: mDate, company: mCompany, order_number: orderNo, recipient_name: mPartner,
         mall_name: mall, product_name: l.productName, collect_product: l.productName,
         quantity: l.qty, amount: l.amount, is_bundle: valid.length > 1,
         source: isW ? '도매' : '수기',
         manual_cost: isW ? l.cost : null, manual_shipping: isW ? l.shipping : null,
+        // 판매 시점 개당 원가 고정(이후 재고 원가 변경과 무관). 도매는 manual_cost 가 그 역할.
+        unit_cost: unitCostOf ? unitCostOf({ collect_product: l.productName, product_name: l.productName, company: mCompany }) : null,
         shipping_method: mShipMethod,
         // 택배 출고 건수: 택배일 때만 기록(주문 전체 기준 동일값 → 매출현황에서 주문당 1회 집계)
         courier_count: mShipMethod === '택배' ? (Number(mCourierCount) || 1) : null,
@@ -331,7 +334,7 @@ export default function OrdersContent() {
     setOrderChecked(new Set());
     setOrderRowLimit(300);
     try {
-      let q = '/orders?select=id,upload_date,order_number,recipient_name,mall_name,product_name,collect_product,collect_option,quantity,amount,delivery_fee,tracking_number,canceled,source,company,manual_cost,manual_shipping&order=upload_date.desc';
+      let q = '/orders?select=id,upload_date,order_number,recipient_name,mall_name,product_name,collect_product,collect_option,quantity,amount,delivery_fee,tracking_number,canceled,source,company,manual_cost,manual_shipping,unit_cost&order=upload_date.desc';
       if (sOrderNo.trim()) q += `&order_number=ilike.*${encodeURIComponent(sOrderNo.trim())}*`;
       if (sProduct.trim()) q += `&product_name=ilike.*${encodeURIComponent(sProduct.trim())}*`;
       if (sMall.trim()) q += `&mall_name=ilike.*${encodeURIComponent(sMall.trim())}*`;
@@ -764,6 +767,16 @@ export default function OrdersContent() {
 
   interface SavedOrder { id: string; product_name?: string; collect_product?: string; collect_option?: string; quantity?: number; company?: string }
 
+  // 저장 직전의 최신 재고 원가·세트 구성으로 '판매 시점 개당 원가' 계산기를 만든다(매출현황 계산과 같은 규칙).
+  async function loadUnitCostResolver() {
+    await loadDbMatches(true);
+    const [invRows, bom] = await Promise.all([
+      supabaseFetchAll<FullInv>('/inventory?select=product_name,company,brand,cost_price'),
+      supabaseFetchAll<{ set_name: string; component_name: string; component_qty: number }>('/product_bom?select=set_name,component_name,component_qty').catch(() => []),
+    ]);
+    return makeUnitCostResolver(invRows, bom);
+  }
+
   async function handleSaveToDB() {
     if (!resultData.length) return;
     if (!company) { alert('먼저 사업자를 선택하세요. (어느 사업자 재고에서 차감할지 구분이 필요합니다)'); return; }
@@ -789,12 +802,17 @@ export default function OrdersContent() {
         const existing: { order_number: string }[] = await checkRes.json();
         existing.forEach((r) => existingSet.add(r.order_number));
       }
-      const newRows = rows.filter((r) => !existingSet.has(r.order_number));
+      const newRowsBase = rows.filter((r) => !existingSet.has(r.order_number));
 
-      if (!newRows.length) {
+      if (!newRowsBase.length) {
         setStatus({ type: 'info', msg: '⚠️ 모든 주문이 이미 저장되어 있습니다' });
         return;
       }
+      // 판매 시점 개당 원가를 주문에 함께 저장 → 이후 재고 원가(평균단가 등)를 바꿔도 이 주문의 공헌이익은 불변.
+      // 원가 조회에 실패하면 저장을 막지 않고 null 로 둔다(그 주문은 현재 재고 원가로 계산됨).
+      let unitCostOf: Awaited<ReturnType<typeof loadUnitCostResolver>> | null = null;
+      try { unitCostOf = await loadUnitCostResolver(); } catch { unitCostOf = null; }
+      const newRows = newRowsBase.map((r) => ({ ...r, unit_cost: unitCostOf ? unitCostOf({ collect_product: String(r.collect_product ?? ''), product_name: String(r.product_name ?? ''), collect_option: String(r.collect_option ?? ''), company: r.company }) : null }));
 
       // 저장 (저장된 행을 돌려받아 재고 자동출고에 사용)
       const res = await supabaseFetch('/orders', {

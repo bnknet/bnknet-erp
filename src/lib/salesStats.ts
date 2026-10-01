@@ -24,6 +24,9 @@ export interface FullOrder {
   source?: string;
   manual_cost?: number;
   manual_shipping?: number;
+  // 판매(저장) 시점의 개당 원가 스냅샷(세트는 구성품 합). 값이 있으면 공헌이익은 이 값으로 고정 계산
+  // → 이후 재고 원가(평균단가 등)를 바꿔도 과거 주문의 공헌이익이 변하지 않는다. null이면 현재 재고 원가로 계산.
+  unit_cost?: number | null;
 }
 export interface FullInv {
   product_name: string;
@@ -55,6 +58,48 @@ export type SettleMap = Map<string, { fee: number; cost: number; amount: number 
 // 주문번호별 몰수수료율(%) 오버라이드 — 요율표에 없거나 건별로 다른 경우(예: 공구마다 수수료 상이).
 // 해당 주문은 수수료 = 매출 × rate% 로 계산(원가·매출은 기존 그대로). 없으면 요율표(mall_fees) 적용.
 export type FeeOverrideMap = Map<string, number>;
+
+// 주문 저장 시 기록할 '판매 시점 개당 원가'를 계산하는 함수 생성기.
+// computeOrderLines 의 일반 주문 원가 조회와 같은 규칙(대표상품명+사업자 → 재고 원가, 세트는 구성품 합).
+// 원가를 알 수 없거나 0이면 null — 0으로 굳히지 않고, 원가 입력 후 현재 재고 원가로 계산되게 둔다.
+export function makeUnitCostResolver(
+  inventory: FullInv[],
+  bom: { set_name: string; component_name: string; component_qty?: number }[] = [],
+): (o: Pick<FullOrder, 'collect_product' | 'product_name' | 'collect_option' | 'company'>) => number | null {
+  const invMap = new Map<string, number>();
+  const invByName = new Map<string, number>();
+  for (const it of inventory) {
+    const name = it.product_name;
+    if (!name) continue;
+    const cost = Number(it.cost_price) || 0;
+    const key = `${name}|${it.company || '미분류'}`;
+    const prev = invMap.get(key);
+    if (prev === undefined || (prev === 0 && cost > 0)) invMap.set(key, cost);
+    const pn = invByName.get(name);
+    if (pn === undefined || (pn === 0 && cost > 0)) invByName.set(name, cost);
+  }
+  const bomMap = new Map<string, { component_name: string; component_qty: number }[]>();
+  for (const b of bom) { const a = bomMap.get(b.set_name) || []; a.push({ component_name: b.component_name, component_qty: Number(b.component_qty) || 1 }); bomMap.set(b.set_name, a); }
+  const lookup = (name: string, company?: string) => {
+    const v = company ? invMap.get(`${name}|${company}`) : undefined;
+    return v !== undefined ? v : invByName.get(name);
+  };
+  return (o) => {
+    const rep = repNameFor(o.collect_product || o.product_name || '', String(o.collect_option || '')).name;
+    const setDef = bomMap.get(rep);
+    if (setDef) {
+      let sum = 0;
+      for (const b of setDef) {
+        const c = lookup(b.component_name, o.company);
+        if (c === undefined) return null;
+        sum += c * b.component_qty;
+      }
+      return sum > 0 ? sum : null;
+    }
+    const c = lookup(rep, o.company);
+    return c !== undefined && c > 0 ? c : null;
+  };
+}
 
 export function computeOrderLines(
   orders: FullOrder[],
@@ -168,6 +213,11 @@ export function computeOrderLines(
     } else {
       hasCost = !!inv;
       cost = hasCost ? (inv!.cost || 0) * qty : 0;
+    }
+    // 판매 시점 원가 스냅샷이 있으면 그것으로 고정 (현재 재고 원가 변동과 무관)
+    if (o.unit_cost !== null && o.unit_cost !== undefined) {
+      hasCost = true;
+      cost = (Number(o.unit_cost) || 0) * qty;
     }
     const ff = lookupFee(feeMap, company, mall, amt);
     const on = o.order_number || '';
