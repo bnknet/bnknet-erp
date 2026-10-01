@@ -612,6 +612,12 @@ export default function ApprovalContent() {
   }
 
   async function handleSave(submitNow = false) {
+    // 로그인 세션이 유실된 상태로 저장하면 상신자(submitter_name)가 빈 값으로 들어가
+    // 본인 목록에서 문서가 안 보이게 된다 → 저장 전에 차단 (09-30 강웅구 건 재발 방지)
+    if (!me?.name) {
+      alert('로그인 정보가 만료되었습니다. 저장하기 전에 로그아웃 후 다시 로그인해주세요.\n(지금 저장하면 상신자가 비어 문서가 내 목록에 보이지 않게 됩니다)');
+      return;
+    }
     setSaving(true);
     try {
       const hasStep2 = APPROVAL_LINES[company]?.length === 3;
