@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { supabaseFetch, supabaseFetchAll } from '@/lib/supabase';
 import { getUser } from '@/lib/auth';
 import { repNameFor, loadDbMatches } from '@/lib/orderConvert';
+import { logCostChange, loadCostLogs, type CostLog } from '@/lib/costLog';
 import * as XLSX from 'xlsx';
 
 // 큰 금액 축약 (모바일 통계용): 6.9억 / 688만 등
@@ -104,6 +105,10 @@ export default function InventoryContent() {
   const [search, setSearch] = useState('');
   const [form, setForm] = useState({ ...EMPTY_FORM });
   const [editId, setEditId] = useState<string | null>(null);
+  // 원가 변경 로그: 수정 시작 시점의 원가(비교용) · 변경 사유 메모 · 상세 화면 이력
+  const [origCost, setOrigCost] = useState<number | null>(null);
+  const [costMemo, setCostMemo] = useState('');
+  const [costLogs, setCostLogs] = useState<CostLog[]>([]);
   const [saving, setSaving] = useState(false);
   const [activeTab, setActiveTab] = useState<'stock' | 'log' | 'snapshot' | 'outbound'>('stock');
   const [logManualOnly, setLogManualOnly] = useState(true); // true: 수기 입출고만, false: 주문 자동출고 포함
@@ -260,6 +265,14 @@ export default function InventoryContent() {
         alert(`저장 실패: ${(err as any).message || res.status}`);
         return;
       }
+      // 원가가 바뀌었으면 변경 이력 기록 (기존 → 변경, 메모, 변경자)
+      if (editId && origCost !== null && payload.cost_price !== origCost) {
+        const logged = await logCostChange({
+          inventory_id: editId, product_name: form.product_name, company: form.company,
+          old_cost: origCost, new_cost: payload.cost_price, memo: costMemo, changed_by: me?.name || '',
+        });
+        if (!logged) alert('원가는 저장됐지만 변경 로그를 기록하지 못했습니다.\n(설정 db/inventory_cost_logs.sql 적용 여부 확인 — 실장님께 전달해 주세요)');
+      }
       // 판매상태·카테고리·브랜드를 상품마스터에도 동기화 (상품명 기준)
       await syncProductMaster(form.product_name, {
         is_active: form.is_active,
@@ -379,6 +392,8 @@ export default function InventoryContent() {
     setSelected(item);
     setView('detail');
     loadLogs(item.id);
+    setCostLogs([]);
+    loadCostLogs(item.id).then(setCostLogs);
   }
 
   function openForm(item?: InventoryItem) {
@@ -391,10 +406,13 @@ export default function InventoryContent() {
         location: item.location || '', memo: item.memo || '', is_active: item.is_active !== false,
       });
       setEditId(item.id);
+      setOrigCost(item.cost_price || 0);
     } else {
       setForm({ ...EMPTY_FORM });
       setEditId(null);
+      setOrigCost(null);
     }
+    setCostMemo('');
     setView('form');
   }
 
@@ -1158,6 +1176,30 @@ export default function InventoryContent() {
           </div>
         )}
 
+        {/* 원가 변경 이력 */}
+        {costLogs.length > 0 && (
+          <div className="mb-6">
+            <div className="text-base font-medium text-gray-700 mb-3">원가 변경 이력 <span className="text-sm font-normal text-gray-400">{costLogs.length}건</span></div>
+            <div className="border border-gray-100 rounded-xl divide-y divide-gray-50">
+              {costLogs.map((l) => {
+                const diff = (Number(l.new_cost) || 0) - (Number(l.old_cost) || 0);
+                return (
+                  <div key={l.id} className="px-4 py-3 text-sm">
+                    <div className="flex flex-wrap items-baseline justify-between gap-x-3">
+                      <span className="text-gray-700">
+                        {(Number(l.old_cost) || 0).toLocaleString()}원 → <b>{(Number(l.new_cost) || 0).toLocaleString()}원</b>{' '}
+                        <span className={diff > 0 ? 'text-red-600' : 'text-blue-600'}>({diff > 0 ? '+' : '−'}{Math.abs(diff).toLocaleString()}원)</span>
+                      </span>
+                      <span className="text-xs text-gray-400">{new Date(l.created_at).toLocaleString('ko-KR')}{l.changed_by ? ` · ${l.changed_by}` : ''}</span>
+                    </div>
+                    {l.memo && <div className="text-gray-500 mt-1">메모: {l.memo}</div>}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {/* 입출고 내역 */}
         <div>
           <div className="text-base font-medium text-gray-700 mb-3">입출고 내역</div>
@@ -1324,6 +1366,22 @@ export default function InventoryContent() {
             {Number(form.quantity) > 0 && Number(form.cost_price) > 0 && (
               <p className="text-sm text-gray-400 mt-1">원가총합 {(Number(form.quantity) * Number(form.cost_price)).toLocaleString()}원</p>
             )}
+            {editId && origCost !== null && (Number(form.cost_price) || 0) !== origCost && (() => {
+              const next = Number(form.cost_price) || 0;
+              const diff = next - origCost;
+              return (
+                <div className="mt-2 bg-amber-50 border border-amber-200 rounded-xl p-3 space-y-2">
+                  <div className="text-sm font-medium text-amber-800">
+                    원가 변경: {origCost.toLocaleString()}원 → {next.toLocaleString()}원{' '}
+                    <span className={diff > 0 ? 'text-red-600' : 'text-blue-600'}>({diff > 0 ? '+' : '−'}{Math.abs(diff).toLocaleString()}원)</span>
+                  </div>
+                  <input value={costMemo} onChange={(e) => setCostMemo(e.target.value)} maxLength={200}
+                    placeholder="변경 메모 (예: 10/01 입고분 27,000원 반영 평균단가)"
+                    className="w-full px-3 py-2 border border-amber-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-amber-400" />
+                  <p className="text-xs text-amber-700">저장하면 변경 이력(금액·메모·변경자)이 남습니다. 새 원가는 이후 저장되는 주문부터 적용되고, 과거 주문의 공헌이익은 변하지 않습니다.</p>
+                </div>
+              );
+            })()}
           </div>
           <div>
             <label className="block text-base font-medium text-gray-700 mb-1.5">보관위치</label>

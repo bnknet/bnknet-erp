@@ -6,6 +6,7 @@ import { supabaseFetch, supabaseFetchAll } from '@/lib/supabase';
 import { loadDbMatches } from '@/lib/orderConvert';
 import { normalizeMall, type MallFee } from '@/lib/mallFees';
 import { computeOrderLines } from '@/lib/salesStats';
+import { logCostChange } from '@/lib/costLog';
 import OpexTab from './OpexTab';
 
 // ── 타입 ─────────────────────────────────────────────
@@ -500,6 +501,16 @@ export default function SalesContent() {
       if (!Array.isArray(updated) || updated.length === 0) {
         alert('재고에서 해당 상품을 찾지 못했습니다. 재고 관리에서 상품명/사업자를 확인해주세요.');
         return;
+      }
+      // 원가 변경 이력 기록 (매출현황에서 입력한 경우)
+      const prevCost = Number(inventory.find((i) => i.product_name === productName && i.company === company)?.cost_price) || 0;
+      if (prevCost !== value) {
+        let allLogged = true;
+        for (const row of updated as { id?: string }[]) {
+          const ok = await logCostChange({ inventory_id: row.id, product_name: productName, company, old_cost: prevCost, new_cost: value, memo: '매출현황에서 원가 입력', changed_by: user?.name || '' });
+          if (!ok) allLogged = false;
+        }
+        if (!allLogged) alert('원가는 저장됐지만 변경 로그를 기록하지 못했습니다.\n(설정 db/inventory_cost_logs.sql 적용 여부 확인)');
       }
       // 재고만 다시 불러와 즉시 재계산
       const inv = await supabaseFetchAll<InvRow>('/inventory?select=product_name,company,brand,cost_price');
