@@ -77,6 +77,15 @@ interface Employee {
   annual_leave_total?: number;
 }
 
+// 분기 범위 [시작, 끝] (YYYY-MM-DD). offset: 0=이번 분기, -1=직전 분기 … (세무 제출용 기간 선택)
+function quarterRange(base: Date, offset = 0): [string, string] {
+  const q = Math.floor(base.getMonth() / 3) + offset;
+  const y = base.getFullYear() + Math.floor(q / 4);
+  const sm = (((q % 4) + 4) % 4) * 3; // 0,3,6,9
+  const endDay = new Date(y, sm + 3, 0).getDate();
+  return [`${y}-${String(sm + 1).padStart(2, '0')}-01`, `${y}-${String(sm + 3).padStart(2, '0')}-${String(endDay).padStart(2, '0')}`];
+}
+
 const COMPANIES = ['더블아이', 'BNKNET', 'SJ글로벌', 'IX글로벌'];
 
 const APPROVAL_LINES: Record<string, string[]> = {
@@ -223,6 +232,10 @@ export default function ApprovalContent() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [exporting, setExporting] = useState(false);
+  // 세무 제출(부가세 신고 등) 기간·사업자 — 기본값: 직전 분기, 전체 사업자. 기준일 = 지출일(없으면 발의일)
+  const [taxFrom, setTaxFrom] = useState(() => quarterRange(new Date(), -1)[0]);
+  const [taxTo, setTaxTo] = useState(() => quarterRange(new Date(), -1)[1]);
+  const [taxCompany, setTaxCompany] = useState('전체');
   // 승인권자(대표·실장)는 기본으로 '내 결재 대기'만 보이게 → 바로바로 연속 결재
   const [filterStatus, setFilterStatus] = useState(isCeo || isAdmin ? 'myturn' : 'all');
   // 상세 조회 필터 + 표시 건수 (기본 10건)
@@ -921,81 +934,134 @@ export default function ApprovalContent() {
     await loadApprovals();
   }
 
-  // 세무사 제출용: 승인완료된 지출결의서·매입품의서(카드구매)를 품목 단위로 엑셀 내보내기
-  async function exportTaxExcel() {
+  // ── 세무 제출용(부가세 신고 등) ─────────────────────────────────────
+  // 기간(지출일 기준, 없으면 발의일)·사업자로 승인완료 지출결의서·매입품의서(카드구매)를 추려
+  // 엑셀(품목 단위 + 요약 시트)과 PDF(문서 양식, 건별 페이지, 영수증 이미지)를 만든다.
+  // 두 결과물 모두 같은 정렬·같은 '문서No'를 쓰므로 엑셀 행 ↔ PDF 페이지를 번호로 맞출 수 있다.
+  type TaxItem = ApprovalItem & { approval_id: string };
+  type TaxDocs = { apps: Approval[]; byApp: Map<string, TaxItem[]> };
+
+  async function loadTaxDocs(): Promise<TaxDocs | null> {
+    if (!taxFrom || !taxTo || taxFrom > taxTo) { alert('기간(시작~종료)을 확인하세요.'); return null; }
+    const co = taxCompany !== '전체' ? `&company=eq.${encodeURIComponent(taxCompany)}` : '';
+    const sel = 'id,doc_type,company,issue_date,settle_date,spend_date,organizer,processor,account,total_amount,card_id,purchase_vendor,payment_due_date,purchase_status,attachments,opex_category,submitter_name';
+    const apps = await supabaseFetchAll<Approval>(
+      `/approvals?status=eq.approved&doc_type=in.(지출결의서,카드구매)${co}` +
+      `&or=(and(spend_date.gte.${taxFrom},spend_date.lte.${taxTo}),and(spend_date.is.null,issue_date.gte.${taxFrom},issue_date.lte.${taxTo}))` +
+      `&select=${sel}&order=spend_date.asc,issue_date.asc,created_at.asc`,
+    );
+    if (!apps.length) { alert(`${taxFrom} ~ ${taxTo}${taxCompany !== '전체' ? ' · ' + taxCompany : ''} 기간에 승인완료된 지출결의서/매입품의서가 없습니다.`); return null; }
+    const byApp = new Map<string, TaxItem[]>();
+    const ids = apps.map(a => a.id);
+    for (let i = 0; i < ids.length; i += 100) { // URL 길이·누락 방지: 100건씩
+      const items = await supabaseFetchAll<TaxItem>(`/approval_items?approval_id=in.(${ids.slice(i, i + 100).join(',')})&order=sort_order.asc`);
+      for (const it of items) { const a = byApp.get(it.approval_id) || []; a.push(it); byApp.set(it.approval_id, a); }
+    }
+    return { apps, byApp };
+  }
+  const taxLabel = () => `${taxFrom}_${taxTo}${taxCompany !== '전체' ? '_' + taxCompany : ''}`;
+  // 요약(사업자·문서종류별 건수·금액) — 엑셀 요약 시트와 PDF 표지에 공통 사용
+  function taxSummary(apps: Approval[]) {
+    const m = new Map<string, { 사업자: string; 문서종류: string; 건수: number; 금액합계: number; 취소문서: number }>();
+    for (const a of apps) {
+      const k = `${a.company}|${a.doc_type}`;
+      const r = m.get(k) || { 사업자: a.company || '', 문서종류: DOC_TYPE_LABELS[a.doc_type as DocType] || a.doc_type, 건수: 0, 금액합계: 0, 취소문서: 0 };
+      r.건수++; r.금액합계 += Number(a.total_amount) || 0; if (a.purchase_status === 'canceled') r.취소문서++;
+      m.set(k, r);
+    }
+    const rows = [...m.values()].sort((x, y) => x.사업자.localeCompare(y.사업자) || x.문서종류.localeCompare(y.문서종류));
+    rows.push({ 사업자: '합계', 문서종류: '', 건수: rows.reduce((s, r) => s + r.건수, 0), 금액합계: rows.reduce((s, r) => s + r.금액합계, 0), 취소문서: rows.reduce((s, r) => s + r.취소문서, 0) });
+    return rows;
+  }
+
+  async function exportTaxExcel(pre?: TaxDocs) {
     setExporting(true);
     try {
       const XLSX = await import('xlsx');
-      const apps = await supabaseFetchAll<Approval>(
-        '/approvals?status=eq.approved&doc_type=in.(지출결의서,카드구매)&select=id,doc_type,company,issue_date,spend_date,organizer,processor,account,total_amount,card_id,purchase_vendor,payment_due_date,purchase_status,attachments&order=issue_date.asc',
-      );
-      if (!apps.length) { alert('승인완료된 지출결의서/매입품의서가 없습니다.'); return; }
-      const ids = apps.map(a => a.id);
-      const items = await supabaseFetchAll<ApprovalItem & { approval_id: string }>(
-        `/approval_items?approval_id=in.(${ids.join(',')})&order=sort_order.asc`,
-      );
-      const byApp = new Map<string, (ApprovalItem & { approval_id: string })[]>();
-      for (const it of items) { const a = byApp.get(it.approval_id) || []; a.push(it); byApp.set(it.approval_id, a); }
-
+      const data = pre || await loadTaxDocs();
+      if (!data) return;
+      const { apps, byApp } = data;
       const rows: Record<string, string | number>[] = [];
-      for (const a of apps) {
+      apps.forEach((a, idx) => {
         const card = cards.find(c => c.id === a.card_id)?.card_name || '';
-        const attach = (a.attachments || []).map(f => f.url).join(' | ');
+        const atts = a.attachments || [];
         const base = {
-          발의일: a.issue_date || '', 사업자: a.company || '',
+          문서No: idx + 1,
+          지출일: a.spend_date || '', 발의일: a.issue_date || '', 사업자: a.company || '',
           문서종류: DOC_TYPE_LABELS[a.doc_type as DocType] || a.doc_type,
           거래처: a.purchase_vendor || a.processor || '', 계정과목: a.account || '',
           결제카드: card, 결제예정일: a.payment_due_date || '',
           취소여부: a.purchase_status === 'canceled' ? '전체취소' : a.purchase_status === 'partial' ? '일부취소' : '',
+          첨부파일명: atts.map(f => f.name).join(' | '), 첨부URL: atts.map(f => f.url).join(' | '),
         };
         const its = byApp.get(a.id) || [];
         if (!its.length) {
-          rows.push({ ...base, 월일: '', 품목: '', 수량: '', 금액: a.total_amount || 0, 비고: '', 첨부URL: attach });
+          rows.push({ ...base, 월일: '', 품목: '', 수량: '', 금액: a.total_amount || 0, 판관비항목: '', 비고: '' });
         } else {
           for (const it of its) {
             rows.push({
               ...base,
               월일: it.item_date || '', 품목: it.description || '',
               수량: it.quantity || '', 금액: it.amount || 0,
-              비고: (it.canceled ? '[취소] ' : '') + (it.note || ''), 첨부URL: attach,
+              판관비항목: it.opex_category ? (opexCats.find(c => c.key === it.opex_category)?.label || it.opex_category) : '',
+              비고: (it.canceled ? '[취소] ' : '') + (it.note || ''),
             });
           }
         }
-      }
-      const header = ['발의일', '사업자', '문서종류', '거래처', '계정과목', '결제카드', '결제예정일', '월일', '품목', '수량', '금액', '비고', '취소여부', '첨부URL'];
-      const ws = XLSX.utils.json_to_sheet(rows, { header });
+      });
+      const header = ['문서No', '지출일', '발의일', '사업자', '문서종류', '거래처', '계정과목', '결제카드', '결제예정일', '월일', '품목', '수량', '금액', '판관비항목', '비고', '취소여부', '첨부파일명', '첨부URL'];
       const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, '지출결의서(승인)');
-      XLSX.writeFile(wb, `세무제출_지출결의서_${today()}.xlsx`);
+      const sum = taxSummary(apps).map(r => ({ 기간: `${taxFrom} ~ ${taxTo}`, ...r }));
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sum, { header: ['기간', '사업자', '문서종류', '건수', '금액합계', '취소문서'] }), '요약');
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows, { header }), '지출결의서·매입품의서');
+      XLSX.writeFile(wb, `세무제출_${taxLabel()}.xlsx`);
     } catch (e) {
       if (!promptReloadIfStale(e)) alert('내보내기 중 오류가 발생했습니다.');
-    } finally { setExporting(false); }
+    } finally { if (!pre) setExporting(false); }
   }
 
-  // 승인완료된 지출결의서·매입품의서 전체를 문서 양식으로 한 번에 인쇄/PDF (건별 페이지, 영수증 이미지 포함)
-  async function printAllApproved() {
+  // 팝업은 클릭 직후(비동기 작업 전)에 열어야 브라우저가 차단하지 않는다.
+  function openPrintWindow(): Window | null {
+    const w = window.open('', '_blank');
+    if (!w) { alert('팝업이 차단되었습니다. 브라우저에서 이 사이트의 팝업을 허용한 뒤 다시 눌러주세요.'); return null; }
+    w.document.write('<p style="font-family:sans-serif;padding:24px;color:#555">세무 제출용 문서를 준비하고 있습니다… (문서 수에 따라 수십 초 걸릴 수 있습니다)</p>');
+    return w;
+  }
+
+  // 기간 내 승인 문서를 양식대로 한 PDF로 (건별 페이지 + 표지 요약 + 영수증 이미지). 인쇄 대화상자에서 'PDF로 저장'.
+  async function printTaxPdf(pre?: TaxDocs, win?: Window | null) {
+    const w = win ?? openPrintWindow();
+    if (!w) return;
     setExporting(true);
     try {
-      const apps = await supabaseFetchAll<Approval>(
-        '/approvals?status=eq.approved&doc_type=in.(지출결의서,카드구매)&select=id,doc_type,company,issue_date,settle_date,spend_date,organizer,processor,account,total_amount,card_id,payment_due_date,attachments&order=issue_date.asc',
-      );
-      if (!apps.length) { alert('승인완료된 지출결의서/매입품의서가 없습니다.'); return; }
-      const ids = apps.map(a => a.id);
-      const items = await supabaseFetchAll<ApprovalItem & { approval_id: string }>(`/approval_items?approval_id=in.(${ids.join(',')})&order=sort_order.asc`);
-      const byApp = new Map<string, (ApprovalItem & { approval_id: string })[]>();
-      for (const it of items) { const a = byApp.get(it.approval_id) || []; a.push(it); byApp.set(it.approval_id, a); }
+      const data = pre || await loadTaxDocs();
+      if (!data) { w.close(); return; }
+      const { apps, byApp } = data;
       const esc = (s: unknown) => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c] || c));
       const won = (n: number) => Number(n || 0).toLocaleString('ko-KR');
+      const total = apps.length;
 
-      const docs = apps.map(a => {
+      const cover = `<div class="doc cover">
+        <h1>세무 제출용 지출 증빙</h1>
+        <div class="meta">기간 ${esc(taxFrom)} ~ ${esc(taxTo)} · 사업자 ${esc(taxCompany)} · 승인완료 문서 ${total}건 · 출력 ${esc(today())}</div>
+        <table class="items"><tr class="hd"><th>사업자</th><th>문서종류</th><th>건수</th><th>금액합계</th><th>취소문서</th></tr>
+        ${taxSummary(apps).map(r => `<tr class="${r.사업자 === '합계' ? 'sum' : ''}"><td>${esc(r.사업자)}</td><td>${esc(r.문서종류)}</td><td class=r>${won(r.건수)}</td><td class=r>₩ ${won(r.금액합계)}</td><td class=r>${won(r.취소문서)}</td></tr>`).join('')}
+        </table>
+        <p class="note">※ 문서 번호(No.)는 같이 내려받은 엑셀의 '문서No' 열과 같습니다. 이미지 증빙은 각 문서 뒤에 붙어 있고, 엑셀·PDF 등 파일 첨부는 파일명만 표시(엑셀 첨부URL 참고).</p>
+      </div>`;
+
+      const docs = apps.map((a, idx) => {
         const its = byApp.get(a.id) || [];
         const isCard = a.doc_type === '카드구매';
         const card = cards.find(c => c.id === a.card_id)?.card_name || '';
-        const itemRows = its.map(it => `<tr><td>${esc(it.item_date)}</td><td class=l>${esc(it.description)}${it.canceled ? ' (취소)' : ''}</td>${isCard ? `<td class=r>${it.quantity ? won(it.quantity) : ''}</td>` : ''}<td class=r>${it.amount ? won(it.amount) : ''}</td><td>${esc(it.note)}</td></tr>`).join('');
-        const imgs = (a.attachments || []).filter(f => /\.(png|jpe?g|gif|webp|heic)$/i.test(f.url)).map(f => `<img src="${esc(f.url)}" />`).join('');
+        const itemRows = its.map(it => `<tr><td>${esc(it.item_date)}</td><td class=l>${esc(it.description)}${it.canceled ? ' (취소)' : ''}</td>${isCard ? `<td class=r>${it.quantity ? won(it.quantity) : ''}</td>` : ''}<td class=r>${won(it.amount)}</td><td class=l>${esc(it.note)}</td></tr>`).join('');
+        const atts = a.attachments || [];
+        const imgs = atts.filter(f => /\.(png|jpe?g|gif|webp|heic)(\?|$)/i.test(f.url)).map(f => `<img src="${esc(f.url)}" />`).join('');
+        const files = atts.filter(f => !/\.(png|jpe?g|gif|webp|heic)(\?|$)/i.test(f.url)).map(f => esc(f.name)).join(', ');
         return `<div class="doc">
+          <div class="no">No. ${idx + 1} / ${total}</div>
           <h2>〈 ${isCard ? '매 입 품 의 서 (카드구매)' : '지 출 결 의 서'} 〉</h2>
-          <div class="meta">${esc(a.company)} · 승인완료 · 발의일 ${esc(a.issue_date)}</div>
+          <div class="meta">${esc(a.company)} · 승인완료 · 발의일 ${esc(a.issue_date)}${a.purchase_status === 'canceled' ? ' · <b>전체취소</b>' : a.purchase_status === 'partial' ? ' · <b>일부취소</b>' : ''}</div>
           <table class="amt"><tr><td class="lbl">일금(정)</td><td class="r big">₩ ${won(a.total_amount)}</td></tr></table>
           <table><tr><td class="lbl">발의</td><td>${esc(a.issue_date)}</td><td class="lbl">정리인</td><td>${esc(a.organizer)}</td></tr>
           <tr><td class="lbl">결재</td><td>${esc(a.settle_date)}</td><td class="lbl">계정과목</td><td>${esc(a.account)}</td></tr>
@@ -1005,13 +1071,16 @@ export default function ApprovalContent() {
           <tr class="sum"><td></td><td class="l">합 계</td>${isCard ? '<td></td>' : ''}<td class="r">₩ ${won(a.total_amount)}</td><td></td></tr></table>
           ${a.card_id ? `<div class="card">💳 ${esc(card)}${a.payment_due_date ? ` · 결제예정일 ${esc(a.payment_due_date)}` : ''}</div>` : ''}
           <div class="foot">위 금액을 정히 영수(청구) 합니다. &nbsp;&nbsp; ${esc(a.issue_date)} &nbsp;&nbsp; 영수자 [ ${esc(a.organizer)} ]</div>
+          ${files ? `<div class="files">📎 첨부 파일: ${files}</div>` : ''}
           ${imgs ? `<div class="atts">${imgs}</div>` : ''}
         </div>`;
       }).join('');
 
-      const html = `<!doctype html><html><head><meta charset="utf-8"><title>승인 지출결의서 ${apps.length}건</title><style>
+      const html = `<!doctype html><html><head><meta charset="utf-8"><title>세무제출_${esc(taxLabel())}</title><style>
         *{box-sizing:border-box;font-family:'Noto Sans KR',Arial,sans-serif;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
-        body{margin:0;} .doc{padding:14mm;page-break-after:always;}
+        body{margin:0;} .doc{padding:14mm;page-break-after:always;position:relative;}
+        .no{position:absolute;top:8mm;right:14mm;font-size:11px;color:#888;}
+        h1{text-align:center;font-size:22px;margin:30mm 0 10px;} .cover .meta{margin-bottom:20px;} .note{font-size:12px;color:#666;margin-top:14px;}
         h2{text-align:center;letter-spacing:6px;font-size:19px;margin:0 0 6px;}
         .meta{text-align:center;color:#666;font-size:12px;margin-bottom:14px;}
         table{width:100%;border-collapse:collapse;margin-bottom:10px;font-size:13px;}
@@ -1023,18 +1092,34 @@ export default function ApprovalContent() {
         .items .sum td{background:#f8f8f8;font-weight:700;}
         .card{border:1px solid #bcd;background:#eef5ff;border-radius:6px;padding:8px;font-size:13px;margin-bottom:10px;}
         .foot{border:1px solid #444;text-align:center;padding:14px;font-size:13px;margin-top:6px;}
+        .files{font-size:12px;color:#555;margin-top:8px;}
         .atts{margin-top:10px;} .atts img{width:100%;max-height:230mm;object-fit:contain;border:1px solid #eee;margin-top:6px;page-break-inside:avoid;}
         @page{margin:0;}
-      </style></head><body>${docs}
+      </style></head><body>${cover}${docs}
       <script>window.onload=function(){var g=document.images,n=g.length,k=0;function d(){k++;if(k>=n)setTimeout(function(){window.print();},200);}if(n===0){window.print();return;}for(var i=0;i<n;i++){if(g[i].complete)d();else{g[i].onload=d;g[i].onerror=d;}}};<\/script>
       </body></html>`;
-      const w = window.open('', '_blank');
-      if (!w) { alert('팝업이 차단되었습니다. 브라우저에서 이 사이트의 팝업을 허용한 뒤 다시 눌러주세요.'); return; }
-      w.document.write(html); w.document.close();
-    } catch {
-      alert('전체 인쇄 준비 중 오류가 발생했습니다.');
+      w.document.open(); w.document.write(html); w.document.close();
+    } catch (e) {
+      if (!promptReloadIfStale(e)) alert('PDF 준비 중 오류가 발생했습니다.');
+    } finally { if (!pre) setExporting(false); }
+  }
+
+  // 엑셀 + PDF 한 번에 (같은 데이터·같은 문서No)
+  async function exportTaxBoth() {
+    const w = openPrintWindow();
+    if (!w) return;
+    setExporting(true);
+    try {
+      const data = await loadTaxDocs();
+      if (!data) { w.close(); return; }
+      await exportTaxExcel(data);
+      await printTaxPdf(data, w);
+    } catch (e) {
+      w.close();
+      if (!promptReloadIfStale(e)) alert('세무 제출 자료 준비 중 오류가 발생했습니다.');
     } finally { setExporting(false); }
   }
+
 
   // 카드 매입 취소 → 환불(-) 처리 (항목별 부분취소 지원)
   function openCancelModal(approval: Approval) {
@@ -2416,16 +2501,33 @@ export default function ApprovalContent() {
         </div>
         <div className="flex gap-2 flex-wrap">
           {(isCeo || isAdmin) && (
-            <>
-              <button onClick={exportTaxExcel} disabled={exporting}
+            <div className="flex flex-wrap items-center gap-2 bg-green-50 border border-green-100 rounded-xl px-3 py-2">
+              <span className="text-sm font-semibold text-green-800">🧾 세무 제출</span>
+              {[-2, -1, 0].map(off => {
+                const [qs, qe] = quarterRange(new Date(), off);
+                const lbl = `${qs.slice(0, 4)}년 ${(Number(qs.slice(5, 7)) - 1) / 3 + 1}분기`;
+                const on = taxFrom === qs && taxTo === qe;
+                return (
+                  <button key={off} onClick={() => { setTaxFrom(qs); setTaxTo(qe); }}
+                    className={`px-2.5 py-1.5 rounded-lg text-sm border ${on ? 'bg-green-600 text-white border-green-600' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'}`}>{lbl}</button>
+                );
+              })}
+              <input type="date" value={taxFrom} onChange={e => setTaxFrom(e.target.value)} className="px-2 py-1.5 border border-gray-200 rounded-lg text-sm bg-white" />
+              <span className="text-gray-400 text-sm">~</span>
+              <input type="date" value={taxTo} onChange={e => setTaxTo(e.target.value)} className="px-2 py-1.5 border border-gray-200 rounded-lg text-sm bg-white" />
+              <select value={taxCompany} onChange={e => setTaxCompany(e.target.value)} className="px-2 py-1.5 border border-gray-200 rounded-lg text-sm bg-white">
+                <option value="전체">전체 사업자</option>
+                {COMPANIES.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+              <button onClick={exportTaxBoth} disabled={exporting}
                 className="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-green-300 text-white rounded-xl text-base font-medium">
-                {exporting ? '처리 중...' : '🧾 세무용 엑셀'}
+                {exporting ? '처리 중...' : '엑셀 + PDF 한번에'}
               </button>
-              <button onClick={printAllApproved} disabled={exporting}
-                className="px-4 py-2 bg-slate-700 hover:bg-slate-800 disabled:bg-slate-400 text-white rounded-xl text-base font-medium">
-                🖨️ 승인건 전체 PDF
-              </button>
-            </>
+              <button onClick={() => exportTaxExcel()} disabled={exporting}
+                className="px-3 py-2 bg-white border border-green-300 text-green-700 hover:bg-green-100 disabled:opacity-50 rounded-xl text-sm font-medium">엑셀만</button>
+              <button onClick={() => printTaxPdf()} disabled={exporting}
+                className="px-3 py-2 bg-white border border-slate-300 text-slate-700 hover:bg-slate-100 disabled:opacity-50 rounded-xl text-sm font-medium">PDF만</button>
+            </div>
           )}
           <button onClick={() => { resetForm(); setView('form'); }}
             className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-base font-medium">
