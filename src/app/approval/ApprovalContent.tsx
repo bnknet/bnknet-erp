@@ -223,6 +223,8 @@ export default function ApprovalContent() {
   const me = getUser();
   const isCeo = me?.role === 'ceo';
   const isAdmin = me?.role === 'admin';
+  // 세무 제출(엑셀+PDF) = 방성훈·방기현·강웅구만 (실장 지정, 계정 이메일 기준)
+  const canTaxExport = ['bpride5073@gmail.com', 'khbang123@naver.com', 'woonggukang@naver.com'].includes((me?.email || '').toLowerCase());
 
   const [view, setView] = useState<View>('list');
   const [approvals, setApprovals] = useState<Approval[]>([]);
@@ -2500,7 +2502,7 @@ export default function ApprovalContent() {
           ))}
         </div>
         <div className="flex gap-2 flex-wrap">
-          {(isCeo || isAdmin) && (
+          {canTaxExport && (
             <div className="flex flex-wrap items-center gap-2 bg-green-50 border border-green-100 rounded-xl px-3 py-2">
               <span className="text-sm font-semibold text-green-800">🧾 세무 제출</span>
               {[-2, -1, 0].map(off => {
