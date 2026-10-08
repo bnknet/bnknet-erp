@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabaseFetch, supabaseUpload, safeStorageKey, supabaseFetchAll } from '@/lib/supabase';
+import { promptReloadIfStale } from '@/lib/staleChunk';
 import { getUser } from '@/lib/auth';
 import { Card, computePaymentDate, toISO, logCardChange } from '@/lib/cardBilling';
 import { OPEX_CATEGORIES, type OpexCatDef } from '@/lib/opex';
@@ -966,8 +967,8 @@ export default function ApprovalContent() {
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, '지출결의서(승인)');
       XLSX.writeFile(wb, `세무제출_지출결의서_${today()}.xlsx`);
-    } catch {
-      alert('내보내기 중 오류가 발생했습니다.');
+    } catch (e) {
+      if (!promptReloadIfStale(e)) alert('내보내기 중 오류가 발생했습니다.');
     } finally { setExporting(false); }
   }
 
@@ -1214,8 +1215,8 @@ export default function ApprovalContent() {
       if (!parsed.length) { alert('읽을 항목이 없습니다. 양식의 열 이름(월/일·구매상품·구매수량·금액·판관비·비고)을 확인하세요.'); return; }
       setItems(parsed.map((it, i) => ({ ...it, sort_order: i })));
       alert(`✅ ${parsed.length}건을 불러왔습니다. 내용 확인 후 상신하세요.${opexMiss ? `\n⚠️ 판관비 항목 ${opexMiss}건은 이름이 목록과 달라 비워뒀습니다. 화면에서 직접 선택해주세요. (양식의 '판관비 항목 목록' 시트 참고)` : ''}`);
-    } catch {
-      alert('엑셀 읽기에 실패했습니다. 다운로드한 .xlsx 양식 파일인지 확인하세요.');
+    } catch (e) {
+      if (!promptReloadIfStale(e)) alert('엑셀 읽기에 실패했습니다. 다운로드한 .xlsx 양식 파일인지 확인하세요.');
     }
   }
 

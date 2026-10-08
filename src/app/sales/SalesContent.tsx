@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { getUser } from '@/lib/auth';
 import { supabaseFetch, supabaseFetchAll } from '@/lib/supabase';
+import { promptReloadIfStale, STALE_CHUNK_MSG } from '@/lib/staleChunk';
 import { loadDbMatches } from '@/lib/orderConvert';
 import { normalizeMall, type MallFee } from '@/lib/mallFees';
 import { computeOrderLines } from '@/lib/salesStats';
@@ -187,6 +188,7 @@ export default function SalesContent() {
       setSettleMsg({ type: 'success', text: `분석 완료 — 주문 ${nums.length}건(라인 ${res.totalLines})` + (res.skippedNoOrder ? ` · 사방넷번호 없어 제외 ${res.skippedNoOrder}` : '') });
     } catch (e) {
       setSettleParsed(null); setSettlePreview(null);
+      if (promptReloadIfStale(e)) { setSettleMsg({ type: 'error', text: STALE_CHUNK_MSG }); return; }
       setSettleMsg({ type: 'error', text: '파일 분석 실패: ' + (e instanceof Error ? e.message : '알 수 없는 오류') });
     }
   }

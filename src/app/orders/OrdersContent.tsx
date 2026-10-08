@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, useMemo, Fragment } from 'react';
 import { convertOrders, buildSupabaseRows, repNameFor, loadDbMatches, type ConvertedOrderRow, type RawOrderRow } from '@/lib/orderConvert';
 import { supabaseFetch, supabaseFetchAll, supabaseUpload, safeStorageKey } from '@/lib/supabase';
+import { promptReloadIfStale, STALE_CHUNK_MSG } from '@/lib/staleChunk';
 import { getUser } from '@/lib/auth';
 import { computeOrderLines, makeUnitCostResolver, type FullInv } from '@/lib/salesStats';
 import { type MallFee } from '@/lib/mallFees';
@@ -729,7 +730,8 @@ export default function OrdersContent() {
         msg: `✅ 변환 완료 — 총 ${converted.length}건 / 합구매 ${bundleCount}건 / 상품 ${productCount}종`
           + (qtyWarnCount ? ` · ⚠️ 수량 확인 필요 ${qtyWarnCount}건 (아래 빨간/노란 행 확인 후 송장 출력)` : ''),
       });
-    } catch {
+    } catch (e) {
+      if (promptReloadIfStale(e)) { setStatus({ type: 'error', msg: '❌ ' + STALE_CHUNK_MSG }); return; }
       setStatus({ type: 'error', msg: '❌ 파일 처리 중 오류가 발생했습니다' });
     }
   }
