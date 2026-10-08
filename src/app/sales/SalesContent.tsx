@@ -154,7 +154,7 @@ export default function SalesContent() {
   const [settleBusy, setSettleBusy] = useState(false);
   const [settleFileName, setSettleFileName] = useState('');
   const [settleParsed, setSettleParsed] = useState<{ rows: { order_number: string; amount: number; fee: number; cost: number; company: string }[]; totalLines: number; skippedNoOrder: number } | null>(null);
-  const [settlePreview, setSettlePreview] = useState<{ matched: number; unmatched: number } | null>(null);
+  const [settlePreview, setSettlePreview] = useState<{ matched: number; unmatched: number; byCompany: { company: string; count: number }[]; mismatch: { order_number: string; sheet: string; erp: string }[] } | null>(null);
   const [settleMsg, setSettleMsg] = useState<{ type: 'info' | 'error' | 'success'; text: string } | null>(null);
 
   async function handleSettleFile(file: File) {
@@ -167,16 +167,23 @@ export default function SalesContent() {
       const wb = XLSX.read(await file.arrayBuffer(), { type: 'array' });
       const res = parseSettleWorkbook(XLSX, wb);
       setSettleParsed({ rows: res.rows.map((r) => ({ order_number: r.order_number, amount: Math.round(r.amount), fee: Math.round(r.fee), cost: Math.round(r.cost), company: r.company })), totalLines: res.totalLines, skippedNoOrder: res.skippedNoOrder });
-      // 매칭 미리보기 — 주문번호가 ERP에 실제 있는지 (200개씩 조회)
+      // 매칭 미리보기 — 주문번호가 ERP에 실제 있는지 + 시트 사업자와 ERP 주문 사업자 대조 (200개씩 조회)
       const nums = res.rows.map((r) => r.order_number);
-      const existing = new Set<string>();
+      const erpCompany = new Map<string, string>(); // 주문번호 → ERP 사업자
       for (let i = 0; i < nums.length; i += 200) {
         const batch = nums.slice(i, i + 200);
-        const r = await supabaseFetch(`/orders?select=order_number&order_number=in.(${batch.map((n) => `"${n}"`).join(',')})`);
-        if (r.ok) { const rows: { order_number: string }[] = await r.json(); rows.forEach((x) => existing.add(String(x.order_number))); }
+        const r = await supabaseFetch(`/orders?select=order_number,company&order_number=in.(${batch.map((n) => `"${n}"`).join(',')})`);
+        if (r.ok) { const rows: { order_number: string; company?: string }[] = await r.json(); rows.forEach((x) => erpCompany.set(String(x.order_number), String(x.company || ''))); }
       }
-      const matched = nums.filter((n) => existing.has(n)).length;
-      setSettlePreview({ matched, unmatched: nums.length - matched });
+      const matched = nums.filter((n) => erpCompany.has(n)).length;
+      const byCo = new Map<string, number>();
+      for (const r of res.rows) byCo.set(r.company, (byCo.get(r.company) || 0) + 1);
+      // 시트의 사업자가 ERP 사업자 코드인데 주문의 사업자와 다르면 시트를 잘못 넣었을 가능성 → 적용 전 경고
+      const ERP_COMPANIES = ['BNKNET', '더블아이', 'SJ글로벌', 'IX글로벌'];
+      const mismatch = res.rows
+        .filter((r) => ERP_COMPANIES.includes(r.company) && erpCompany.has(r.order_number) && erpCompany.get(r.order_number) !== r.company)
+        .map((r) => ({ order_number: r.order_number, sheet: r.company, erp: erpCompany.get(r.order_number) || '' }));
+      setSettlePreview({ matched, unmatched: nums.length - matched, byCompany: [...byCo.entries()].map(([company, count]) => ({ company, count })), mismatch });
       setSettleMsg({ type: 'success', text: `분석 완료 — 주문 ${nums.length}건(라인 ${res.totalLines})` + (res.skippedNoOrder ? ` · 사방넷번호 없어 제외 ${res.skippedNoOrder}` : '') });
     } catch (e) {
       setSettleParsed(null); setSettlePreview(null);
@@ -936,6 +943,13 @@ export default function SalesContent() {
                   <div className="flex justify-between"><span className="text-gray-500">파싱된 주문</span><span className="font-medium tabular-nums">{(settleParsed.rows.length).toLocaleString()}건</span></div>
                   <div className="flex justify-between"><span className="text-emerald-600">ERP 매칭</span><span className="font-medium text-emerald-700 tabular-nums">{settlePreview.matched.toLocaleString()}건</span></div>
                   <div className="flex justify-between"><span className="text-gray-400">미매칭(주문번호 없음)</span><span className="font-medium text-gray-500 tabular-nums">{settlePreview.unmatched.toLocaleString()}건</span></div>
+                  <div className="flex justify-between gap-3 pt-1 border-t border-gray-100"><span className="text-gray-500">시트(사업자)별</span><span className="text-right text-gray-600 tabular-nums">{settlePreview.byCompany.map((c) => `${c.company} ${c.count.toLocaleString()}건`).join(' · ')}</span></div>
+                  {settlePreview.mismatch.length > 0 && (
+                    <div className="text-xs text-red-600 pt-1">
+                      ⚠️ 시트 사업자와 ERP 주문 사업자가 다른 주문 {settlePreview.mismatch.length.toLocaleString()}건 — 시트를 잘못 넣었는지 확인 후 적용하세요.
+                      <div className="text-red-400 mt-0.5">{settlePreview.mismatch.slice(0, 5).map((m) => `${m.order_number}(시트 ${m.sheet} / ERP ${m.erp})`).join(', ')}{settlePreview.mismatch.length > 5 ? ' …' : ''}</div>
+                    </div>
+                  )}
                   {settlePreview.matched === 0 && (
                     <p className="text-xs text-red-500 pt-1">⚠️ 매칭 0건 — 리포트의 ‘사방넷 주문번호’가 ERP 주문번호와 다를 수 있습니다. 적용 전에 확인하세요.</p>
                   )}

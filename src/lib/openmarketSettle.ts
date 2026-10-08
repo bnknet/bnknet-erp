@@ -19,13 +19,16 @@ export interface ParseResult {
   skippedNoOrder: number; // 사방넷 주문번호 없어 제외된 라인 수
 }
 
-// 시트명 → ERP 사업자 코드
+// 시트명 → ERP 사업자 코드 (시트는 전부 읽고, 매칭은 사방넷 주문번호로만 한다. 사업자는 참고·대조용)
 const COMPANY_BY_SHEET: Record<string, string> = {
   '비엔케이': 'BNKNET', '비앤케이': 'BNKNET', 'BNKNET': 'BNKNET',
   '더블아이': '더블아이', '더블': '더블아이',
+  'SJ글로벌': 'SJ글로벌', 'SJ': 'SJ글로벌', '에스제이': 'SJ글로벌',
+  'IX글로벌': 'IX글로벌', 'IX': 'IX글로벌', '아이엑스': 'IX글로벌',
 };
-function companyOf(sheet: string): string {
-  for (const k of Object.keys(COMPANY_BY_SHEET)) if (sheet.includes(k)) return COMPANY_BY_SHEET[k];
+export function companyOf(sheet: string): string {
+  const s = sheet.toUpperCase();
+  for (const k of Object.keys(COMPANY_BY_SHEET)) if (s.includes(k.toUpperCase())) return COMPANY_BY_SHEET[k];
   return sheet.trim();
 }
 function marketOf(sellerId: string): string {
