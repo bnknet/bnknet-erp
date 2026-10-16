@@ -57,6 +57,8 @@ const CAN_EDIT_COST = ['ceo', 'admin', 'sales', 'inventory'];
 // ── 날짜 헬퍼 ────────────────────────────────────────
 const pad = (n: number) => String(n).padStart(2, '0');
 const ymd = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+// '오늘'은 반드시 한국시간(KST) 기준 — 기기 시간을 쓰면 해외(시차)에서 하루가 밀려 일매출이 0원으로 보인다.
+const kstTodayYmd = () => new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10);
 const parseYmd = (s: string) => { const [y, m, dd] = s.split('-').map(Number); return new Date(y, m - 1, dd); };
 const addDays = (d: Date, n: number) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
 const addMonths = (d: Date, n: number) => { const x = new Date(d); x.setMonth(x.getMonth() + n); return x; };
@@ -132,9 +134,9 @@ export default function SalesContent() {
   // 영업이익(판관비) 탭 — 현재는 실장(admin)만. 필요 시 'ceo' 추가로 대표까지 확대.
   const canOpex = user?.role === 'admin';
   const [salesTab, setSalesTab] = useState<'sales' | 'opex'>('sales');
-  const [anchor, setAnchor] = useState(() => ymd(new Date())); // 조회 기준일 (지난달 등 과거 기간 조회용)
-  const [rangeStart, setRangeStart] = useState(() => ymd(startOfMonth(new Date()))); // 기간조회 시작일
-  const [rangeEnd, setRangeEnd] = useState(() => ymd(new Date()));                    // 기간조회 종료일
+  const [anchor, setAnchor] = useState(() => kstTodayYmd()); // 조회 기준일 (지난달 등 과거 기간 조회용) — KST 고정
+  const [rangeStart, setRangeStart] = useState(() => ymd(startOfMonth(parseYmd(kstTodayYmd())))); // 기간조회 시작일
+  const [rangeEnd, setRangeEnd] = useState(() => kstTodayYmd());                    // 기간조회 종료일
 
   function shiftAnchor(dir: number) {
     const d = parseYmd(anchor);
@@ -298,7 +300,7 @@ export default function SalesContent() {
   // ── 집계 (모든 계산을 한 곳에서) ──────────────────────
   const data = useMemo(() => {
     const today = parseYmd(anchor); today.setHours(0, 0, 0, 0); // 기준일(과거 기간 조회 시 이동)
-    const realToday = new Date(); realToday.setHours(0, 0, 0, 0); // 실제 오늘 (미래분 제외용)
+    const realToday = parseYmd(kstTodayYmd()); // 실제 오늘 — KST 기준 (미래분 제외용)
 
     // 라인별 매출(공급가액)·공헌이익 계산은 공용 함수(computeOrderLines)에서 단일 수행.
     // 매출현황·주문조회가 같은 함수를 써서 숫자가 어긋나지 않도록 한다.
@@ -583,7 +585,7 @@ export default function SalesContent() {
               className="px-2 py-2 rounded-lg border border-gray-200 text-base bg-white" />
             <button onClick={() => shiftAnchor(1)} title="다음"
               className="px-2 py-2 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50">▶</button>
-            <button onClick={() => setAnchor(ymd(new Date()))}
+            <button onClick={() => setAnchor(kstTodayYmd())}
               className="px-2.5 py-2 rounded-lg border border-gray-200 text-sm text-gray-500 hover:bg-gray-50">오늘</button>
           </div>
         )}

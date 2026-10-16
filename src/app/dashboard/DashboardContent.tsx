@@ -22,14 +22,15 @@ const SHIP_ALERT_LABEL: Record<string, string> = {
 
 const pad = (n: number) => String(n).padStart(2, '0');
 const dStr = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+// '오늘/어제/이번 달'은 한국시간(KST) 기준 — 기기 시간을 쓰면 해외(시차)에서 날짜가 밀린다.
+const kstTodayYmd = () => new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10);
 function yesterdayStr() {
-  const d = new Date();
-  d.setDate(d.getDate() - 1);
-  return dStr(d);
+  const d = new Date(Date.now() + 9 * 3600 * 1000);
+  d.setUTCDate(d.getUTCDate() - 1);
+  return d.toISOString().slice(0, 10);
 }
 function monthStartStr() {
-  const d = new Date();
-  return dStr(new Date(d.getFullYear(), d.getMonth(), 1));
+  return kstTodayYmd().slice(0, 8) + '01';
 }
 const won = (n: number) => `${Math.round(n).toLocaleString('ko-KR')}원`;
 
@@ -73,7 +74,7 @@ export default function DashboardContent() {
       try {
         await loadDbMatches(true);
         const ms = monthStartStr();
-        const today = dStr(new Date());
+        const today = kstTodayYmd();
         const [ord, inv, bom] = await Promise.all([
           supabaseFetchAll<MiniOrder>(`/orders?select=upload_date,product_name,collect_product,collect_option,quantity,amount,canceled,company&upload_date=gte.${ms}`),
           supabaseFetchAll<MiniInv>('/inventory?select=product_name,company,cost_price'),
