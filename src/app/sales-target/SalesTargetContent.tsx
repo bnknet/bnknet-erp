@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import * as XLSX from 'xlsx';
 import { supabaseFetch, supabaseFetchAll } from '@/lib/supabase';
+import { computeOrderLines, type FullOrder } from '@/lib/salesStats';
 import { getUser } from '@/lib/auth';
 
 interface TargetRow {
@@ -70,19 +71,26 @@ export default function SalesTargetContent() {
       const data = await res.json();
       setRows(Array.isArray(data) ? data : []);
 
-      // 실적 = 주문 데이터 사업자별·월별 매출 자동 집계 (부가세 제외 = 정산금액 ÷1.1)
-      const orders = await supabaseFetchAll(
-        `/orders?upload_date=gte.${year}-01-01&upload_date=lte.${year}-12-31&select=company,amount,upload_date,canceled`
-      );
+      // 실적 = 매출현황과 동일 규칙(computeOrderLines)으로 사업자별·월별 집계.
+      // 단순 amount 합산은 고객배송비·오픈마켓 실정산 보정이 빠져 매출현황과 숫자가 어긋난다.
+      const [orders, stRows] = await Promise.all([
+        supabaseFetchAll<FullOrder>(
+          `/orders?upload_date=gte.${year}-01-01&upload_date=lte.${year}-12-31` +
+          '&select=upload_date,mall_name,product_name,collect_product,collect_option,quantity,amount,canceled,company,order_number,delivery_fee,source,manual_cost,manual_shipping'
+        ),
+        supabaseFetchAll<{ order_number: string; fee: number; cost: number; amount: number }>(
+          '/order_settlements?select=order_number,fee,cost,amount'
+        ).catch(() => [] as { order_number: string; fee: number; cost: number; amount: number }[]),
+      ]);
+      const settle = new Map<string, { fee: number; cost: number; amount: number }>();
+      for (const s of stRows) if (s.order_number) settle.set(String(s.order_number), { fee: Number(s.fee) || 0, cost: Number(s.cost) || 0, amount: Number(s.amount) || 0 });
+      const { lines } = computeOrderLines(orders, [], [], [], settle);
       const om = new Map<string, number>();
-      for (const o of (orders as { company?: string; amount?: number; upload_date?: string; canceled?: boolean }[])) {
-        if (o.canceled) continue;
-        const amt = Number(o.amount) || 0;
-        if (!amt) continue;
-        const m = Number((o.upload_date || '').slice(5, 7));
+      for (const l of lines) {
+        const m = Number((l.date || '').slice(5, 7));
         if (!m) continue;
-        const key = `${o.company || '미분류'}_${m}`;
-        om.set(key, (om.get(key) || 0) + amt / 1.1);
+        const key = `${l.company || '미분류'}_${m}`;
+        om.set(key, (om.get(key) || 0) + l.rev);
       }
       setActualMap(om);
     } finally { setLoading(false); }
