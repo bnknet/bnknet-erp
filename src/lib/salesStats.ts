@@ -159,8 +159,9 @@ export function computeOrderLines(
     const option = String(o.collect_option || '').trim();
 
     if (o.source === '과거') {
+      // 과거실적(ERP 오픈 전 수기 입력)은 이미 부가세 제외 금액으로 입력됨 — ÷1.1 하면 이중 차감 (대표 확인 2026-10-24)
       lines.push({
-        date, amt, rev: amt / VAT_DIV, qty, rep, mall, company, option,
+        date, amt, rev: amt, qty, rep, mall, company, option,
         profit: amt - (Number(o.manual_cost) || 0), profitKnown: true,
         fee: 0, unim: 0, missCost: false, registered: true, feeFound: true,
         invCompany: inv?.company, brand: '', isPast: true,
