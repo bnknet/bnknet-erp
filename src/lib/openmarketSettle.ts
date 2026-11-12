@@ -17,6 +17,7 @@ export interface ParseResult {
   rows: SettleRow[];
   totalLines: number;   // 읽은 데이터 라인 수
   skippedNoOrder: number; // 사방넷 주문번호 없어 제외된 라인 수
+  skippedBySheet: { sheet: string; lines: number; amount: number; noColumn: boolean }[]; // 시트별 제외 내역(열 자체가 없으면 noColumn)
 }
 
 // 시트명 → ERP 사업자 코드 (시트는 전부 읽고, 매칭은 사방넷 주문번호로만 한다. 사업자는 참고·대조용)
@@ -52,14 +53,18 @@ function pick(row: Record<string, unknown>, ...names: string[]): unknown {
 export function parseSettleWorkbook(XLSX: typeof XLSXType, wb: XLSXType.WorkBook): ParseResult {
   const agg = new Map<string, SettleRow>();
   let totalLines = 0, skippedNoOrder = 0;
+  const skippedBySheet: ParseResult['skippedBySheet'] = [];
   for (const sheetName of wb.SheetNames) {
     const ws = wb.Sheets[sheetName];
     const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws, { defval: '' });
     const company = companyOf(sheetName);
+    // 열 이름 오타('주문먼호' 등)로 시트 전체가 제외되는 사고 방지: '사방넷'+'주문'이 들어간 열이면 주문번호 열로 본다.
+    const onKey = rows.length ? Object.keys(rows[0]).find((k) => { const n = k.replace(/\s+/g, ''); return n.includes('사방넷') && n.includes('주문'); }) : undefined;
+    let sheetSkip = 0, sheetSkipAmt = 0;
     for (const r of rows) {
-      const on = String(pick(r, '사방넷 주문번호', '사방넷주문번호') ?? '').trim();
+      const on = String((onKey ? r[onKey] : pick(r, '사방넷 주문번호', '사방넷주문번호')) ?? '').trim();
       totalLines++;
-      if (!on) { skippedNoOrder++; continue; }
+      if (!on) { skippedNoOrder++; sheetSkip++; sheetSkipAmt += num(pick(r, '판매금액')); continue; }
       const amount = num(pick(r, '판매금액'));
       // 수수료 = 마켓이 실제 떼가는 총 공제액 = 판매금액 − 정산예정금액.
       // (서비스이용료만으로는 판매촉진비·적립금 등 기타 공제가 빠져 마진이 과대계상됨)
@@ -74,6 +79,7 @@ export function parseSettleWorkbook(XLSX: typeof XLSXType, wb: XLSXType.WorkBook
         agg.set(on, { order_number: on, amount, fee, cost, company, market, lineCount: 1 });
       }
     }
+    if (sheetSkip > 0) skippedBySheet.push({ sheet: sheetName, lines: sheetSkip, amount: sheetSkipAmt, noColumn: !onKey });
   }
-  return { rows: [...agg.values()], totalLines, skippedNoOrder };
+  return { rows: [...agg.values()], totalLines, skippedNoOrder, skippedBySheet };
 }

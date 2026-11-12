@@ -156,7 +156,7 @@ export default function SalesContent() {
   const [settleOpen, setSettleOpen] = useState(false);
   const [settleBusy, setSettleBusy] = useState(false);
   const [settleFileName, setSettleFileName] = useState('');
-  const [settleParsed, setSettleParsed] = useState<{ rows: { order_number: string; amount: number; fee: number; cost: number; company: string }[]; totalLines: number; skippedNoOrder: number } | null>(null);
+  const [settleParsed, setSettleParsed] = useState<{ rows: { order_number: string; amount: number; fee: number; cost: number; company: string }[]; totalLines: number; skippedNoOrder: number; skippedBySheet: { sheet: string; lines: number; amount: number; noColumn: boolean }[] } | null>(null);
   const [settlePreview, setSettlePreview] = useState<{ matched: number; unmatched: number; byCompany: { company: string; count: number }[]; mismatch: { order_number: string; sheet: string; erp: string }[] } | null>(null);
   const [settleMsg, setSettleMsg] = useState<{ type: 'info' | 'error' | 'success'; text: string } | null>(null);
 
@@ -169,7 +169,7 @@ export default function SalesContent() {
       const { parseSettleWorkbook } = await import('@/lib/openmarketSettle');
       const wb = XLSX.read(await file.arrayBuffer(), { type: 'array' });
       const res = parseSettleWorkbook(XLSX, wb);
-      setSettleParsed({ rows: res.rows.map((r) => ({ order_number: r.order_number, amount: Math.round(r.amount), fee: Math.round(r.fee), cost: Math.round(r.cost), company: r.company })), totalLines: res.totalLines, skippedNoOrder: res.skippedNoOrder });
+      setSettleParsed({ rows: res.rows.map((r) => ({ order_number: r.order_number, amount: Math.round(r.amount), fee: Math.round(r.fee), cost: Math.round(r.cost), company: r.company })), totalLines: res.totalLines, skippedNoOrder: res.skippedNoOrder, skippedBySheet: res.skippedBySheet });
       // 매칭 미리보기 — 주문번호가 ERP에 실제 있는지 + 시트 사업자와 ERP 주문 사업자 대조 (200개씩 조회)
       const nums = res.rows.map((r) => r.order_number);
       const erpCompany = new Map<string, string>(); // 주문번호 → ERP 사업자
@@ -948,6 +948,12 @@ export default function SalesContent() {
                   <div className="flex justify-between"><span className="text-emerald-600">ERP 매칭</span><span className="font-medium text-emerald-700 tabular-nums">{settlePreview.matched.toLocaleString()}건</span></div>
                   <div className="flex justify-between"><span className="text-gray-400">미매칭(주문번호 없음)</span><span className="font-medium text-gray-500 tabular-nums">{settlePreview.unmatched.toLocaleString()}건</span></div>
                   <div className="flex justify-between gap-3 pt-1 border-t border-gray-100"><span className="text-gray-500">시트(사업자)별</span><span className="text-right text-gray-600 tabular-nums">{settlePreview.byCompany.map((c) => `${c.company} ${c.count.toLocaleString()}건`).join(' · ')}</span></div>
+                  {settleParsed.skippedBySheet.length > 0 && (
+                    <div className="text-xs text-red-600 pt-1">
+                      ⚠️ 사방넷 주문번호가 없어 반영되지 않는 줄: {settleParsed.skippedBySheet.map((s) => `${s.sheet} 시트 ${s.lines.toLocaleString()}줄(판매금액 ${Math.round(s.amount).toLocaleString()}원)${s.noColumn ? ' — 주문번호 열 자체가 없음' : ''}`).join(' · ')}
+                      <div className="text-red-400 mt-0.5">이 줄들은 적용해도 매출·공헌이익에 반영되지 않습니다. 파일에서 열 이름이 ‘사방넷 주문번호’인지, 값이 채워졌는지 확인 후 다시 올려주세요.</div>
+                    </div>
+                  )}
                   {settlePreview.mismatch.length > 0 && (
                     <div className="text-xs text-red-600 pt-1">
                       ⚠️ 시트 사업자와 ERP 주문 사업자가 다른 주문 {settlePreview.mismatch.length.toLocaleString()}건 — 시트를 잘못 넣었는지 확인 후 적용하세요.
