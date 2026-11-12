@@ -1981,9 +1981,9 @@ export default function ApprovalContent() {
             {docType === '카드구매' && (
               <div className="mb-3 flex gap-2">
                 <button type="button" onClick={() => setIsPrepay(false)}
-                  className={`px-4 py-2 rounded-lg text-base font-medium ${!isPrepay ? 'bg-amber-600 text-white' : 'bg-white border border-gray-200 text-gray-600'}`}>카드구매 (한도 차감)</button>
+                  className={`px-4 py-2 rounded-lg text-base font-medium ${!isPrepay ? 'bg-amber-600 text-white' : 'bg-white border border-gray-200 text-gray-600'}`}>카드구매</button>
                 <button type="button" onClick={() => { setIsPrepay(true); setSpendDate(today()); }}
-                  className={`px-4 py-2 rounded-lg text-base font-medium ${isPrepay ? 'bg-green-600 text-white' : 'bg-white border border-gray-200 text-gray-600'}`}>선결제 (한도 복구)</button>
+                  className={`px-4 py-2 rounded-lg text-base font-medium ${isPrepay ? 'bg-green-600 text-white' : 'bg-white border border-gray-200 text-gray-600'}`}>선결제</button>
               </div>
             )}
             {docType === '카드구매' && isPrepay && (
