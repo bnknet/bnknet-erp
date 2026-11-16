@@ -206,25 +206,57 @@ export default function CardsContent() {
     })();
   }, [loadCards, loadPurchases, loadLogs, loadEmployees]);
 
+  // 수정 중인 카드의 기준 잔여한도 계산.
+  //  · 기준 잔여한도 칸을 손대지 않았으면: 기존 값 + (새 한도 − 기존 한도). 0·음수 기준값도 그대로 보존.
+  //  · 신규 등록이거나 칸을 직접 고쳤으면: 입력값(비우면 전체 한도).
+  function openingAdjust(): { opening: number; delta: number; auto: boolean; orig: Card | null } {
+    const orig = editId ? cards.find(c => c.id === editId) || null : null;
+    const newLimit = Number(form.limit_amount) || 0;
+    const formOpening = Number(form.opening_balance) || 0;
+    const delta = orig ? newLimit - (Number(orig.limit_amount) || 0) : 0;
+    if (orig && orig.opening_balance != null && formOpening === (Number(orig.opening_balance) || 0)) {
+      return { opening: (Number(orig.opening_balance) || 0) + delta, delta, auto: true, orig };
+    }
+    return { opening: formOpening || newLimit || 0, delta, auto: false, orig };
+  }
+
   // ── 카드 저장 ──
   async function saveCard() {
     if (!form.card_name.trim()) { alert('카드 별칭을 입력하세요.'); return; }
     setSaving(true);
     try {
+      const adj = openingAdjust();
+      const newLimit = Number(form.limit_amount) || 0;
       const payload = {
         ...form,
-        limit_amount: Number(form.limit_amount) || 0,
-        // 카드 매입은 ERP 결재로 추적되므로 기준 잔여한도는 항상 전체 한도가 기본(비우면 한도로 저장 → 이중 차감 방지)
-        opening_balance: Number(form.opening_balance) || Number(form.limit_amount) || 0,
+        limit_amount: newLimit,
+        // 기준 잔여한도: 수정 시 손대지 않았으면 기존 값 유지 + 한도 변동분만큼 같이 이동(증액분이 '이전 사용분'으로 잡히지 않게).
+        // 신규 등록·직접 입력은 입력값(비우면 전체 한도 → 이중 차감 방지).
+        opening_balance: adj.opening,
         billing_day: Number(form.billing_day) || 1,
         close_day: Number(form.close_day) || 31,
       };
-      const detail = `한도 ${(Number(form.limit_amount) || 0).toLocaleString()}원 · 결제일 ${form.billing_day}일 · 마감 ${form.close_day >= 31 ? '말일' : form.close_day + '일'}`;
+      let detail = `한도 ${newLimit.toLocaleString()}원 · 결제일 ${form.billing_day}일 · 마감 ${form.close_day >= 31 ? '말일' : form.close_day + '일'}`;
+      if (adj.orig && adj.delta !== 0) {
+        detail += ` · 한도 변경 ${(Number(adj.orig.limit_amount) || 0).toLocaleString()} → ${newLimit.toLocaleString()}원`
+          + (adj.auto ? ` (기준 잔여한도 ${(Number(adj.orig.opening_balance) || 0).toLocaleString()} → ${adj.opening.toLocaleString()}원 자동 조정)` : '');
+      }
       if (editId) {
-        await supabaseFetch(`/cards?id=eq.${editId}`, {
-          method: 'PATCH', headers: { Prefer: 'return=minimal' },
+        const res = await supabaseFetch(`/cards?id=eq.${editId}`, {
+          method: 'PATCH', headers: { Prefer: 'return=representation' },
           body: JSON.stringify(payload),
         });
+        const saved = res.ok ? await res.json() : null;
+        if (!res.ok || !Array.isArray(saved) || saved.length !== 1) { alert(`카드 저장 실패 (HTTP ${res.status}) — 변경이 반영되지 않았습니다.`); return; }
+        // 한도 공유 그룹: 같은 그룹의 다른 카드도 같은 한도로 맞춘다(그룹 한도는 하나이므로). 기준 잔여한도는 이 카드에서만 한 번 조정.
+        if (adj.orig?.limit_group && adj.delta !== 0) {
+          const gr = await supabaseFetch(`/cards?limit_group=eq.${encodeURIComponent(adj.orig.limit_group)}&id=neq.${editId}`, {
+            method: 'PATCH', headers: { Prefer: 'return=representation' },
+            body: JSON.stringify({ limit_amount: newLimit }),
+          });
+          if (!gr.ok) alert(`같은 한도 그룹의 다른 카드 한도 변경에 실패했습니다 (HTTP ${gr.status}). 카드 목록에서 직접 맞춰주세요.`);
+          else { const g = await gr.json(); if (Array.isArray(g) && g.length) detail += ` · 한도 공유 그룹 ${g.length}장 함께 변경`; }
+        }
         await logCardChange('카드수정', `[${form.card_type}] ${form.card_name}`, detail, me?.name || '');
       } else {
         await supabaseFetch('/cards', {
@@ -913,6 +945,11 @@ export default function CardsContent() {
                 placeholder="비우면 전체 한도로 저장"
                 className="w-full px-3 py-2 border border-gray-200 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-blue-400" />
               <p className="text-xs text-gray-400 mt-1">카드 매입을 <b>ERP 결재로 관리하면 항상 전체 한도로 두세요</b>(사용분은 결재에서 자동 차감). 비우면 전체 한도로 저장됩니다. ※ 여기에 "현재 남은 한도"를 넣으면 결재 매입이 이중 차감됩니다.</p>
+              {(() => {
+                const a = openingAdjust();
+                if (!a.orig || !a.auto || a.delta === 0) return null;
+                return <p className="text-xs text-blue-600 mt-1">한도를 {a.delta > 0 ? '올린' : '내린'} 만큼 기준 잔여한도도 함께 조정됩니다: {(Number(a.orig.opening_balance) || 0).toLocaleString()} → <b>{a.opening.toLocaleString()}원</b> (저장 시 적용, 잔여한도가 {Math.abs(a.delta).toLocaleString()}원 {a.delta > 0 ? '늘어남' : '줄어듦'})</p>;
+              })()}
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3">
